@@ -8,3 +8,12 @@ def func(x):
 
 def test_answer():
     assert func(3) == 5
+
+
+def func2(x):
+    return x + 1
+
+
+def test_answer2():
+    assert func2(3) == 4
+    assert func2(4) == 5

@@ -1,0 +1,31 @@
+# How a supplied signature relates to an inferred one, one case per line:
+#
+#   supplied ; inferred ; relation ; dtype relation ; shape relation
+#
+# A signature is its parameters' specs joined by " | ". A spec is dtype[dims], where a dim is an integer
+# or None, `[]` is a scalar, `[*]` is unknown rank, `?` is the UNKNOWN dtype, and `(a, b)` is a sequence.
+#
+# The relation column is InputSignature.relate's own result, and InputSignatureTest asserts it against
+# the Java order. The dtype and shape columns are the same order restricted to one axis; reinfer/test_spec.py
+# asserts all three against the harness, and that dtype and shape combine to the relation.
+float32[None,32] ; float32[None,32] ; AGREEMENT ; AGREEMENT ; AGREEMENT
+float32[2,3] ; float32[None,3] ; SUPPLIED_TIGHTER ; AGREEMENT ; SUPPLIED_TIGHTER
+float32[None,3] ; float32[2,3] ; SUPPLIED_BROADER ; AGREEMENT ; SUPPLIED_BROADER
+float32[2] ; float32[3] ; INCOMPARABLE ; AGREEMENT ; INCOMPARABLE
+float32[2] ; int32[2] ; INCOMPARABLE ; INCOMPARABLE ; AGREEMENT
+?[2] ; int32[2] ; SUPPLIED_BROADER ; SUPPLIED_BROADER ; AGREEMENT
+int32[2] ; ?[2] ; SUPPLIED_TIGHTER ; SUPPLIED_TIGHTER ; AGREEMENT
+float32[*] ; float32[2] ; SUPPLIED_BROADER ; AGREEMENT ; SUPPLIED_BROADER
+float32[2] ; float32[*] ; SUPPLIED_TIGHTER ; AGREEMENT ; SUPPLIED_TIGHTER
+float32[2,3] ; float32[2] ; INCOMPARABLE ; AGREEMENT ; INCOMPARABLE
+float32[] ; float32[1] ; INCOMPARABLE ; AGREEMENT ; INCOMPARABLE
+float32[2,None] ; float32[None,3] ; INCOMPARABLE ; AGREEMENT ; INCOMPARABLE
+int32[2] ; float32[None] ; INCOMPARABLE ; INCOMPARABLE ; SUPPLIED_TIGHTER
+float32[None] ; int32[2] ; INCOMPARABLE ; INCOMPARABLE ; SUPPLIED_BROADER
+float32[2] | int32[None] ; float32[None] | int32[3] ; INCOMPARABLE ; AGREEMENT ; INCOMPARABLE
+float32[2] | int32[3] ; float32[None] | int32[3] ; SUPPLIED_TIGHTER ; AGREEMENT ; SUPPLIED_TIGHTER
+int32[] | int32[] ; int32[] ; INCOMPARABLE ; INCOMPARABLE ; INCOMPARABLE
+(float32[2], float32[3]) ; (float32[2], float32[None]) ; SUPPLIED_TIGHTER ; AGREEMENT ; SUPPLIED_TIGHTER
+(float32[2]) ; (float32[2], float32[2]) ; INCOMPARABLE ; INCOMPARABLE ; INCOMPARABLE
+float32[2] ; (float32[2]) ; INCOMPARABLE ; INCOMPARABLE ; INCOMPARABLE
+(int32[None], bool[]) ; (int32[4], bool[]) ; SUPPLIED_BROADER ; AGREEMENT ; SUPPLIED_BROADER

@@ -4,31 +4,71 @@
 #
 # Runs the `edu.cuny.hunter.hybridize.eval.evaluate` application over the open
 # Python projects in a workspace, without the IDE, and writes the result CSVs to
-# the workspace's working directory (the same outputs as the in-IDE evaluator).
+# the directory named by OUTDIR (the same outputs as the in-IDE evaluator).
 #
 # Prerequisites:
 #   - The headless evaluator: either the self-contained product
 #     (`edu.cuny.hunter.hybridize.eval.product`; set ECLIPSE to its materialized
 #     `hybridize-evaluator` launcher), or an Eclipse install containing the eval
 #     bundle and its runtime (the ponder-lab PyDev fork, WALA, Ariadne).
-#   - A workspace already populated with the subjects as PyDev projects.
+#   - A workspace holding the subjects as PyDev projects, or any workspace, with
+#     IMPORT_PROJECTS naming the subjects and, unless the workspace already has a
+#     PyDev interpreter configured, PYTHON_INTERPRETER naming one.
 #
 # Usage:
 #   ECLIPSE=/path/to/hybridize-evaluator WORKSPACE=/path/to/workspace \
-#     PERFORM_ANALYSIS=true ./run-headless-evaluator.sh
+#     OUTDIR=/path/to/results PERFORM_ANALYSIS=true ./run-headless-evaluator.sh
 #
-# The evaluator reads its configuration as JVM system properties, every one
-# defaulting to off. This script does not restate those defaults; it forwards
-# only the flags you set in the environment and lets the tool default the rest,
+# ECLIPSE, WORKSPACE, and OUTDIR are required and have no defaults. OUTDIR must be
+# absolute (or `.`); it is created if absent and is the working directory of the
+# run, so the evaluator writes its CSVs and its own README.md manifest there, and
+# pointing it at a checkout overwrites that checkout's README.md.
+#
+# The remaining knobs are optional. The evaluator reads its configuration as JVM
+# system properties, every one defaulting to off. This script does not restate
+# those defaults; it forwards only the flags you set in the environment and lets the tool default the rest,
 # so a useful run sets at least PERFORM_ANALYSIS=true. Recognized knobs:
 # PERFORM_ANALYSIS, PERFORM_CHANGE, INFER_INPUT_SIGNATURES, CHECK_SIDE_EFFECTS,
 # CHECK_RECURSION, CHECK_TENSOR_COMPUTATION, CHECK_EAGER_ONLY_CALLS, CHECK_NUMPY_CALLS, CHECK_STATIC_SHAPE_READS, CHECK_STALE_VARIABLE_READS, CHECK_TENSOR_ITERATION, PROCESS_IN_PARALLEL,
 # FOLLOW_TYPE_HINTS, SPECULATIVE,
-# TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS.
+# TEST_ENTRYPOINTS, OUTPUT_CALLS, PROJECTS, IMPORT_PROJECTS, PYTHON_INTERPRETER,
+# SOURCE_FOLDERS_FROM_PACKAGING, SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH.
 # PERFORM_CHANGE applies the transformation; leave it off except in special cases
-# (e.g. the performance evaluation). PROCESS_IN_PARALLEL is nondeterministic
-# (issue 315). PROJECTS is a comma-separated list of project names to evaluate a
-# subset; unset evaluates all open Python projects.
+# (e.g. the performance evaluation). PROCESS_IN_PARALLEL checks a project's
+# functions concurrently. The state they share in this tool is synchronized, every
+# call into PyDev's caches holds one lock, and their status entries are merged in
+# the functions' order (issue 315). PyDev's own background analysis would run
+# outside that lock, in serial mode as in parallel mode, but it has been observed
+# idle during evaluation. PROJECTS is a comma-separated list of project names to evaluate a
+# subset; unset evaluates all open Python projects. IMPORT_PROJECTS is a
+# comma-separated list of entries to register in the workspace before the run
+# (issue 658). An entry is an absolute subject directory; one with a committed
+# .project is imported from it. One without is created as a PyDev project, which
+# needs its source folders: name them in the entry as DIR=FOLDER:FOLDER, relative
+# to DIR (`.` for DIR itself), or set SOURCE_FOLDERS_FROM_PACKAGING=true to read
+# them from its setup.cfg, pyproject.toml, or setup.py. They are never guessed.
+# Creating a project writes .project and .pydevproject into its directory.
+# IMPORT_PROJECTS imports the projects but does not restrict the run to them; pair
+# it with PROJECTS for that. The run exits 4 if one cannot be imported or has no
+# usable interpreter. PYTHON_INTERPRETER is the absolute path of a Python
+# executable to make the workspace's default PyDev interpreter, the one committed
+# metadata names as `Default`, before importing; the run exits 5 if it cannot be
+# configured. A project whose source folders leave uncovered a Python file the
+# analysis must bind (one containing an import, or a module of a package it
+# translates) fails, naming the file (issue 990). SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH=true
+# instead leaves such files out, listing each in skipped_scripts.csv; each one costs
+# another class-hierarchy build. Whether an uncovered file matters is the project's
+# call, so fix its metadata where it does.
+#
+# Exit codes: 0 when the evaluation completes and every project succeeds; 6 when
+# it completes but skips a project that failed (the completion line names it); 1
+# when the evaluation is aborted, or when this script is missing ECLIPSE,
+# WORKSPACE, or OUTDIR or refuses OUTDIR; 2 when the workspace has no open
+# Python project; 3 on an unrecognized argument; 4 and 5 as above; 7 when the
+# evaluation is aborted as a PyDev lookup lost its answer to a dead PyDev
+# completion server, so what was emitted is incomplete. The platform's own
+# codes, such as 13 for an error that ends the application, pass through
+# unchanged.
 #
 # JVM arguments (heap, GC, modules) come from the product launcher's own
 # configuration; this script appends to them with --launcher.appendVmargs rather
@@ -39,6 +79,34 @@ set -eu
 
 ECLIPSE="${ECLIPSE:?Set ECLIPSE to the headless evaluator launcher, e.g. the product hybridize-evaluator binary.}"
 WORKSPACE="${WORKSPACE:?Set WORKSPACE to the workspace holding the subjects as PyDev projects.}"
+
+# The output directory is required and has no default. The evaluator writes its CSVs and
+# its own README.md manifest into its working directory, so defaulting that to the caller's
+# working directory lets a run started inside a checkout overwrite that checkout's tracked
+# README.md -- silently, since nothing fails and the result looks like an ordinary edit.
+# The check lives here rather than in the callers because a direct invocation is exactly what
+# debugging the evaluator produces, and it deliberately tests nothing about what the working
+# directory contains: any such rule still clobbers the layouts it does not recognize.
+# Pass OUTDIR=. to write to the current directory deliberately.
+OUTDIR="${OUTDIR:?Set OUTDIR to the directory for the CSVs and the evaluation README. There is no default: the evaluator overwrites a README.md in its working directory, so a run started inside a checkout destroys the README of that checkout. Pass OUTDIR=. to write to the current directory deliberately.}"
+# A relative OUTDIR is refused, because this cd composes with the caller's. A caller that has
+# already cd'd into its output directory and then passes a relative path applies it twice and
+# nests the results a level deeper than intended, silently: the run succeeds, and whatever reads
+# the CSVs afterward finds an empty directory and reports lost rows rather than a misplaced run.
+# `.` is exempt because applying it twice is the same as applying it once.
+case "$OUTDIR" in
+	.) OUTDIR="$PWD" ;;
+	/*) ;;
+	*)
+		echo "run-headless-evaluator.sh: OUTDIR must be an absolute path (or \`.\`), not \`$OUTDIR\`." >&2
+		echo "  This script changes into OUTDIR, so a relative path composes with any cd the caller" >&2
+		echo "  already made and nests the output a level deeper. Use \`\$PWD/$OUTDIR\` instead." >&2
+		exit 1
+		;;
+esac
+mkdir -p "$OUTDIR"
+cd "$OUTDIR"
+echo "run-headless-evaluator.sh: writing evaluator output to $PWD" >&2
 
 exec "$ECLIPSE" \
 	-application edu.cuny.hunter.hybridize.eval.evaluate \
@@ -62,4 +130,8 @@ exec "$ECLIPSE" \
 	${SPECULATIVE+-Dedu.cuny.hunter.hybridize.eval.useSpeculativeAnalysis="$SPECULATIVE"} \
 	${TEST_ENTRYPOINTS+-Dedu.cuny.hunter.hybridize.eval.useTestEntrypoints="$TEST_ENTRYPOINTS"} \
 	${OUTPUT_CALLS+-Dedu.cuny.hunter.hybridize.eval.outputCalls="$OUTPUT_CALLS"} \
-	${PROJECTS+-Dedu.cuny.hunter.hybridize.eval.projects="$PROJECTS"}
+	${PROJECTS+-Dedu.cuny.hunter.hybridize.eval.projects="$PROJECTS"} \
+	${IMPORT_PROJECTS+-Dedu.cuny.hunter.hybridize.eval.importProjects="$IMPORT_PROJECTS"} \
+	${PYTHON_INTERPRETER+-Dedu.cuny.hunter.hybridize.eval.pythonInterpreter="$PYTHON_INTERPRETER"} \
+	${SOURCE_FOLDERS_FROM_PACKAGING+-Dedu.cuny.hunter.hybridize.eval.sourceFoldersFromPackaging="$SOURCE_FOLDERS_FROM_PACKAGING"} \
+	${SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH+-Dedu.cuny.hunter.hybridize.eval.skipScriptsOutsidePythonPath="$SKIP_SCRIPTS_OUTSIDE_PYTHON_PATH"}

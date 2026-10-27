@@ -28,7 +28,6 @@ import org.eclipse.jface.text.Document;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.Refactoring;
 import org.eclipse.ltk.core.refactoring.participants.ProcessorBasedRefactoring;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.navigator.PythonModelProvider;
 import org.python.pydev.navigator.elements.IWrappedResource;
@@ -54,7 +53,7 @@ public class Util {
 
 	private static final PythonModelProvider provider = new PythonModelProvider();
 
-	public static Refactoring createRefactoring(Set<FunctionDefinition> functionDefinitions) throws TooManyMatchesException {
+	public static Refactoring createRefactoring(Set<FunctionDefinition> functionDefinitions) {
 		return new ProcessorBasedRefactoring(new HybridizeFunctionRefactoringProcessor(functionDefinitions));
 	}
 

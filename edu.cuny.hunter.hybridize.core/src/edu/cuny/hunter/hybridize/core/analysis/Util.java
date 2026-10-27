@@ -4,23 +4,28 @@ import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.io.File;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiPredicate;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.python.pydev.ast.codecompletion.revisited.visitors.Definition;
+import org.python.pydev.ast.codecompletion.shell.AbstractShell;
 import org.python.pydev.ast.item_pointer.ItemPointer;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.HierarchyNodeModel;
 import org.python.pydev.ast.refactoring.IPyRefactoring;
 import org.python.pydev.ast.refactoring.RefactoringRequest;
-import org.python.pydev.ast.refactoring.TooManyMatchesException;
 import org.python.pydev.core.IModule;
 import org.python.pydev.core.IPythonNature;
 import org.python.pydev.core.docutils.PySelection;
@@ -37,6 +42,10 @@ import org.python.pydev.shared_core.string.CoreTextSelection;
 
 import com.google.common.collect.Sets;
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.ir.ssa.AstGlobalWrite;
+import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
+import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
@@ -53,6 +62,7 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
+import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.types.MethodReference;
@@ -63,6 +73,14 @@ import com.ibm.wala.util.collections.Pair;
 public class Util {
 
 	private static final ILog LOG = getLog(Util.class);
+
+	/**
+	 * Serializes PyDev's definition and class-hierarchy lookups. PyDev's source modules fill their shared token and visitor caches without
+	 * synchronizing their readers, so lookups made at once from functions checked in parallel can read a partly filled cache (issue 315).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/315">Issue 315</a>
+	 */
+	static final Object PYDEV_LOCK = new Object();
 
 	/**
 	 * Get the name of the module defining the entity described in the given {@link PySelection}.
@@ -76,6 +94,7 @@ public class Util {
 	 * @throws AmbiguousDeclaringModuleException On ambiguous definitions found.
 	 * @throws BadLocationException On a parsing error.
 	 * @throws NoDeclaringModuleException When a declaring module can't be found.
+	 * @throws LostPyDevAnswerError If the lookup lost its answer to a dead PyDev completion server (issue 1121).
 	 */
 	public static String getDeclaringModuleName(PySelection selection, String containingModName, File containingFile, IPythonNature nature,
 			IProgressMonitor monitor) throws BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
@@ -91,13 +110,22 @@ public class Util {
 		request.moduleName = containingModName;
 		request.pushMonitor(monitor);
 
+		// When the definition can't be followed, PyDev otherwise falls back to matching the bare name against its global token index,
+		// which guesses a definition by name alone. Leave such names unresolved
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1121).
+		request.setAdditionalInfo(RefactoringRequest.FIND_DEFINITION_IN_ADDITIONAL_INFO, false);
+
 		IPyRefactoring pyRefactoring = AbstractPyRefactoring.getPyRefactoring();
 
 		ItemPointer[] pointers;
-		try {
+		synchronized (PYDEV_LOCK) {
+			// The count is per thread, and the lookup runs on this one, so a change is a request of this lookup that got no answer.
+			long lostAnswers = AbstractShell.getLostAnswerCount();
 			pointers = pyRefactoring.findDefinition(request);
-		} catch (TooManyMatchesException e) {
-			throw new AmbiguousDeclaringModuleException(selection, containingModName, containingFile, nature, e);
+
+			if (AbstractShell.getLostAnswerCount() != lostAnswers)
+				throw new LostPyDevAnswerError("definition", selection.getSelectedText(), containingModName, containingFile,
+						nature.getProject());
 		}
 
 		LOG.info("Found " + pointers.length + " \"pointer(s).\"");
@@ -159,6 +187,18 @@ public class Util {
 		monitor.beginTask("Getting decorator FQN.", 3);
 
 		exprType decoratorFunction = decorator.func;
+
+		// A run-time generated decorator like `@prop.setter` names an attribute of a property object
+		// defined in this very module, not a module-level definition anywhere. PyDev can't follow the
+		// bare attribute to a definition, so the lookup would leave the decorator unresolved. Its
+		// declaring module is the containing one by construction, so name it directly.
+		if (isGenerated(decorator)) {
+			String generatedFQN = containingModName + "." + NodeUtils.getFullRepresentationString(decoratorFunction);
+			LOG.info(String.format("Generated decorator FQN is: %s.", generatedFQN));
+			monitor.done();
+			return generatedFQN;
+		}
+
 		String fqn = getFullyQualifiedName(decoratorFunction, containingModName, containingFile, containingSelection, nature, monitor);
 
 		monitor.done();
@@ -421,14 +461,337 @@ public class Util {
 		return false;
 	}
 
+	/** The prefix Ariadne gives the name of a global read. */
+	private static final String GLOBAL_PREFIX = "global ";
+
+	/** The declaring-class prefix of a node for user code: a script or a function in one. */
+	private static final String USER_SCRIPT_TYPE_NAME_PREFIX = "Lscript ";
+
+	/**
+	 * Python's builtin callables, other than exception types, as {@code dir(builtins)} lists them on Python 3.10, less {@code map} and
+	 * {@code filter}. A call to one performs no tensor computation itself, so its lacking a call-graph target says nothing about whether
+	 * the caller computes tensors. {@code map} and {@code filter} are left out because they call a function argument, which may compute
+	 * tensors; {@link #KEYED_BUILTIN_NAMES} holds the ones that do so only when given {@code key=}.
+	 */
+	private static final Set<String> PYTHON_BUILTIN_CALLABLES = Set.of("abs", "aiter", "all", "anext", "any", "ascii", "bin", "bool",
+			"breakpoint", "bytearray", "bytes", "callable", "chr", "classmethod", "compile", "complex", "copyright", "credits", "delattr",
+			"dict", "dir", "divmod", "enumerate", "eval", "exec", "exit", "float", "format", "frozenset", "getattr", "globals", "hasattr",
+			"hash", "help", "hex", "id", "input", "int", "isinstance", "issubclass", "iter", "len", "license", "list", "locals", "max",
+			"memoryview", "min", "next", "object", "oct", "open", "ord", "pow", "print", "property", "quit", "range", "repr", "reversed",
+			"round", "set", "setattr", "slice", "sorted", "staticmethod", "str", "sum", "super", "tuple", "type", "vars", "zip");
+
+	/** Every Python builtin callable's name, the callback-taking ones included, for telling a rebinding of one from the builtin itself. */
+	private static final Set<String> PYTHON_BUILTIN_NAMES = Sets.union(PYTHON_BUILTIN_CALLABLES, Set.of("map", "filter"));
+
+	/** The builtins that call a function argument, which may compute tensors, only when it is given as {@code key=}. */
+	private static final Set<String> KEYED_BUILTIN_NAMES = Set.of("max", "min", "sorted");
+
+	/** The method through which Ariadne imports a module or builtin into a script. */
+	private static final String BUILTIN_IMPORT_METHOD_NAME = "import";
+
+	/** The type-name prefix of Ariadne's prelude objects for Python builtins. */
+	static final String BUILTIN_PRELUDE_TYPE_NAME_PREFIX = "Lwala/builtin/";
+
+	/** The keyword through which {@code min}, {@code max}, {@code sorted} and {@code list.sort} take a function to call. */
+	private static final String KEY_KEYWORD = "key";
+
+	/** Per call graph, the names each script binds at module scope, so a builtin's name read there can be told from a rebinding. */
+	private static final Map<CallGraph, Map<String, Set<String>>> SCRIPT_BOUND_NAMES = Collections.synchronizedMap(new WeakHashMap<>());
+
+	/**
+	 * The type names of Python's builtin values whose methods perform no tensor computation (string, dictionary, list, tuple and set
+	 * methods).
+	 */
+	private static final Set<String> PYTHON_BUILTIN_VALUE_TYPE_NAMES = Set.of("Lstring", "Ldict", "Llist", "Ltuple", "Lset");
+
+	/**
+	 * True iff {@code node}, transitively over the same nodes {@link #performsTensorFlowOp} scans, holds a call in user code whose target
+	 * the call graph does not resolve and that may compute tensors. Such a call may perform a tensor computation the scan cannot see (an
+	 * object built through a factory the analysis doesn't follow, a callee fetched with {@code getattr}), so a scan that finds no tensor op
+	 * has not established that there is none. A call of a Python builtin, or of a method on a builtin string, dictionary, list, tuple or
+	 * set, is not counted: it computes no tensors, and Ariadne leaves many of them without a target. Only user code is inspected; a library
+	 * or summary node's own body is not the analyzed function's code, though its successors (user callbacks) are walked. A call whose
+	 * target set is non-empty but imprecise counts as resolved, so the scan's own misses stay possible by design. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 *
+	 * @param node The call-graph node to check.
+	 * @param callGraph The call graph, used to resolve each call's targets and follow callees transitively.
+	 * @param pointerAnalysis The pointer analysis, used to read a method call's receiver.
+	 * @return True iff a call reachable from {@code node}'s user-defined bodies has no resolved target and may compute tensors.
+	 */
+	public static boolean hasUnresolvedCall(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		return hasUnresolvedCall(node, callGraph, pointerAnalysis, Sets.newHashSet());
+	}
+
+	private static boolean hasUnresolvedCall(CGNode node, CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Set<CGNode> seen) {
+		if (!seen.add(node))
+			return false;
+
+		if (isUserCodeNode(node)) {
+			IR ir = node.getIR();
+
+			if (ir != null) {
+				DefUse defUse = node.getDU();
+
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					if (instruction instanceof PythonInvokeInstruction invoke
+							&& (callGraph.getPossibleTargets(node, invoke.getCallSite()).isEmpty()
+									&& !callsPythonBuiltin(node, invoke, defUse, callGraph, pointerAnalysis)
+									|| callsRebindingOfBuiltin(node, invoke, defUse, callGraph)
+									|| passesKeyFunctionToBuiltin(node, invoke, defUse, pointerAnalysis)))
+						return true;
+			}
+		}
+
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();)
+			if (hasUnresolvedCall(succNodes.next(), callGraph, pointerAnalysis, seen))
+				return true;
+
+		return false;
+	}
+
+	/** True iff {@code node} is user code, a script or a function in one, rather than a library or summary node. */
+	private static boolean isUserCodeNode(CGNode node) {
+		return node.getMethod().getDeclaringClass().getName().toString().startsWith(USER_SCRIPT_TYPE_NAME_PREFIX);
+	}
+
+	/**
+	 * True iff {@code invoke} calls a Python builtin by name, or a method on a value that points only to builtin strings, dictionaries,
+	 * lists, tuples or sets. A call of a value produced by another call is never a builtin here: {@code getattr(tf, "op")} itself is
+	 * exempt, but calling its result is not.
+	 */
+	private static boolean callsPythonBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+
+		if (def instanceof AstLexicalRead lexical) {
+			// A builtin is read from the script's scope; a name defined by an enclosing function (a closure over a parameter named
+			// `map`, say) is that function's binding, not the builtin.
+			Access[] accesses = lexical.getAccesses();
+			return accesses.length > 0 && isUnboundBuiltin(accesses[0].getName().fst, accesses[0].getName().snd, invoke, callGraph);
+		}
+
+		if (def instanceof AstGlobalRead global) {
+			String name = global.getGlobalName();
+			return name.startsWith(GLOBAL_PREFIX)
+					&& isUnboundBuiltin(name.substring(GLOBAL_PREFIX.length()), scriptOf(node), invoke, callGraph);
+		}
+
+		if (def instanceof PythonPropertyRead read) {
+			// A method given a function to call (`list.sort(key=...)`) may compute tensors through it.
+			if (invoke.getKeywords().contains(KEY_KEYWORD))
+				return false;
+
+			PointerKey receiver = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, read.getObjectRef());
+			boolean any = false;
+
+			for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(receiver)) {
+				if (!PYTHON_BUILTIN_VALUE_TYPE_NAMES.contains(instanceKey.concreteType().getName().toString()))
+					return false;
+
+				any = true;
+			}
+
+			// An empty receiver set is unknown, not builtin.
+			return any;
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code invoke} gives {@code key=} to a keyed builtin ({@code min}, {@code max} or {@code sorted}) or to a method on a
+	 * builtin value ({@code list.sort}). The key function may compute tensors, and Ariadne may resolve the call to the builtin's summary
+	 * without following the key function, so such a call counts whatever its targets.
+	 */
+	private static boolean passesKeyFunctionToBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		if (!invoke.getKeywords().contains(KEY_KEYWORD))
+			return false;
+
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+		String name = def instanceof AstLexicalRead lexical && lexical.getAccesses().length > 0 ? lexical.getAccesses()[0].getName().fst
+				: def instanceof AstGlobalRead global && global.getGlobalName().startsWith(GLOBAL_PREFIX)
+						? global.getGlobalName().substring(GLOBAL_PREFIX.length())
+						: null;
+
+		if (name != null)
+			return KEYED_BUILTIN_NAMES.contains(name);
+
+		if (def instanceof PythonPropertyRead read) {
+			PointerKey receiver = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, read.getObjectRef());
+
+			for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(receiver))
+				if (PYTHON_BUILTIN_VALUE_TYPE_NAMES.contains(instanceKey.concreteType().getName().toString()))
+					return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code invoke} calls a name the script rebinds from a Python builtin, such as {@code sum} after
+	 * {@code sum = getattr(tf, "reduce_sum")}, and the call graph resolves it to the builtin's own summary. When the rebinding's value has
+	 * no abstract object, Ariadne resolves the call to the builtin, so such a resolved call does not show that the callee is the builtin.
+	 */
+	private static boolean callsRebindingOfBuiltin(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, CallGraph callGraph) {
+		Set<CGNode> targets = callGraph.getPossibleTargets(node, invoke.getCallSite());
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+		String name = null;
+		String script = null;
+
+		if (def instanceof AstLexicalRead lexical && lexical.getAccesses().length > 0) {
+			name = lexical.getAccesses()[0].getName().fst;
+			script = lexical.getAccesses()[0].getName().snd;
+		} else if (def instanceof AstGlobalRead global && global.getGlobalName().startsWith(GLOBAL_PREFIX)) {
+			name = global.getGlobalName().substring(GLOBAL_PREFIX.length());
+			script = scriptOf(node);
+		}
+
+		if (name == null || script == null || !script.equals(scriptOf(script)) || !PYTHON_BUILTIN_NAMES.contains(name)
+				|| !boundNames(callGraph, script).contains(name))
+			return false;
+
+		// Only a call resolved to the builtin's own summary is suspect; one resolved to the rebinding (a user's `def max`) is scanned like
+		// any other call, and one with no target is already counted by the target-less check.
+		String summary = BUILTIN_PRELUDE_TYPE_NAME_PREFIX + name;
+		return !targets.isEmpty() && targets.stream().allMatch(t -> t.getMethod().getDeclaringClass().getName().toString().equals(summary));
+	}
+
+	/**
+	 * True iff {@code name}, read in the scope {@code definer}, is a Python builtin that {@code invoke} calls without a function argument:
+	 * the scope is a script's, the script binds no such name at module scope, and a keyed builtin is not given {@code key=}.
+	 */
+	private static boolean isUnboundBuiltin(String name, String definer, PythonInvokeInstruction invoke, CallGraph callGraph) {
+		if (!PYTHON_BUILTIN_CALLABLES.contains(name) || definer == null || !definer.equals(scriptOf(definer)))
+			return false;
+
+		if (KEYED_BUILTIN_NAMES.contains(name) && invoke.getKeywords().contains(KEY_KEYWORD))
+			return false;
+
+		return !boundNames(callGraph, definer).contains(name);
+	}
+
+	/**
+	 * True iff {@code def}, the definition of a value a script writes into its scope under {@code name}, is the builtin {@code name}
+	 * itself: Ariadne's import of it ({@code import()} on the class {@code L<name>}) or its prelude object (a
+	 * {@code Lwala/builtin/<name>}).
+	 */
+	private static boolean exposesBuiltin(SSAInstruction def, String name) {
+		if (def instanceof SSAAbstractInvokeInstruction invoke && invoke.isStatic())
+			return invoke.getDeclaredTarget().getDeclaringClass().getName().toString().equals("L" + name)
+					&& invoke.getDeclaredTarget().getName().toString().equals(BUILTIN_IMPORT_METHOD_NAME);
+
+		return def instanceof SSANewInstruction allocation
+				&& allocation.getConcreteType().getName().toString().equals(BUILTIN_PRELUDE_TYPE_NAME_PREFIX + name);
+	}
+
+	/**
+	 * The script that a declaring-class or scope name belongs to: the name up to and including its {@code .py}, so that
+	 * {@code Lscript pkg/m.py/C/f} gives {@code Lscript pkg/m.py}.
+	 */
+	private static String scriptOf(String name) {
+		int end = name.indexOf(".py/");
+		return end < 0 ? name : name.substring(0, end + ".py".length());
+	}
+
+	private static String scriptOf(CGNode node) {
+		return scriptOf(node.getMethod().getDeclaringClass().getName().toString());
+	}
+
+	/**
+	 * The names {@code script} binds at module scope: its global writes from any of its call-graph nodes, and its body's lexical writes
+	 * other than the builtins it exposes to nested functions.
+	 */
+	private static Set<String> boundNames(CallGraph callGraph, String script) {
+		return SCRIPT_BOUND_NAMES.computeIfAbsent(callGraph, k -> new ConcurrentHashMap<>()).computeIfAbsent(script, k -> {
+			Set<String> names = new HashSet<>();
+
+			for (CGNode node : callGraph) {
+				String declaringClass = node.getMethod().getDeclaringClass().getName().toString();
+
+				// A global write binds the name at module scope from anywhere in the script (`global len; len = ...` in a function);
+				// a lexical write does so only from the script's own body.
+				if (!scriptOf(declaringClass).equals(script) || node.getIR() == null)
+					continue;
+
+				boolean scriptBody = declaringClass.equals(script);
+
+				for (SSAInstruction instruction : Iterator2Iterable.make(node.getIR().iterateNormalInstructions()))
+					if (instruction instanceof AstGlobalWrite write && write.getGlobalName().startsWith(GLOBAL_PREFIX))
+						names.add(write.getGlobalName().substring(GLOBAL_PREFIX.length()));
+					else if (scriptBody && instruction instanceof AstLexicalWrite write)
+						// The script also writes into its scope the builtins its nested functions read, from the builtin's own import
+						// or prelude object. A write of anything else, such as `sum = getattr(tf, "reduce_sum")`, is a binding.
+						for (int i = 0; i < write.getAccessCount(); i++) {
+							String name = write.getAccess(i).getName().fst;
+
+							if (!exposesBuiltin(node.getDU().getDef(write.getUse(i)), name))
+								names.add(name);
+						}
+			}
+
+			return names;
+		});
+	}
+
 	/** True iff {@code node}'s declaring class is in the TensorFlow namespace, i.e. a modeled op or library node rather than user code. */
 	static boolean isTensorFlowNode(CGNode node) {
 		String name = node.getMethod().getDeclaringClass().getReference().getName().toString();
 		return name.startsWith(TENSORFLOW_MODULE_TYPE_NAME);
 	}
 
+	/**
+	 * True iff {@code test} holds of a normal instruction of {@code node} or of a node it transitively calls. This is the walk of the
+	 * transitive call-graph preconditions, such as {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS} and
+	 * {@link PreconditionFailure#RESHAPES_WITH_SCALAR_SHAPE}. Only program bodies are tested: the walk passes through TensorFlow library
+	 * nodes ({@link #isTensorFlowNode(CGNode)}) without testing their instructions, to reach the program callbacks they call.
+	 *
+	 * @param callGraph The call graph, whose successors the walk follows.
+	 * @param node The call-graph node to start from.
+	 * @param test The test, given each instruction with the node whose IR contains it.
+	 * @return True iff {@code test} holds of an instruction of a program body reachable from {@code node}.
+	 */
+	static boolean reachesInstruction(CallGraph callGraph, CGNode node, BiPredicate<CGNode, SSAInstruction> test) {
+		return reachesInstruction(callGraph, node, test, Sets.newHashSet());
+	}
+
+	private static boolean reachesInstruction(CallGraph callGraph, CGNode node, BiPredicate<CGNode, SSAInstruction> test,
+			Set<CGNode> seen) {
+		if (!seen.add(node))
+			return false;
+
+		if (!isTensorFlowNode(node)) {
+			IR ir = node.getIR();
+
+			if (ir != null)
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					if (test.test(node, instruction))
+						return true;
+		}
+
+		for (Iterator<CGNode> succNodes = callGraph.getSuccNodes(node); succNodes.hasNext();)
+			if (reachesInstruction(callGraph, succNodes.next(), test, seen))
+				return true;
+
+		return false;
+	}
+
 	/** The origin set of a value produced by numpy only: tensor-convertible, but not a TensorFlow computation. */
 	private static final Set<TensorOrigin> NUMPY_ONLY = Set.of(TensorOrigin.NUMPY);
+
+	/**
+	 * Origin markers that record where a type came from rather than what produced the value, so they say nothing about whether a def is a
+	 * TensorFlow computation. {@link TensorOrigin#ANNOTATION} marks a type supplied by a user annotation (wala/ML#370); a numpy value does
+	 * not become a TensorFlow computation because someone wrote its type down.
+	 * <p>
+	 * These are removed before the numpy-only comparison below. Comparing the raw set against {@code {NUMPY}} was a claim that the origin
+	 * vocabulary is closed over producers, which stopped holding when {@code ANNOTATION} joined it: an annotated numpy value carries
+	 * {@code {NUMPY, ANNOTATION}}, which is not equal to {@code {NUMPY}}, so the def counted as a computation on the strength of its type
+	 * having been annotated. An exact-match test against a set is a closed-vocabulary claim and grows wrong silently.
+	 */
+	private static final Set<TensorOrigin> NON_PRODUCER_ORIGINS = Set.of(TensorOrigin.ANNOTATION);
 
 	/**
 	 * True iff {@code instruction} defines a tensor-typed value whose origin is not numpy-only. A def is a TensorFlow computation when it
@@ -444,11 +807,32 @@ public class Util {
 			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, instruction.getDef(i));
 			Set<TensorOrigin> origins = tensorTypedKeys.get(pointerKey);
 
-			if (origins != null && !origins.equals(NUMPY_ONLY))
+			if (origins != null && !producerOrigins(origins).equals(NUMPY_ONLY))
 				return true;
 		}
 
 		return false;
+	}
+
+	/**
+	 * The given origins less the markers that record type provenance rather than production, so the numpy-only test compares producers
+	 * against producers. Returns the argument itself when nothing is removed, which is the overwhelmingly common case.
+	 * <p>
+	 * Public (rather than {@code private}) so the vocabulary rule can be exercised with a hand-built origin set, the same seam
+	 * {@link Function#inferSpec(Set)} uses. {@link #performsTensorFlowOp} cannot stand in: reaching it needs a call graph, and the
+	 * {@code {NUMPY, ANNOTATION}} case additionally needs a type-annotation sidecar seeding a numpy value, which no fixture can currently
+	 * supply.
+	 *
+	 * @param origins A value's recorded origins.
+	 * @return The producer-bearing subset.
+	 */
+	public static Set<TensorOrigin> producerOrigins(Set<TensorOrigin> origins) {
+		if (Collections.disjoint(origins, NON_PRODUCER_ORIGINS))
+			return origins;
+
+		Set<TensorOrigin> producers = EnumSet.copyOf(origins);
+		producers.removeAll(NON_PRODUCER_ORIGINS);
+		return producers;
 	}
 
 	private static boolean invokesTensorFlowOp(CGNode node, PythonInvokeInstruction invoke, DefUse defUse,
@@ -509,6 +893,35 @@ public class Util {
 		return defUse.getDef(use) instanceof AstGlobalRead global && TENSORFLOW_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
 	}
 
+	/**
+	 * Global-read names identifying the numpy/scipy modules by import alias, mirroring {@link #TENSORFLOW_MODULE_GLOBAL_NAMES}. Unlike the
+	 * TensorFlow fallback, whose over-recognition is incompleteness-safe (it only lets an eager function hybridize), over-recognition here
+	 * over-blocks: a non-numpy global named {@code np} would fail a consuming precondition. Accepted safety-first; the evaluation measures
+	 * the cost. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 */
+	static final Set<String> NUMPY_MODULE_GLOBAL_NAMES = Set.of("global numpy", "global np", "global scipy", "global sp");
+
+	/** Type-name prefixes of the numpy/scipy module objects, for the points-to (precise) branch of the module test. */
+	static final Set<String> NUMPY_MODULE_TYPE_NAME_PREFIXES = Set.of("Lnumpy", "Lscipy");
+
+	/**
+	 * True iff {@code use} refers to the numpy/scipy module. Prefers points-to; falls back to the import alias on a global read. Shared by
+	 * the numpy-application precondition and the statically-read-axis walk's NumPy integer sinks (issue 882).
+	 *
+	 * @param node The call-graph node whose IR contains {@code use}.
+	 * @param use The value number to test.
+	 * @param defUse The def-use chains of {@code node}'s IR.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @return True iff {@code use} refers to the numpy/scipy module.
+	 */
+	static boolean isNumpyModule(CGNode node, int use, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		for (String prefix : NUMPY_MODULE_TYPE_NAME_PREFIXES)
+			if (pointsToType(node, use, pointerAnalysis, prefix, false))
+				return true;
+
+		return defUse.getDef(use) instanceof AstGlobalRead global && NUMPY_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
+	}
+
 	/** The string value of a {@link ConstantKey} in {@code use}'s points-to set, or {@code null} if none. */
 	static String resolveStringConstant(CGNode node, int use, PointerAnalysis<InstanceKey> pointerAnalysis) {
 		PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, use);
@@ -537,21 +950,27 @@ public class Util {
 		return false;
 	}
 
+	/**
+	 * Returns true iff the given type is a built-in Python container in the engine's element model: a list, tuple, set, dict or
+	 * {@code enumerate} object, as {@link PythonTypes#isContainer(TypeReference)} decides.
+	 *
+	 * @param reference The type in question.
+	 * @return True iff the engine counts the type as a container.
+	 */
 	public static boolean isContainerType(TypeReference reference) {
-		return reference.equals(PythonTypes.dict) || reference.equals(PythonTypes.enumerate) || reference.equals(PythonTypes.list)
-				|| reference.equals(PythonTypes.set) || reference.equals(PythonTypes.tuple);
+		return PythonTypes.isContainer(reference);
 	}
 
 	/**
-	 * Returns true iff the given type is a positionally-indexed Python sequence: a list or tuple. The subset of
-	 * {@link #isContainerType(TypeReference)} whose elements the nested-spec reduction can model positionally; dicts, sets, and
-	 * {@code enumerate} objects are containers but not sequences (#781).
+	 * Returns true iff the given type is a positionally-indexed Python sequence: a list or tuple, as
+	 * {@link PythonTypes#isSequence(TypeReference)} decides. The subset of {@link #isContainerType(TypeReference)} whose elements the
+	 * nested-spec reduction can model positionally; dicts, sets, and {@code enumerate} objects are containers but not sequences (#781).
 	 *
 	 * @param reference The type in question.
 	 * @return True iff the type is {@code list} or {@code tuple}.
 	 */
 	public static boolean isSequenceType(TypeReference reference) {
-		return reference.equals(PythonTypes.list) || reference.equals(PythonTypes.tuple);
+		return PythonTypes.isSequence(reference);
 	}
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })

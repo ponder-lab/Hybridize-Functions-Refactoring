@@ -5,18 +5,24 @@ public enum PreconditionSuccess {
 
 	/**
 	 * A hybrid function that is already correctly hybrid but carries no {@code input_signature}: reconfigure its decorator to add the
-	 * inferred input signature. This is the add-when-absent path into the {@link Transformation#RECONFIGURE} transformation; overwriting an
-	 * already-supplied signature ({@link #P5}) is a separate precondition path that reaches the same transformation, mirroring how
-	 * {@link #P2} and {@link #P3} both reach {@link Transformation#CONVERT_TO_EAGER}.
+	 * inferred input signature. This is the add-when-absent path into the {@link Transformation#RECONFIGURE} transformation; the narrowing
+	 * path is {@link #P5}.
 	 */
 	P4,
 
 	/**
-	 * A hybrid function whose existing {@code input_signature} disagrees with the inferred one in a way that warrants an overwrite—the
-	 * supplied signature is strictly tighter than the inferred one (the call-site evidence admits inputs the supplied signature would
-	 * reject), or the two are incomparable: reconfigure its decorator to replace the existing signature with the inferred one. This is the
-	 * overwrite path into {@link Transformation#RECONFIGURE}; adding a signature when none is supplied is {@link #P4}. A supplied signature
-	 * that is strictly broader than the inferred one is preserved (no transformation), and an agreeing signature is a no-op.
+	 * A hybrid function whose existing {@code input_signature} is strictly broader than its reachable call sites require: narrow it to the
+	 * inferred signature. Under the closed-world assumption the reachable call sites are all the callers, and every one of them already
+	 * conforms to the inferred signature, so narrowing preserves behavior and yields a tighter signature. The narrowing is taken only for a
+	 * literal signature (a named one may be shared; {@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME}) of a function the
+	 * program does not export ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_EXPORTED}), whose literal carries nothing the narrowing
+	 * would drop ({@link PreconditionFailure#NARROWING_WOULD_DROP_SPEC_TEXT}), and whose narrowing changes no statically read shape
+	 * ({@link PreconditionFailure#NARROWING_CHANGES_STATICALLY_READ_SHAPE}).
+	 * <p>
+	 * The other relations are never rewritten. A supplied signature strictly tighter than the inferred one, or incomparable with it, means
+	 * some reachable call already violates it, and rewriting to admit that call would repair the program rather than refactor it
+	 * ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS}). An agreeing signature is a no-op. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/808.
 	 */
 	P5,
 

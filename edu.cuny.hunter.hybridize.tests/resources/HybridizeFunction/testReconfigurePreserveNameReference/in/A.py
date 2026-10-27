@@ -1,7 +1,7 @@
-# Name-referenced variant of the supplied-tighter modify path (#834). The decorator references the tighter signature through a
-# module-level constant; the overwrite must replace exactly the reference at the decorator site with the inferred literal, leaving
-# the module-level constant itself intact (it may have other users). The supplied signature intentionally disagrees with the call
-# sites, so this fixture is analyzed statically rather than executed.
+# Name-referenced variant of the supplied-tighter adjudication (#834, #808). The decorator references the tighter signature through a
+# module-level constant. The disagreement is reported and both the reference and the constant are left unchanged (the constant may have
+# other users). The supplied signature intentionally disagrees with the call sites, so this fixture is analyzed statically rather than
+# executed.
 import tensorflow as tf
 
 f_signature = [tf.TensorSpec(shape=(2,), dtype=tf.float32)]

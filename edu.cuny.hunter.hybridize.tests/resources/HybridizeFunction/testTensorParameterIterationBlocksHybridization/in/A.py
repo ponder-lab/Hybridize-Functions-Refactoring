@@ -1,6 +1,9 @@
 # Fixture for the symbolic-iteration precondition (#830, distilling EventSeq.from_array):
-# iterating a tensor parameter works eagerly (the elements are tensors) but raises
-# OperatorNotAllowedInGraphError under tracing, so the conversion must be declined.
+# iterating a tensor parameter works eagerly (the elements are tensors). Under tracing,
+# AutoGraph converts the loop to a tf.while_loop, which raises or traces to a different
+# result when the body can't be staged, so the conversion is declined. iterate_param's body
+# only updates a tensor accumulator of fixed dtype and shape, so declining it is
+# conservative (#1137).
 # An in-body tf.range loop is AutoGraph-supported and remains convertible.
 import tensorflow as tf
 

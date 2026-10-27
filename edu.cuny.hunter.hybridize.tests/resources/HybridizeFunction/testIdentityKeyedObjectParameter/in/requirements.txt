@@ -1,0 +1,2 @@
+tensorflow==2.9.3
+attrs==23.1.0

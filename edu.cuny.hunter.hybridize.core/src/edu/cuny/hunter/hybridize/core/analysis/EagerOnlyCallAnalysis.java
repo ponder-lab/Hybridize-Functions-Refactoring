@@ -1,19 +1,20 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
-import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
+import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
+import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
+import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
-import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
-import com.ibm.wala.util.collections.Iterator2Iterable;
 
 /**
  * The eager-only-call analysis behind the {@link PreconditionFailure#HAS_EAGER_ONLY_CALLS} safety precondition
@@ -22,11 +23,16 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * function (or anything it reaches) invokes an API that is only valid in eager execution and therefore raises under {@code tf.function}
  * tracing.
  * <p>
- * Two name populations with different disciplines. The unconditional names ({@link #EAGER_ONLY_METHOD_NAMES}, e.g. {@code Tensor.numpy()})
- * block on the callee attribute name alone: the receiver's tensor typing is frequently unavailable, missing a real call would hybridize a
- * function that crashes on first call, and over-matching only declines an optimization. The Keras training-surface names
- * ({@link #EAGER_ONLY_MODEL_METHOD_NAMES}) cannot block bare, since they are generic ML verbs with demonstrated in-corpus collisions; they
- * require the dispatch evidence of {@link #invokesGuardedModelEndpoint(CGNode, PythonInvokeInstruction, PythonPropertyRead)}.
+ * Two callee-name populations with different disciplines. The unconditional names ({@link #EAGER_ONLY_METHOD_NAMES}, e.g.
+ * {@code Tensor.numpy()}) block on the callee attribute name alone: the receiver's tensor typing is frequently unavailable, missing a real
+ * call would hybridize a function that crashes on first call, and over-matching only declines an optimization. The Keras training-surface
+ * names ({@link #EAGER_ONLY_MODEL_METHOD_NAMES}) cannot block bare, since they are generic ML verbs with demonstrated in-corpus collisions;
+ * they require the dispatch evidence of {@link #invokesGuardedModelEndpoint(CGNode, PythonInvokeInstruction, PythonPropertyRead)}.
+ * <p>
+ * A third population is matched on a read rather than a call: {@link #EAGER_ONLY_TENSOR_MEMBER_NAMES} are members a symbolic tensor lacks,
+ * so reading one raises under tracing even when the value is never called
+ * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1100). Since such a name is also an ordinary attribute of
+ * non-tensors, a read blocks only on a tensor-typed receiver.
  */
 class EagerOnlyCallAnalysis {
 
@@ -36,13 +42,41 @@ class EagerOnlyCallAnalysis {
 	/** The pointer analysis, used to resolve callee attribute names and to type unresolved receivers. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
-	EagerOnlyCallAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	/** The tensor-typed pointer keys, used to scope a read of an {@link #EAGER_ONLY_TENSOR_MEMBER_NAMES} member to a tensor receiver. */
+	private final Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys;
+
+	EagerOnlyCallAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		this.callGraph = callGraph;
 		this.pointerAnalysis = pointerAnalysis;
+		this.tensorTypedKeys = tensorTypedKeys;
 	}
 
-	/** Method names whose invocation is only valid in eager execution (e.g. {@code Tensor.numpy()}). */
-	private static final Set<String> EAGER_ONLY_METHOD_NAMES = Set.of("numpy");
+	/**
+	 * Method names whose invocation is only valid in eager execution (e.g. {@code Tensor.numpy()}).
+	 * <p>
+	 * Both members fail the same way and neither is guarded by Keras's {@code _disallow_inside_tf_function}: they extract concrete values
+	 * out of tensors, which tracing cannot do. {@code Tensor.numpy()} is the definitional case, and {@code Layer.get_weights()} reaches
+	 * {@code batch_get_value} and raises {@code Cannot get value inside Tensorflow graph function}; its own documentation describes it as
+	 * returning the weights "as NumPy arrays". That shared mechanism, rather than how collision-prone a name looks, is what separates this
+	 * set from {@link #EAGER_ONLY_MODEL_METHOD_NAMES}: those are the training-loop orchestrators the guard protects.
+	 * <p>
+	 * {@code set_weights} is deliberately ABSENT, and the asymmetry is measured rather than assumed. Run inside a {@code tf.function} on
+	 * the pinned TensorFlow, {@code get_weights} raises and {@code set_weights} does not, because {@code batch_set_value} builds assign ops
+	 * under tracing while {@code batch_get_value} has nothing to read. Adding {@code set_weights} for symmetry would decline a
+	 * hybridization that is safe (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/962).
+	 */
+	private static final Set<String> EAGER_ONLY_METHOD_NAMES = Set.of("numpy", "get_weights");
+
+	/**
+	 * Tensor member names that only an eager tensor has, so that merely reading one off a symbolic tensor raises
+	 * {@code AttributeError: 'Tensor' object has no attribute 'numpy'} under tracing, whether or not the read value is called
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1100). Eagerly, {@code t.numpy} is a bound method.
+	 * <p>
+	 * {@code get_weights} is deliberately ABSENT: it is not a tensor member, and reading {@code layer.get_weights} without calling it does
+	 * not reach {@code batch_get_value}, so only its call (matched through {@link #EAGER_ONLY_METHOD_NAMES}) raises.
+	 */
+	private static final Set<String> EAGER_ONLY_TENSOR_MEMBER_NAMES = Set.of("numpy");
 
 	/** The Keras {@code Model.fit} member. */
 	private static final String FIT_MEMBER_NAME = "fit";
@@ -87,40 +121,16 @@ class EagerOnlyCallAnalysis {
 
 	/**
 	 * True iff {@code node}, transitively over its call-graph successors, invokes an eager-only API, which raises under {@code tf.function}
-	 * tracing. Only user-defined bodies are scanned, and the traversal walks through TensorFlow library nodes to reach user callbacks, both
-	 * mirroring {@code Util.performsTensorFlowOp}.
+	 * tracing. Only user-defined bodies are scanned, and the traversal walks through TensorFlow library nodes to reach user callbacks
+	 * ({@link Util#reachesInstruction(CallGraph, CGNode, java.util.function.BiPredicate)}).
 	 *
 	 * @param node The call-graph node to check.
 	 * @return True iff an eager-only API call is reachable from {@code node}.
 	 */
 	boolean callsEagerOnlyApi(CGNode node) {
-		return this.callsEagerOnlyApi(node, Sets.newHashSet());
-	}
-
-	private boolean callsEagerOnlyApi(CGNode node, Set<CGNode> seen) {
-		if (!seen.add(node))
-			return false;
-
-		if (!Util.isTensorFlowNode(node)) {
-			IR ir = node.getIR();
-
-			if (ir != null) {
-				DefUse defUse = node.getDU();
-
-				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
-					if (instruction instanceof PythonInvokeInstruction invoke && this.invokesEagerOnlyApi(node, invoke, defUse))
-						return true;
-			}
-		}
-
-		for (Iterator<CGNode> succNodes = this.callGraph.getSuccNodes(node); succNodes.hasNext();) {
-			CGNode succNode = succNodes.next();
-
-			if (this.callsEagerOnlyApi(succNode, seen))
-				return true;
-		}
-
-		return false;
+		return Util.reachesInstruction(this.callGraph, node,
+				(n, instruction) -> instruction instanceof PythonInvokeInstruction invoke && this.invokesEagerOnlyApi(n, invoke, n.getDU())
+						|| instruction instanceof PythonPropertyRead read && this.readsEagerOnlyTensorMember(n, read));
 	}
 
 	/**
@@ -149,11 +159,33 @@ class EagerOnlyCallAnalysis {
 	}
 
 	/**
+	 * True iff {@code read} reads an eager-only tensor member ({@link #EAGER_ONLY_TENSOR_MEMBER_NAMES}) off a tensor-typed receiver. Unlike
+	 * the call form, the member name alone does not block: {@code numpy} is also an ordinary attribute of non-tensors (a user object's
+	 * field, the {@code tf.experimental.numpy} module), whose read traces fine, so the receiver must be typed as a tensor by the
+	 * tensor-type analysis.
+	 *
+	 * @param node The node containing {@code read}.
+	 * @param read The attribute read to test.
+	 * @return True iff {@code read} reads a member a symbolic tensor lacks off a tensor-typed receiver.
+	 */
+	private boolean readsEagerOnlyTensorMember(CGNode node, PythonPropertyRead read) {
+		String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
+
+		if (member == null || !EAGER_ONLY_TENSOR_MEMBER_NAMES.contains(member))
+			return false;
+
+		PointerKey receiver = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, read.getObjectRef());
+		return this.tensorTypedKeys.containsKey(receiver);
+	}
+
+	/**
 	 * True iff the training-surface member call {@code invoke} dispatches to the framework's own guarded endpoint rather than to user code.
-	 * A resolved call-graph target in the TensorFlow namespace is the endpoint itself; a resolved user-defined target is an override, whose
-	 * body the transitive walk of {@link #callsEagerOnlyApi(CGNode)} already analyzes on its own merits, so it does not block here. When
-	 * the call site resolves to no target at all, the receiver decides: a points-to set holding an instance of a summarized TensorFlow
-	 * class is the endpoint. Everything else is the unresolved residue and does not block (allow-on-unresolved): the front end does not yet
+	 * A resolved call-graph target in the TensorFlow namespace is the endpoint itself, and a synthesized method-dispatch trampoline is read
+	 * as the methods it forwards to, since a summarized endpoint is reached through one; any other resolved target, such as a user-defined
+	 * override or a builtin assigned to the member, is not the endpoint, and an override's body is analyzed on its own merits by the
+	 * transitive walk of {@link #callsEagerOnlyApi(CGNode)}, so it does not block here. When the call site resolves to no target at all, or
+	 * only to trampolines that forward nowhere, the receiver decides: a points-to set holding an instance of a summarized TensorFlow class
+	 * is the endpoint. Everything else is the unresolved residue and does not block (allow-on-unresolved): the front end does not yet
 	 * record a user model class's framework base class (wala/ML#571), so a class-hierarchy walk cannot positively identify user model
 	 * subclasses, and blocking the residue would re-import the bare-name false positives this discipline exists to avoid.
 	 *
@@ -163,7 +195,7 @@ class EagerOnlyCallAnalysis {
 	 * @return True iff the call dispatches to the guarded framework endpoint.
 	 */
 	private boolean invokesGuardedModelEndpoint(CGNode node, PythonInvokeInstruction invoke, PythonPropertyRead read) {
-		Set<CGNode> targets = this.callGraph.getPossibleTargets(node, invoke.getCallSite());
+		Set<CGNode> targets = this.dispatchTargets(this.callGraph.getPossibleTargets(node, invoke.getCallSite()), Sets.newHashSet());
 
 		for (CGNode target : targets)
 			if (Util.isTensorFlowNode(target))
@@ -173,5 +205,35 @@ class EagerOnlyCallAnalysis {
 			return false;
 
 		return Util.pointsToType(node, read.getObjectRef(), this.pointerAnalysis, Util.TENSORFLOW_MODULE_TYPE_NAME, false);
+	}
+
+	/**
+	 * The methods {@code targets} dispatch to: each target that is not a trampoline, and, for each trampoline, the methods it forwards to.
+	 * A trampoline is synthesized to bind the receiver and call the method it resolves; one that forwards nowhere contributes no target.
+	 *
+	 * @param targets A call site's call-graph targets.
+	 * @param seen The trampolines already read through.
+	 * @return The targets, with each trampoline replaced by what it calls.
+	 */
+	private Set<CGNode> dispatchTargets(Set<CGNode> targets, Set<CGNode> seen) {
+		Set<CGNode> ret = Sets.newHashSet();
+
+		for (CGNode target : targets)
+			if (!isTrampoline(target))
+				ret.add(target);
+			else if (seen.add(target))
+				ret.addAll(this.dispatchTargets(Sets.newHashSet(this.callGraph.getSuccNodes(target)), seen));
+
+		return ret;
+	}
+
+	/**
+	 * True iff {@code node} is a synthesized method-dispatch trampoline, which the engine names with a {@code trampoline} prefix.
+	 *
+	 * @param node A call-graph node.
+	 * @return True iff {@code node} is a trampoline.
+	 */
+	private static boolean isTrampoline(CGNode node) {
+		return node.getMethod().getName().toString().startsWith(PythonTypes.TRAMPOLINE_METHOD_NAME);
 	}
 }

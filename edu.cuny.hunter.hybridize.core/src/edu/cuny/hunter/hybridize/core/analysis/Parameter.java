@@ -1,11 +1,13 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.TYPE_INFERENCING;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getFullyQualifiedName;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getSelection;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
+import static java.util.Collections.unmodifiableMap;
 import static java.util.Collections.unmodifiableSet;
 import static org.eclipse.core.runtime.Platform.getLog;
 import static org.eclipse.core.runtime.SubMonitor.convert;
@@ -22,7 +24,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.CoreException;
@@ -33,6 +37,7 @@ import org.eclipse.jface.text.IDocument;
 import org.python.pydev.core.docutils.PySelection;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Attribute;
+import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -41,12 +46,12 @@ import org.python.pydev.parser.visitors.TypeInfo;
 
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import com.ibm.wala.cast.ipa.callgraph.AstPointerKeyFactory;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.client.ContainerElements;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.CompoundDim;
@@ -57,17 +62,12 @@ import com.ibm.wala.cast.python.ml.types.TensorType.RaggedDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.SymbolicDim;
 import com.ibm.wala.cast.python.ml.types.TensorType.UnresolvedDim;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
-import com.ibm.wala.classLoader.IClass;
-import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.IMethod;
-import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilder;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
-import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldKey;
-import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
@@ -149,18 +149,55 @@ public final class Parameter {
 
 	/**
 	 * Cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are tensors). Populated
-	 * by {@link #classifyAsTensor} only when Phase 3 ({@link #hasTensorContainer}) executes—i.e., when classification falls through Phase 1
-	 * (type hints) and the Phase 2 (Ariadne) cache is empty. Earlier-returning phases (self, type-hint hit, non-empty Phase 2 result, or
-	 * empty call-graph nodes) leave this field at its default. {@code null} therefore means either classification has not run or it ran but
-	 * did not reach Phase 3.
+	 * by {@link #classifyAsTensor} when Phase 3 ({@link #hasTensorContainer}) executes—i.e., when classification falls through Phase 1
+	 * (type hints) and the Phase 2 (Ariadne) cache is empty, and also on a Phase 2 hit whose every type came from an expected-failure call
+	 * site, where the reduction has nothing of the parameter's own to read and the conforming callers may still pass a container (#888).
+	 * The remaining earlier-returning phases (self, type-hint hit, or empty call-graph nodes) leave this field at its default. {@code null}
+	 * therefore means either classification has not run or it ran without asking the container question.
 	 */
 	private Boolean tensorContainer;
+
+	/**
+	 * Whether a container reaches this parameter from a call-graph node that is <em>not</em> an expected-failure context. Set beside
+	 * {@link #containerElementTypes} whenever the element structure is extracted, and {@code null} otherwise. {@link #tensorContainer}
+	 * reads every node, so a container passed only by a call the tests declare must fail makes it {@code TRUE} while the conforming callers
+	 * pass something else; this separates the two (#976, #892).
+	 */
+	private Boolean conformingTensorContainer;
+
+	/**
+	 * Whether a conforming call passes this parameter a container that a TensorFlow library summary allocated, such as the list
+	 * {@code tf.unstack} or {@code tf.split} returns. Where the analysis reads no element structure for such a container, the tensor
+	 * analysis types the container itself as the one piece the summary stands in for every element, so a flat specification describes a
+	 * piece rather than the list the function receives (#1012). A summary whose element structure is read, such as a directory iterator's
+	 * batch tuple, reduces as an ordinary container.
+	 */
+	private boolean receivesLibraryContainer;
+
+	/**
+	 * This parameter's {@link TensorType}s from the call-graph nodes that are <em>not</em> expected-failure contexts
+	 * ({@link Function#getExpectedFailureNodes()}), which is the evidence a specification may be derived from (#888). Equal to
+	 * {@link #getTensorTypes()} whenever no node is excluded, which is the overwhelmingly common case. Populated alongside it by
+	 * {@link #inferTensorTypes}.
+	 */
+	private Set<TensorType> conformingTensorTypes = Set.of();
+
+	/**
+	 * This parameter's {@link TensorType}s in each call-graph node of the owning function. Read afterwards to tell whether a specification
+	 * would reject the argument a declared failure passes, and so change the exception the failure is declared to raise (#1005), and
+	 * whether that argument differs from what the other calls pass, so that tracing it may raise a different exception (#1014). A node in
+	 * which the parameter is untyped is absent. Populated alongside {@link #conformingTensorTypes}.
+	 */
+	private Map<CGNode, Set<TensorType>> tensorTypesByNode = Map.of();
 
 	/**
 	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run; otherwise
 	 * {@code TRUE} or {@code FALSE}.
 	 */
 	private Boolean tensor;
+
+	/** What {@link #tensor} rests on, so a determined non-tensor can be told from a defaulted one (#971). */
+	private TensorClassificationBasis tensorClassificationBasis;
 
 	/**
 	 * Cached per-position element types of a sequence-container parameter, populated by {@link #extractContainerElements} when Phase 3
@@ -180,6 +217,14 @@ public final class Parameter {
 	private Boolean containerAritiesDisagree;
 
 	/**
+	 * Every reason found that this parameter's container form is not reduced, in the order the extraction finds them:
+	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY} for containers disagreeing on element count, and
+	 * {@link InferenceResult.AbsenceReason#TENSOR_CONTAINER_UNSUPPORTED} for any form the reduction does not model. Both are recorded when
+	 * both hold. Empty when extraction did not run, the form is modeled, or nothing specific was found.
+	 */
+	private List<InferenceResult.AbsenceReason> containerFormReasons = List.of();
+
+	/**
 	 * Cached answer to whether any call site supplies an argument for this parameter, positionally or by keyword. Populated by
 	 * {@link Function#inferSuppliedParameters}. {@code null} until that runs, and deliberately left {@code null} when the answer cannot be
 	 * established (no call-graph node for the owning function, an unresolvable predecessor, or a non-Python invoke), so that
@@ -194,13 +239,12 @@ public final class Parameter {
 	private final Function function;
 
 	/**
-	 * Cache of tensor-container element evidence for each tensor type analysis. Keyed by the analysis object to ensure that cached results
-	 * are discarded when the analysis is re-run and a new object is returned. Each value maps a container instance key (a list/tuple/dict
-	 * whose elements the analysis associates with tensors) to its per-field element types: field name (the stringified catalog constant,
-	 * e.g. {@code "0"}) to the {@link TensorType}s of the {@link InstanceFieldPointerKey} for that field. The key set alone answers the
-	 * boolean container question (Phase 3 of {@link #classifyAsTensor}); the field map is what the nested-spec reduction consumes (#781).
+	 * Cache of the containers of tensors for each tensor type analysis. Keyed by the analysis object to ensure that cached results are
+	 * discarded when the analysis is re-run and a new object is returned. Each value maps an instance key asked about to whether it is a
+	 * container (a list, tuple or dict) holding an element the analysis gives a tensor type. It answers the boolean container question
+	 * (Phase 3 of {@link #classifyAsTensor}).
 	 */
-	private static Map<TensorTypeAnalysis, Map<InstanceKey, Map<String, Set<TensorType>>>> tensorContainersCache = Maps.newConcurrentMap();
+	private static Map<TensorTypeAnalysis, Map<InstanceKey, Boolean>> tensorContainersCache = Maps.newConcurrentMap();
 
 	/**
 	 * Package-private because {@link Parameter}s are only ever constructed inside {@link Function}'s constructor (same package).
@@ -292,6 +336,16 @@ public final class Parameter {
 	}
 
 	/**
+	 * Returns true iff this parameter's declared default value is {@code None} (e.g. the {@code name} of {@code def f(x, name=None)}).
+	 *
+	 * @return True iff this parameter defaults to {@code None}.
+	 */
+	public boolean defaultsToNone() {
+		exprType[] defaults = this.keywordOnly ? this.arguments.kw_defaults : this.arguments.defaults;
+		return this.hasDefault() && defaults[this.index] instanceof Name name && "None".equals(name.id);
+	}
+
+	/**
 	 * Returns PyDev's AST-derived type information for this parameter (i.e. the type-hint annotation in the function's signature), or
 	 * {@code null} if no type hint is declared.
 	 *
@@ -313,7 +367,8 @@ public final class Parameter {
 	/**
 	 * Returns the set of possible {@link TensorType}s for this {@link Parameter}.
 	 *
-	 * @return The set of possible {@link TensorType}s for this {@link Parameter}.
+	 * @return The set of possible {@link TensorType}s for this {@link Parameter}, or {@code null} when they were never inferred, as when
+	 *         the owning function has no call-graph node (#984).
 	 */
 	public Set<TensorType> getTensorTypes() {
 		return this.tensorTypes;
@@ -325,18 +380,68 @@ public final class Parameter {
 
 	/**
 	 * Returns the cached classification of whether this parameter is a tensor container (e.g., a list/tuple/dict whose elements are
-	 * tensors). Populated only when {@link #classifyAsTensor}'s Phase 3 ({@link #hasTensorContainer}) executes; earlier-returning phases
-	 * (self, type-hint hit, non-empty Phase 2 result, or empty call-graph nodes) leave it at the default. Returns {@code null} when
-	 * classification has not run or did not reach Phase 3. Distinct from {@link #getTensorTypes()}: a tensor container is recognized as
-	 * tensor-typed by Phase 3's container detection, but Ariadne does not emit a single {@link TensorType} for the container itself.
-	 * Consumers that distinguish "container of tensors" from "direct tensor" should use this method.
+	 * tensors). Populated when {@link #classifyAsTensor}'s Phase 3 ({@link #hasTensorContainer}) executes, and on a Phase 2 hit whose
+	 * evidence is entirely from expected-failure call sites (#888); the remaining earlier-returning phases (self, type-hint hit, or empty
+	 * call-graph nodes) leave it at the default. Returns {@code null} when classification has not run or did not ask the question. Distinct
+	 * from {@link #getTensorTypes()}: a tensor container is recognized by the container detection, but Ariadne does not emit a single
+	 * {@link TensorType} for the container itself. Consumers that distinguish "container of tensors" from "direct tensor" should use this
+	 * method.
 	 *
-	 * @return {@code TRUE} if Phase 3 classified this parameter as a tensor container, {@code FALSE} if Phase 3 ran and did not classify
-	 *         the parameter as a tensor container, or {@code null} if Phase 3 did not run (classification not started, or returned
-	 *         earlier).
+	 * @return {@code TRUE} if the container check classified this parameter as a tensor container, {@code FALSE} if it ran and did not, or
+	 *         {@code null} if the question was not asked (classification not started, or returned earlier).
 	 */
 	public Boolean isTensorContainer() {
 		return this.tensorContainer;
+	}
+
+	/**
+	 * Returns whether a container reaches this parameter from a conforming call site, i.e. one the tests do not declare must fail. Differs
+	 * from {@link #isTensorContainer()} only where every container reaching the parameter comes from an expected-failure call, which is
+	 * evidence of what the function rejects rather than of what it accepts (#892).
+	 *
+	 * @return {@code TRUE} if a conforming call site passes a container, {@code FALSE} if none does, or {@code null} if the element
+	 *         structure was not extracted.
+	 */
+	public Boolean isConformingTensorContainer() {
+		return this.conformingTensorContainer;
+	}
+
+	/**
+	 * Returns whether a conforming call passes this parameter a container a TensorFlow library summary allocated, whose element structure
+	 * the analysis does not model (#1012).
+	 *
+	 * @return {@code true} when such a container reaches this parameter from a conforming call.
+	 */
+	public boolean receivesLibraryContainer() {
+		return this.receivesLibraryContainer;
+	}
+
+	/**
+	 * Whether a container allocated by a TensorFlow library node reaches the parameter at {@code paramInx} in any of {@code nodes}.
+	 *
+	 * @param paramInx The parameter's index.
+	 * @param nodes The call-graph nodes to read the parameter in.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @return {@code true} when such a container reaches the parameter.
+	 */
+	private static boolean receivesLibraryContainer(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int i = paramInx + 1; // the first argument is the function being invoked.
+
+			if (ir == null || i >= ir.getNumberOfParameters())
+				continue;
+
+			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(i));
+
+			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey))
+				if ((instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey)
+						&& Util.isContainerType(instanceKey.concreteType().getReference())
+						&& Util.isTensorFlowNode(getAllocationSiteInNode(instanceKey).getNode()))
+					return true;
+		}
+
+		return false;
 	}
 
 	/**
@@ -360,6 +465,19 @@ public final class Parameter {
 	 */
 	public Boolean getContainerAritiesDisagree() {
 		return this.containerAritiesDisagree;
+	}
+
+	/**
+	 * Returns every reason found that this parameter's container form is not reduced, in the order the extraction finds them. The first is
+	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY} exactly when {@link #getContainerAritiesDisagree()} is {@code TRUE}, so a
+	 * consumer reporting only the first reports what it did before both could be found.
+	 *
+	 * @return An unmodifiable list of {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY} and
+	 *         {@link InferenceResult.AbsenceReason#TENSOR_CONTAINER_UNSUPPORTED}, each at most once; empty when the form is modeled or no
+	 *         specific reason was found.
+	 */
+	public List<InferenceResult.AbsenceReason> getContainerFormReasons() {
+		return this.containerFormReasons;
 	}
 
 	/**
@@ -650,57 +768,32 @@ public final class Parameter {
 	}
 
 	/**
-	 * Returns true if the given {@link InstanceKey} is contained in the given {@link Set} of tensor container {@link InstanceKey}s. Also
-	 * returns true if the given {@link InstanceKey} represents a container whose constituent elements are contained in the given
-	 * {@link Set}.
+	 * Returns true if the given {@link InstanceKey} is a container of tensors by the given test. Also returns true if the given
+	 * {@link InstanceKey} represents a container whose constituent elements are containers of tensors by it.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
-	 * @param tensorContainers A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * @param tensorContainers A test of whether an {@link InstanceKey} represents a container of tensors.
 	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder}.
-	 * @return True iff either the given {@link InstanceKey} is a member of the given {@link Set} or the given {@link InstanceKey} is itself
-	 *         a container whose elements are (ultimately) contained in the given {@link Set}.
+	 * @return True iff either the given {@link InstanceKey} passes the given test or the given {@link InstanceKey} is itself a container
+	 *         whose elements (ultimately) pass it.
 	 */
-	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
+	private static boolean isTensorContainer(InstanceKey instanceKey, Predicate<InstanceKey> tensorContainers,
 			PythonSSAPropagationCallGraphBuilder builder) {
 		return isTensorContainer(instanceKey, tensorContainers, builder, new HashSet<>());
 	}
 
-	private static boolean isTensorContainer(InstanceKey instanceKey, Set<InstanceKey> tensorContainers,
+	private static boolean isTensorContainer(InstanceKey instanceKey, Predicate<InstanceKey> tensorContainers,
 			PythonSSAPropagationCallGraphBuilder builder, Set<InstanceKey> seen) {
-		if (tensorContainers.contains(instanceKey))
+		if (tensorContainers.test(instanceKey))
 			return true;
 
 		seen.add(instanceKey);
 
-		if (Util.isContainerType(instanceKey.concreteType().getReference())) {
-			PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory())
-					.getPointerKeyForObjectCatalog(instanceKey);
-			Iterable<InstanceKey> catalogPointsToSet = builder.getPointerAnalysis().getPointsToSet(catalogPointerKey);
-
-			for (InstanceKey catalogInstanceKey : catalogPointsToSet)
-				if (catalogInstanceKey instanceof ConstantKey<?>) {
-					ConstantKey<?> constantKey = (ConstantKey<?>) catalogInstanceKey;
-					Object value = constantKey.getValue();
-
-					if (value != null) {
-						IClass concreteType = instanceKey.concreteType();
-						IField field = concreteType.getField(Atom.findOrCreateAsciiAtom(value.toString()));
-						PointerKey pointerKeyForField = builder.getPointerKeyForInstanceField(instanceKey, field);
-						Iterable<InstanceKey> fieldPointsToSet = builder.getPointerAnalysis().getPointsToSet(pointerKeyForField);
-
-						for (InstanceKey fieldInstanceKey : fieldPointsToSet)
-							if (!seen.contains(fieldInstanceKey) && isTensorContainer(fieldInstanceKey, tensorContainers, builder, seen))
-								return true;
-					}
-				} else if (catalogInstanceKey instanceof AllocationSiteInNode || catalogInstanceKey instanceof ScopeMappingInstanceKey) {
-					AllocationSiteInNode asin = getAllocationSiteInNode(catalogInstanceKey);
-
-					if (!seen.contains(asin))
-						return isTensorContainer(asin, tensorContainers, builder, seen);
-				} else
-					throw new IllegalArgumentException(
-							"Not expecting a catalog instance of " + instanceKey + " to be: " + catalogInstanceKey.getClass());
-		}
+		if (Util.isContainerType(instanceKey.concreteType().getReference()))
+			for (PointerKey element : ContainerElements.of(builder, instanceKey).allElements())
+				for (InstanceKey elementValue : builder.getPointerAnalysis().getPointsToSet(element))
+					if (!seen.contains(elementValue) && isTensorContainer(elementValue, tensorContainers, builder, seen))
+						return true;
 
 		return false;
 	}
@@ -709,70 +802,81 @@ public final class Parameter {
 		if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey) {
 			AllocationSiteInNode asin = getAllocationSiteInNode(instanceKey);
 			return asin.concreteType().getReference();
-		} else if (instanceKey instanceof ConstantKey<?>) {
-			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
-			return constantKey.concreteType().getReference();
-		} else
+		} else if (instanceKey instanceof ConstantKey<?> || isPythonScalarKey(instanceKey))
+			// A Python scalar of unknown value has one key per type, whose type is the scalar's (wala/ML#1148).
+			return instanceKey.concreteType().getReference();
+		else
 			throw new IllegalStateException("Not expecting: " + instanceKey.getClass());
 	}
 
 	/**
-	 * Returns, for each container of tensors the given analysis knows, its per-field element types: field name (the stringified catalog
-	 * constant, e.g. {@code "0"}) to the {@link TensorType}s the analysis associates with that field's {@link InstanceFieldPointerKey}. The
-	 * key set answers the boolean container question; the field maps feed the nested-spec reduction (#781).
+	 * Returns which {@link InstanceKey}s represent containers of tensors: the containers some element of which, whatever its position, the
+	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}), and the containers that may hold
+	 * elements the analysis does not list ({@link ContainerElements#isComplete()}), any of which may be a tensor. Each answer is cached per
+	 * analysis.
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
-	 * @param monitor Progress.
-	 * @return Container instance keys mapped to their per-field element {@link TensorType}s.
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the containers.
+	 * @return A test of whether an {@link InstanceKey} represents a container of tensors.
 	 */
-	private static Map<InstanceKey, Map<String, Set<TensorType>>> getTensorContainerElements(TensorTypeAnalysis tensorAnalysis,
-			IProgressMonitor monitor) {
-		SubMonitor progress = SubMonitor.convert(monitor, tensorAnalysis.getNumberOfEvaluations());
+	private static Predicate<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis,
+			PythonSSAPropagationCallGraphBuilder builder) {
+		Map<InstanceKey, Boolean> answers = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> Maps.newConcurrentMap());
 
-		Map<InstanceKey, Map<String, Set<TensorType>>> result = tensorContainersCache.computeIfAbsent(tensorAnalysis, k -> {
-			Map<InstanceKey, Map<String, Set<TensorType>>> tensorContainers = new HashMap<>();
+		return instanceKey -> answers.computeIfAbsent(instanceKey, k -> {
+			if (!Util.isContainerType(k.concreteType().getReference()))
+				return false;
 
-			for (Pair<PointerKey, TensorVariable> pair : k) {
-				PointerKey pointerKey = pair.fst;
+			ContainerElements elements = ContainerElements.of(builder, k);
 
-				if (pointerKey instanceof InstanceFieldPointerKey) {
-					InstanceFieldPointerKey ifpk = (InstanceFieldPointerKey) pointerKey;
-					InstanceKey instanceKey = ifpk.getInstanceKey();
-					TypeReference reference = getTypeReference(instanceKey);
-
-					if (reference != null && Util.isContainerType(reference)) {
-						// We have a match.
-						// check the existence of the tensor variable.
-						assert pair.snd != null : "Tensor variable should be non-null if there is a PK.";
-						Map<String, Set<TensorType>> fields = tensorContainers.computeIfAbsent(instanceKey, x -> new HashMap<>());
-
-						// The field name lives on the concrete key; other implementors still register the container for the boolean
-						// question, only without element evidence, which the reduction reports as an unsupported form.
-						if (ifpk instanceof InstanceFieldKey fieldKey)
-							fields.computeIfAbsent(fieldKey.getField().getName().toString(), x -> new HashSet<>())
-									.addAll(pair.snd.getTypes());
-					}
-				}
-
-				progress.worked(1);
-			}
-
-			return tensorContainers;
+			// A container whose element keys are not all of them may hold a tensor under a key the analysis does not list.
+			return !elements.elementTypes(tensorAnalysis).isEmpty() || !elements.isComplete();
 		});
-
-		progress.done();
-		return result;
 	}
 
 	/**
-	 * Returns a {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * The elements of a value that is a dataset element's structured component, such as the inputs Keras's train step hands {@code call}
+	 * when {@code fit} is given {@code from_tensor_slices(((x, mask), y))}: a tuple at run time that no allocation stands for, so no
+	 * instance key the value points to is a container. A component is a container when the engine reads it as a tuple of known length, or
+	 * when it may be one ({@link ContainerElements#isComplete()} is {@code false}). A component known to be one tensor is not.
 	 *
-	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
-	 * @param monitor Progress.
-	 * @return A {@link Set} of {@link InstanceKey}s representing containers of tensors.
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the value.
+	 * @param value The value, a parameter's local.
+	 * @return The component's elements, or {@code null} when the value is no dataset component that is or may be a container.
 	 */
-	private static Set<InstanceKey> getTensorContainers(TensorTypeAnalysis tensorAnalysis, IProgressMonitor monitor) {
-		return getTensorContainerElements(tensorAnalysis, monitor).keySet();
+	private static ContainerElements datasetContainer(PythonSSAPropagationCallGraphBuilder builder, PointerKey value) {
+		if (ContainerElements.datasetComponent(builder, value) == null)
+			return null;
+
+		ContainerElements elements = ContainerElements.ofValue(builder, value);
+		return elements.arity().isPresent() || !elements.isComplete() ? elements : null;
+	}
+
+	/**
+	 * True iff the parameter at {@code paramInx} has an abstract value in at least one of {@code nodes}, that is, its points-to set is
+	 * non-empty somewhere. When it has none, the analysis models nothing of what arrives, so an empty tensor-type result says nothing about
+	 * whether the argument is a tensor.
+	 *
+	 * @param paramInx The index of the parameter under question.
+	 * @param nodes The call graph nodes corresponding to the parameter's owning function.
+	 * @param builder The {@link CallGraphBuilder}.
+	 * @return True iff the parameter has an abstract value in some node.
+	 */
+	private static boolean hasAbstractValue(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int i = paramInx + 1; // the first argument is the function being invoked.
+
+			if (ir == null || i >= ir.getNumberOfParameters())
+				continue;
+
+			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(i));
+
+			if (builder.getPointerAnalysis().getPointsToSet(pointerKey).iterator().hasNext())
+				return true;
+		}
+
+		return false;
 	}
 
 	/**
@@ -788,9 +892,9 @@ public final class Parameter {
 	protected static boolean tensorAnalysisIncludesParameterContainer(TensorTypeAnalysis tensorAnalysis, int paramInx, Set<CGNode> nodes,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
 		SubMonitor progress = SubMonitor.convert(monitor, "Checking tensor analysis for containers of tensors sent as arguments.", 100);
-		Set<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, progress.split(30));
+		Predicate<InstanceKey> tensorContainers = getTensorContainers(tensorAnalysis, builder);
 
-		SubMonitor loopProgress = progress.split(70).setWorkRemaining(nodes.size());
+		SubMonitor loopProgress = progress.split(100).setWorkRemaining(nodes.size());
 
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
@@ -805,6 +909,12 @@ public final class Parameter {
 			int param = ir.getParameter(i); // the first argument is the function being invoked.
 
 			PointerKey paramePointerKey = builder.getPointerKeyForLocal(node, param);
+
+			if (datasetContainer(builder, paramePointerKey) != null) {
+				progress.done();
+				return true;
+			}
+
 			Iterable<InstanceKey> paramPointsToSet = builder.getPointerAnalysis().getPointsToSet(paramePointerKey);
 
 			for (InstanceKey instanceKey : paramPointsToSet)
@@ -841,11 +951,50 @@ public final class Parameter {
 	}
 
 	/**
+	 * Whether a container reaching this parameter holds an element that cannot be represented as a tensor, Python {@code None} being the
+	 * case this was written for. Set by {@link #extractContainerElements}, read when the signature is reduced.
+	 *
+	 * @see <a href="https://github.com/wala/ML/issues/867">wala/ML issue 867</a>
+	 */
+	private boolean containerHoldsUnrepresentableElement;
+
+	/**
+	 * Whether a container reaching this parameter holds an element that cannot be represented as a tensor.
+	 *
+	 * @return {@code true} when an element defeats any specification written for this parameter.
+	 */
+	public boolean holdsUnrepresentableContainerElement() {
+		return this.containerHoldsUnrepresentableElement;
+	}
+
+	/**
+	 * Extracts the element structure from the conforming nodes and records whether a container reaches the parameter from them at all. The
+	 * second answer reuses {@link #tensorContainer} when no node is excluded, and otherwise asks {@link #hasTensorContainer} of the
+	 * conforming nodes alone, since a container passed only by a call the tests declare must fail is no container the function accepts
+	 * (#976, #892).
+	 *
+	 * @param tensorAnalysis Ariadne's analysis result.
+	 * @param nodes The call graph nodes corresponding to the owning function.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 */
+	private void extractConformingContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, 2);
+		Set<CGNode> conforming = this.conformingNodes(nodes);
+
+		this.conformingTensorContainer = conforming.size() == nodes.size() ? this.tensorContainer
+				: Boolean.valueOf(this.hasTensorContainer(tensorAnalysis, conforming, builder, subMonitor.split(1)));
+
+		this.extractContainerElements(tensorAnalysis, conforming, builder, subMonitor.split(1));
+	}
+
+	/**
 	 * Extracts the per-position element types of this parameter's sequence containers, populating {@link #getContainerElementTypes()} (and
 	 * {@link #getContainerAritiesDisagree()} for the arity-disagreement case). Runs only after Phase 3 classified this parameter as a
 	 * tensor container. The form is modeled iff every instance key the parameter points to is a list or tuple the tensor analysis knows as
-	 * a container of tensors, every such container's object catalog is a set of constant indices forming a contiguous run {@code 0..n-1},
-	 * the containers agree on {@code n}, and every position carries tensor evidence. Anything else leaves
+	 * a container of tensors, the engine knows every such container's length ({@link ContainerElements#arity()}), the containers agree on
+	 * it, and every position carries tensor evidence ({@link ContainerElements#positionTypes(TensorTypeAnalysis)}). Anything else leaves
 	 * {@link #getContainerElementTypes()} {@code null}, which the reduction reports as an unsupported container form (#781).
 	 *
 	 * @param tensorAnalysis Ariadne's analysis result.
@@ -855,10 +1004,29 @@ public final class Parameter {
 	 */
 	private void extractContainerElements(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
 			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
-		Map<InstanceKey, Map<String, Set<TensorType>>> containers = getTensorContainerElements(tensorAnalysis, monitor);
+		Predicate<InstanceKey> containers = getTensorContainers(tensorAnalysis, builder);
+		SubMonitor.done(monitor);
+
+		// What the engine says of each container's elements, asked once per container. A container is an instance key, or the local of a
+		// dataset component that is or may be a tuple, whose elements are recorded when it is found.
+		Map<Object, ContainerElements> elementsOf = new HashMap<>();
+		java.util.function.Function<Object, ContainerElements> elements = c -> elementsOf.computeIfAbsent(c,
+				x -> ContainerElements.of(builder, (InstanceKey) x));
+
+		/*
+		 * Every check below runs whatever an earlier one found, so that each reason that holds is recorded (an arity disagreement and an
+		 * unmodeled form can hold together). The checks run in the order they used to stop at, so the first reason found is the one that
+		 * used to be the only one. What decides the reduction is unchanged: the element types are kept only when nothing was found.
+		 */
+		List<InferenceResult.AbsenceReason> reasons = new ArrayList<>();
 
 		// The container values reaching this parameter, matched by key identity exactly as the boolean Phase 3 matches them.
-		Set<InstanceKey> reaching = new LinkedHashSet<>();
+		Set<Object> reaching = new LinkedHashSet<>();
+
+		// Every sequence reaching the parameter, with element evidence or not, since the engine knows its length either way.
+		Set<Object> sequences = new LinkedHashSet<>();
+
+		boolean mixed = false;
 
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
@@ -869,91 +1037,166 @@ public final class Parameter {
 
 			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(paramInx));
 
+			// A dataset component that is or may be a tuple arrives here as no container instance, so the value itself is the container.
+			// What its local points to stands for no element of it, so it is not read.
+			ContainerElements component = datasetContainer(builder, pointerKey);
+
+			if (component != null) {
+				elementsOf.put(pointerKey, component);
+				reaching.add(pointerKey);
+
+				if (component.arity().isPresent())
+					sequences.add(pointerKey);
+
+				continue;
+			}
+
 			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey)) {
 				TypeReference reference = getTypeReference(instanceKey);
+				boolean sequence = reference != null && Util.isSequenceType(reference);
 
-				if (reference == null || !Util.isSequenceType(reference) || !containers.containsKey(instanceKey)) {
+				if (sequence)
+					sequences.add(instanceKey);
+
+				if (!sequence || !containers.test(instanceKey)) {
 					// A non-sequence value, or a sequence the analysis has no element evidence for, reaches the parameter alongside the
 					// containers. TensorFlow enforces the declared nesting, so a nested spec would reject that value; the form is
 					// unsupported.
-					LOG.info("Parameter " + this + " mixes containers with unmodeled values; not reducing: " + instanceKey + ".");
-					return;
+					if (!mixed)
+						LOG.info("Parameter " + this + " mixes containers with unmodeled values; not reducing: " + instanceKey + ".");
+
+					mixed = true;
+					continue;
 				}
 
 				reaching.add(instanceKey);
 			}
 		}
 
-		if (reaching.isEmpty())
+		if (mixed)
+			addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+
+		if (reaching.isEmpty() && !mixed)
 			return;
 
-		// Arity per container, from the object catalog: a contiguous run of constant indices 0..n-1, or the form is unsupported.
-		int arity = -1;
-
-		for (InstanceKey container : reaching) {
-			Set<String> fieldNames = new HashSet<>();
-			PointerKey catalogPointerKey = ((AstPointerKeyFactory) builder.getPointerKeyFactory()).getPointerKeyForObjectCatalog(container);
-
-			for (InstanceKey catalogInstanceKey : builder.getPointerAnalysis().getPointsToSet(catalogPointerKey)) {
-				if (!(catalogInstanceKey instanceof ConstantKey<?> constantKey) || constantKey.getValue() == null) {
-					// E.g. a list grown by an append loop the analysis cannot enumerate.
-					LOG.info("Parameter " + this + " has a container with a non-constant element structure; not reducing: " + container
-							+ ".");
-					return;
+		/*
+		 * An element whose points-to set holds a null constant cannot be represented by any `TensorSpec`, and a specification is a
+		 * universal claim over arriving values, so one such member defeats it however many tensor members sit beside it. The tensor state
+		 * on the same field is true may-information with other consumers, so the refusal belongs here at emission rather than upstream at
+		 * the channel. The two live on ONE field key when a variable is initialized to `None` and only conditionally reassigned, which is
+		 * why the element's own type evidence never reveals it and the key's points-to set has to be asked separately (wala/ML#867). The
+		 * engine answers it over every element key, an appended one included, since an appended `None` is an element at run time too. It
+		 * answers the None question ONLY; it does not judge other unrepresentable members such as strings or numbers. Not asked of a
+		 * parameter whose values are mixed. That parameter was never asked, and asking now could make this check, which the reduction asks
+		 * first, displace the reason it has always reported.
+		 */
+		if (!mixed)
+			for (Object container : reaching)
+				// Asked only of a container whose element keys are all of them. Of any other, the engine answers yes because an unlisted
+				// element may be anything, which says the elements are unknown, not that one is None. The arity check below declines
+				// that container as an unsupported form.
+				if (elements.apply(container).isComplete() && elements.apply(container).mayHoldNone()) {
+					LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + container
+							+ "; withholding the signature.");
+					this.containerHoldsUnrepresentableElement = true;
+					// Only the scan ends here, not the method. The flag decides whether a specification is withheld, while the element
+					// types extracted below are evidence of what the analysis saw; returning would blank that evidence for exactly the
+					// containers the flag describes, which is a loss the withholding decision does not require.
+					break;
 				}
 
-				String fieldName = constantKey.getValue().toString();
+		// Arity per sequence, as the engine knows it, or the form is unsupported. The engine gives none when the run-time length may
+		// differ from the elements it positions, as for a list built by appending, a comprehension or `extend`. A sequence with no known
+		// arity has none to compare, but the others still do. Nor does a container that may hold elements the analysis does not list: the
+		// types at its positions would describe only the elements it lists, so no position of it is read.
+		int arity = -1;
+		Map<Object, List<Set<TensorType>>> positionTypes = new HashMap<>();
 
-				// wala/ML#773 (Ariadne 0.52.58) stores comprehension elements under the same synthetic channel `append` uses, so a
-				// comprehension-built container's catalog also carries the analysis-internal key alongside its numeric indices. It
-				// is not a program field; filtering it keeps the reduction for containers whose numeric indices are contiguous.
-				// See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/807.
-				if (PythonSSAPropagationCallGraphBuilder.LIST_APPEND_CONTENTS_FIELD.equals(fieldName))
-					continue;
+		for (Object container : mixed ? sequences : reaching) {
+			ContainerElements containerElements = elements.apply(container);
 
-				fieldNames.add(fieldName);
+			if (!containerElements.isComplete()) {
+				LOG.info("Parameter " + this + " has a container that may hold elements the analysis does not list; not reducing: "
+						+ container + ".");
+				addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				continue;
 			}
 
-			for (int j = 0; j < fieldNames.size(); j++)
-				if (!fieldNames.contains(String.valueOf(j))) {
-					LOG.info("Parameter " + this + " has a container with non-contiguous indices; not reducing: " + container + ".");
-					return;
-				}
+			OptionalInt known = containerElements.arity();
+
+			if (known.isEmpty()) {
+				LOG.info(
+						"Parameter " + this + " has a container whose length the analysis does not know; not reducing: " + container + ".");
+				addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				continue;
+			}
+
+			int containerArity = known.getAsInt();
+
+			if (reaching.contains(container))
+				positionTypes.put(container, containerElements.positionTypes(tensorAnalysis));
 
 			if (arity == -1)
-				arity = fieldNames.size();
-			else if (arity != fieldNames.size()) {
-				LOG.info("Parameter " + this + " receives sequences of disagreeing arities (" + arity + " vs " + fieldNames.size() + ").");
-				this.containerAritiesDisagree = TRUE;
-				return;
+				arity = containerArity;
+			else if (arity != containerArity) {
+				LOG.info("Parameter " + this + " receives sequences of disagreeing arities (" + arity + " vs " + containerArity + ").");
+				addContainerFormReason(reasons, InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY);
 			}
+		}
+
+		// Every position of every container with a known arity must carry tensor evidence, whether or not the arities agree.
+		for (Object container : reaching) {
+			List<Set<TensorType>> types = positionTypes.get(container);
+
+			if (types == null)
+				continue;
+
+			for (int j = 0; j < types.size(); j++)
+				if (types.get(j).isEmpty()) {
+					LOG.info("Parameter " + this + " has no tensor evidence for element " + j + " of: " + container + "; not reducing.");
+					addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				}
+		}
+
+		this.containerFormReasons = List.copyOf(reasons);
+
+		if (!reasons.isEmpty()) {
+			// What the arity flag always meant: the disagreement is what was found first.
+			if (reasons.get(0) == InferenceResult.AbsenceReason.HETEROGENEOUS_ARITY)
+				this.containerAritiesDisagree = TRUE;
+
+			return;
 		}
 
 		if (arity <= 0)
 			return;
 
-		// Union the element types per position across the reaching containers; a position with no evidence leaves the form unsupported.
-		List<Set<TensorType>> elements = new ArrayList<>(arity);
+		// Union the element types per position across the reaching containers, which now all agree on the arity and carry evidence at
+		// every position.
+		List<Set<TensorType>> union = new ArrayList<>(arity);
 
 		for (int j = 0; j < arity; j++) {
-			Set<TensorType> union = new HashSet<>();
+			Set<TensorType> position = new HashSet<>();
 
-			for (InstanceKey container : reaching) {
-				Set<TensorType> types = containers.get(container).get(String.valueOf(j));
+			for (Object container : reaching)
+				position.addAll(positionTypes.get(container).get(j));
 
-				if (types == null || types.isEmpty()) {
-					LOG.info("Parameter " + this + " has no tensor evidence for element " + j + " of: " + container + "; not reducing.");
-					return;
-				}
-
-				union.addAll(types);
-			}
-
-			elements.add(unmodifiableSet(union));
+			union.add(unmodifiableSet(position));
 		}
 
 		this.containerAritiesDisagree = FALSE;
-		this.containerElementTypes = elements;
+		this.containerElementTypes = union;
+	}
+
+	/**
+	 * Adds {@code reason} to {@code reasons} unless it is already there, keeping the order reasons are first found in.
+	 *
+	 * @param reasons The reasons found so far.
+	 * @param reason A reason found.
+	 */
+	private static void addContainerFormReason(List<InferenceResult.AbsenceReason> reasons, InferenceResult.AbsenceReason reason) {
+		if (!reasons.contains(reason))
+			reasons.add(reason);
 	}
 
 	/**
@@ -985,6 +1228,9 @@ public final class Parameter {
 	 */
 	void inferTensorTypes(TensorTypeAnalysis analysis) {
 		Set<TensorType> result = new HashSet<>();
+		Set<TensorType> conforming = new HashSet<>();
+		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
+		Map<CGNode, Set<TensorType>> byNode = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : analysis) {
 			PointerKey pointerKey = pair.fst;
@@ -995,11 +1241,78 @@ public final class Parameter {
 					if (tensorVariable == null)
 						throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
 					result.addAll(tensorVariable.getTypes());
+
+					// The evidence is per-node, so which node supplied what is the attribution an expected-failure exclusion needs
+					// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
+					if (!excluded.contains(localPointerKey.getNode()))
+						conforming.addAll(tensorVariable.getTypes());
+
+					byNode.computeIfAbsent(localPointerKey.getNode(), k -> new HashSet<>()).addAll(tensorVariable.getTypes());
 				}
 			}
 		}
 
 		this.setTensorTypes(unmodifiableSet(result));
+		this.conformingTensorTypes = unmodifiableSet(conforming);
+		this.tensorTypesByNode = unmodifiableMap(byNode);
+	}
+
+	/**
+	 * This parameter's {@link TensorType}s in the call-graph node {@code node} of the owning function, such as the argument a declared
+	 * failure passes there (#1005).
+	 *
+	 * @param node A call-graph node of the owning function.
+	 * @return The types observed for this parameter in {@code node}; empty when it is untyped there.
+	 */
+	Set<TensorType> getTensorTypes(CGNode node) {
+		return this.tensorTypesByNode.getOrDefault(node, Set.of());
+	}
+
+	/**
+	 * This parameter's {@link TensorType}s in the call-graph nodes of the owning function other than {@code nodes}, such as what the calls
+	 * not declared to fail pass it (#1014).
+	 *
+	 * @param nodes Call-graph nodes of the owning function to leave out.
+	 * @return The types observed for this parameter in every other node.
+	 */
+	Set<TensorType> getTensorTypesOutside(Set<CGNode> nodes) {
+		Set<TensorType> ret = new HashSet<>();
+
+		for (Map.Entry<CGNode, Set<TensorType>> entry : this.tensorTypesByNode.entrySet())
+			if (!nodes.contains(entry.getKey()))
+				ret.addAll(entry.getValue());
+
+		return ret;
+	}
+
+	/**
+	 * Returns this parameter's {@link TensorType}s excluding those observed only at expected-failure call sites, the evidence the signature
+	 * reduction is entitled to use (#888). Classification deliberately keeps reading {@link #getTensorTypes()}: whether the parameter is
+	 * tensor-typed is a fact about the program, while what specification may be written for it is a fact about the conforming callers.
+	 *
+	 * @return The conforming tensor types; equal to {@link #getTensorTypes()} when nothing is excluded.
+	 */
+	public Set<TensorType> getConformingTensorTypes() {
+		return this.conformingTensorTypes;
+	}
+
+	/**
+	 * The given nodes less the owning {@link Function}'s expected-failure contexts, i.e. the nodes whose evidence a specification may be
+	 * derived from (#888). The node-level filter {@link #inferTensorTypes} applies to the tensor types, applied to the container evidence
+	 * for the same reason: what a call the tests declare must fail passes describes an input the function rejects.
+	 *
+	 * @param nodes The owning function's call-graph nodes.
+	 * @return The conforming subset; the argument itself whenever nothing is excluded, which is the overwhelmingly common case.
+	 */
+	private Set<CGNode> conformingNodes(Set<CGNode> nodes) {
+		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
+
+		if (excluded.isEmpty())
+			return nodes;
+
+		Set<CGNode> conforming = new LinkedHashSet<>(nodes);
+		conforming.removeAll(excluded);
+		return conforming;
 	}
 
 	private exprType getNameExpr() {
@@ -1078,15 +1391,18 @@ public final class Parameter {
 
 		try {
 			// don't consider `self` as a tensor.
-			if (this.isSelf())
+			if (this.isSelf()) {
+				this.tensorClassificationBasis = TensorClassificationBasis.SELF;
 				return this.tensor = FALSE;
+			}
 
 			// Populate the tensor-types cache up front whenever Ariadne has anything to say about this parameter, so subsequent reads via
 			// `getTensorTypes()` (no-arg) see a consistent value regardless of which classification phase below fires. In particular, the
 			// type-hint shortcut (Phase 1) `return`s before reaching the Ariadne query; populating here keeps the cache correct for
 			// type-hint parameters that Ariadne also classified from the call site.
-			if (!nodes.isEmpty())
+			if (!nodes.isEmpty()) {
 				this.inferTensorTypes(tensorAnalysis);
+			}
 
 			// check a special case where we consider type hints.
 			boolean followTypeHints = this.function.getAlwaysFollowTypeHints() || this.function.getHybridizationParameters() != null
@@ -1100,7 +1416,20 @@ public final class Parameter {
 				if (this.hasTensorTypeHint(subMonitor.split(1))) {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to a type hint.");
 					this.function.addInfo(TYPE_INFERENCING, "Used a type hint to infer tensor type for parameter: " + this.getName() + ".");
+
+					if (!nodes.isEmpty() && this.getConformingTensorTypes().isEmpty()) {
+						// A hint answers whether the parameter is tensor-like, not what specification may be written for it, and an
+						// annotation carries no dtype (#494). Where no conforming call-site evidence exists either, what the callers pass
+						// may still be a container whose elements do carry one, so ask rather than return on the hint alone (#899).
+						// Returning here is what kept the recovery of #888 from reaching an annotated parameter at all.
+						this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+
+						if (this.tensorContainer)
+							this.extractConformingContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
+					}
+
 					subMonitor.worked(2);
+					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_TYPE_HINT;
 					return this.tensor = TRUE;
 				}
 			} else
@@ -1121,7 +1450,26 @@ public final class Parameter {
 					LOG.info(this.function + " likely has a tensor parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor type for parameter: " + this.getName() + ".");
+
+					// A tensor typing does not settle whether the parameter is a container. A tuple of tensors reaching a parameter
+					// reports as the union of its elements' types, which is indistinguishable from a tensor parameter that several
+					// call sites type differently, so returning on the typing alone leaves the question unasked rather than answered
+					// (#888). It is worth asking of every tensor-typed parameter, not only where the parameter's own evidence is
+					// unusable (#892's case): the container catalog is built once per analysis, and the question resolves against the
+					// parameter's own instance keys, so it costs a points-to walk and answers no where no container is involved. The
+					// verdict below is TRUE either way, so this asks a further question about an already tensor-typed parameter and
+					// moves no precondition; what it changes is the specification the reduction may write.
+					this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+					this.receivesLibraryContainer = receivesLibraryContainer(this.getIndex(), this.conformingNodes(nodes), builder);
+
+					if (this.tensorContainer)
+						// The extraction reads the conforming nodes alone, on the same ground the tensor types do: a value passed by a
+						// call the tests declare must fail describes what the function rejects, so letting it stand beside the
+						// containers would report the form unsupported on the strength of a rejected call (#892).
+						this.extractConformingContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
+
 					subMonitor.worked(2);
+					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_ANALYSIS;
 					return this.tensor = TRUE;
 				}
 
@@ -1130,17 +1478,29 @@ public final class Parameter {
 				// Phase 3: check for containers of tensors.
 				boolean isContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
 				this.tensorContainer = isContainer;
+				this.receivesLibraryContainer = receivesLibraryContainer(this.getIndex(), this.conformingNodes(nodes), builder);
 				if (isContainer) {
 					// Surface the elements' types for the nested-spec reduction (#781); the boolean verdict stands regardless of whether
-					// the container form is one the reduction models.
-					this.extractContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
+					// the container form is one the reduction models. The extraction reads the conforming nodes alone, on the same ground
+					// the tensor types do: a value passed by a call the tests declare must fail describes what the function rejects, so
+					// letting it stand beside the containers would report the form unsupported on the strength of a rejected call (#888).
+					this.extractConformingContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
 					LOG.info(this.function + " likely has a tensor-like parameter: " + this.getName() + " due to tensor analysis.");
 					this.function.addInfo(TYPE_INFERENCING,
 							"Used tensor type analysis to infer tensor container type for parameter: " + this.getName() + ".");
+					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_CONTAINER;
 					return this.tensor = TRUE;
 				}
 			} else
 				subMonitor.worked(2);
+
+			// The two situations that reach this one verdict. With the function in the call graph, both phases above ran and neither
+			// classified the parameter as tensor-like, which under contract-compliant generators is the analysis's bottom and so a
+			// determination. With the function absent from it, both phases were SKIPPED and nothing was concluded at all. They are
+			// indistinguishable in the verdict, which is what #971 is about, so the basis records which one happened.
+			this.tensorClassificationBasis = nodes.isEmpty() ? TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN
+					: hasAbstractValue(this.getIndex(), nodes, builder) ? TensorClassificationBasis.ANALYZED_NOT_TENSOR
+							: TensorClassificationBasis.NO_ABSTRACT_VALUE;
 
 			return this.tensor = FALSE;
 		} finally {
@@ -1155,6 +1515,16 @@ public final class Parameter {
 	 */
 	public Boolean isTensor() {
 		return this.tensor;
+	}
+
+	/**
+	 * What {@link #isTensor()}'s verdict rests on. A {@code FALSE} verdict alone does not say whether the analysis ran and concluded that
+	 * the parameter is not a tensor, or did not run at all, and those call for opposite work (#971).
+	 *
+	 * @return The basis, or {@code null} if {@link #classifyAsTensor} has not yet run.
+	 */
+	public TensorClassificationBasis getTensorClassificationBasis() {
+		return this.tensorClassificationBasis;
 	}
 
 	/**

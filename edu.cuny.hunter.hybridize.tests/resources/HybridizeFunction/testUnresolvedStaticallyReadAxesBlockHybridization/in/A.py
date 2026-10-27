@@ -1,5 +1,7 @@
 import tensorflow as tf
 
+model = tf.keras.Sequential([tf.keras.layers.Dense(3)])
+
 
 def arith(x):
     return tf.range(x.shape[-1] - 1, -1, -1)
@@ -8,6 +10,16 @@ def arith(x):
 def reshape_derived(x):
     padded = tf.pad(x, [[0, 0], [1, 0]])
     return tf.reshape(padded, [-1, padded.shape[1]])
+
+
+# A container parameter whose only static read is the unpack itself, which is rank-sensitive
+# rather than extent-sensitive. TensorFlow enforces a declared sequence's length, so a
+# two-name unpack under a two-element specification cannot fail on structure, and the read is
+# resolved by the declared structure. Before #914 no read against a container resolved,
+# because the check could not attribute one to an element and refused instead.
+def unpacked(pair):
+    first, second = pair
+    return model(first) + tf.reduce_sum(second)
 
 
 def dynamic_read(x):
@@ -70,3 +82,5 @@ assert prefixed(a).shape == (2, 4)
 assert prefixed(b).shape == (2, 5)
 assert bounded(a).shape == (4, 3)
 assert bounded(b).shape == (5, 3)
+unpacked((tf.ones((2, 4)), tf.ones((4,))))
+unpacked((tf.ones((2, 4)), tf.ones((5,))))

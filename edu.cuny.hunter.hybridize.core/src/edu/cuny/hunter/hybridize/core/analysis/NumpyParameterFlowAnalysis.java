@@ -1,19 +1,24 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.WeakHashMap;
 
-import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
+import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
@@ -31,11 +36,15 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
+import com.ibm.wala.ssa.ISSABasicBlock;
+import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSAPhiInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.util.collections.Pair;
+import com.ibm.wala.util.graph.dominators.Dominators;
 
 /**
  * The parameter-flow numpy precondition: an interprocedural, two-color taint analysis deciding whether a function (transitively through
@@ -99,17 +108,6 @@ class NumpyParameterFlowAnalysis {
 	private static final String NEGATION_OPERATOR_NAME = "neg";
 
 	/**
-	 * Global-read names identifying the numpy/scipy modules by import alias, mirroring {@code Util}'s TensorFlow module global names.
-	 * Unlike the TensorFlow fallback, whose over-recognition is incompleteness-safe (it only lets an eager function hybridize),
-	 * over-recognition here over-blocks: a non-numpy global named {@code np} would fail the precondition. Accepted safety-first; the
-	 * evaluation measures the cost. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
-	 */
-	private static final Set<String> NUMPY_MODULE_GLOBAL_NAMES = Set.of("global numpy", "global np", "global scipy", "global sp");
-
-	/** Type-name prefixes of the numpy/scipy module objects, for the points-to (precise) branch of the module test. */
-	private static final Set<String> NUMPY_MODULE_TYPE_NAME_PREFIXES = Set.of("Lnumpy", "Lscipy");
-
-	/**
 	 * True iff {@code node} (transitively through user-defined callees) applies a numpy/scipy API to a value flowing from its parameters.
 	 * Under {@code @tf.function}, parameter values become symbolic tensors during tracing, and numpy/scipy applied to them raises, so such
 	 * a function crashes on first call when hybridized. The gate is an SSA def-use taint slice rather than a points-to intersection: a
@@ -119,19 +117,49 @@ class NumpyParameterFlowAnalysis {
 	 * when a covered dimension is provably dynamic, decided per-dimension from the source tensor's inferred {@link TensorType} (the
 	 * per-dimension shape-aware verdict of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747), with the shape's
 	 * provenance propagated across call boundaries so staticness resolves interprocedurally
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). Known narrowings, each documented on the issue:
-	 * positional arguments only cross call sites, field-mediated and subscript-store flows are not tracked, and a method's receiver is
-	 * never a source. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). A value stored into a container or an object (a tuple,
+	 * list, or dict element, a subscript store, or an attribute store) taints the whole object, so its reads and the calls it is passed to
+	 * are followed. An attribute store thus taints the object's other attributes too, including those of {@code self}. Tainting only the
+	 * stored attribute waits for the engine to report the store's kind rather than this analysis decoding it: the engine marks a subscript
+	 * write (wala/ML#1100), but a tuple, list, or dict literal's element write is no subscript either, so that mark alone does not yet tell
+	 * an attribute store from a literal's element. Known narrowings, each documented on the issue: positional arguments only cross call
+	 * sites, a store taints only the object as this function refers to it, not its other references, an attribute written in one method and
+	 * read in another method called on the same object is not followed (a call such as {@code self.read()} passes the receiver in no
+	 * argument slot, only the method read from it, so the callee is never scanned with a tainted receiver, though a call passing the object
+	 * as an argument, such as {@code read(self)}, is followed), and a method's receiver is never a source. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/740.
 	 *
 	 * @param node The call-graph node to check.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
 	 * @return True iff a numpy/scipy API is applied to a parameter-flowing value reachable from {@code node}.
 	 */
 	boolean appliesNumpyToParameters(CGNode node, boolean method) {
+		NumpyScanResult result = this.scanParameters(node, method);
+		return result != null && result.sink();
+	}
+
+	/**
+	 * True iff {@code node} (transitively through the user-defined callees and closures {@link #appliesNumpyToParameters}'s walk reaches)
+	 * applies Python to a tensor in a way tracing cannot carry (issues 1074 and 1083): {@code bool} of it, or a branch on it whose paths
+	 * disagree about {@code None}. That the condition or the argument is a tensor is read from the tensor-type analysis, not from the
+	 * parameter flow: a value derived from a parameter may be a Python value, such as the {@code bool} an {@code is None} test yields,
+	 * which tracing decides. Shares {@link #appliesNumpyToParameters}'s walk and memo.
+	 *
+	 * @param node The call-graph node to check.
+	 * @param method True iff the function is an instance method, in which case the receiver slot is not a taint source.
+	 * @return True iff such a use is reachable from {@code node}.
+	 */
+	boolean appliesUntraceablePythonToParameters(CGNode node, boolean method) {
+		NumpyScanResult result = this.scanParameters(node, method);
+		return result != null && result.untraceable();
+	}
+
+	/** The scan of {@code node} seeded with its parameters, or {@code null} when it has no IR or no parameter to seed. */
+	private NumpyScanResult scanParameters(CGNode node, boolean method) {
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return false;
+			return null;
 
 		// Parameter value numbers: slot 0 is the function object itself; slot 1 is the receiver for an instance method. Neither is a
 		// taint source—tainting the receiver would block any method mixing numpy over scalar fields with sanitized tensor use.
@@ -142,9 +170,9 @@ class NumpyParameterFlowAnalysis {
 			sources.add(parameters[i]);
 
 		if (sources.isEmpty())
-			return false;
+			return null;
 
-		return this.scanForTaintedNumpySinks(node, sources, new HashSet<>(), new HashMap<>()).sink();
+		return this.scanForTaintedNumpySinks(node, sources, new HashSet<>(), new HashMap<>(), new HashSet<>(), new HashMap<>());
 	}
 
 	/**
@@ -157,8 +185,10 @@ class NumpyParameterFlowAnalysis {
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
 			if (pair.fst instanceof LocalPointerKey local && pair.snd != null)
-				index.computeIfAbsent(local.getNode(), n -> new HashMap<>()).computeIfAbsent(local.getValueNumber(), v -> new HashSet<>())
-						.addAll(pair.snd.getTypes());
+				// A None member is no tensor here; it matters only to the signature (wala/ML#1040).
+				pair.snd.getTypes().stream().filter(type -> !type.isNone())
+						.forEach(type -> index.computeIfAbsent(local.getNode(), n -> new HashMap<>())
+								.computeIfAbsent(local.getValueNumber(), v -> new HashSet<>()).add(type));
 
 		return index;
 	}
@@ -341,13 +371,127 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/**
+	 * The Python builtins whose application to a symbolic tensor tracing cannot evaluate (issue 1074). Only {@code bool}: AutoGraph
+	 * converts {@code int} and {@code float} of a tensor to casts, measured on TensorFlow 2.9.3, so those trace.
+	 */
+	private static final Set<String> UNTRACEABLE_CONVERSION_BUILTIN_NAMES = Set.of("bool");
+
+	/**
+	 * True iff {@code node}'s own body applies {@code bool} to a tensor, or branches on a tensor with paths that disagree about
+	 * {@code None}, where a tensor is a value the tensor-type analysis types (issues 1074 and 1083).
+	 *
+	 * @param node The call-graph node whose body is read.
+	 * @param ir The node's IR.
+	 * @param defUse The node's def-use chains.
+	 * @return True iff such a use appears in the body.
+	 */
+	private boolean appliesUntraceablePythonToTensors(CGNode node, IR ir, DefUse defUse) {
+		Set<SSAConditionalBranchInstruction> tensorBranches = new HashSet<>();
+
+		for (SSAInstruction instruction : ir.getInstructions())
+			if (instruction instanceof SSAConditionalBranchInstruction branch) {
+				if (this.usesTensor(node, branch, 0))
+					tensorBranches.add(branch);
+			} else if (instruction instanceof PythonInvokeInstruction invoke && invokesUntraceableConversion(invoke, defUse)
+					&& this.usesTensor(node, invoke, 1))
+				// Slot 0 of an invoke is the callee itself; the arguments start at 1.
+				return true;
+
+		return !tensorBranches.isEmpty() && pathsDisagreeOnNone(ir, tensorBranches);
+	}
+
+	/** True iff a use of {@code instruction} at or after {@code from} is a value the tensor-type analysis types in {@code node}. */
+	private boolean usesTensor(CGNode node, SSAInstruction instruction, int from) {
+		for (int i = from; i < instruction.getNumberOfUses(); i++)
+			if (instruction.getUse(i) >= 0 && !this.lookupTensorTypes(node, instruction.getUse(i)).isEmpty())
+				return true;
+
+		return false;
+	}
+
+	/** True iff {@code invoke} calls one of {@link #UNTRACEABLE_CONVERSION_BUILTIN_NAMES}, read lexically from the script's scope. */
+	private static boolean invokesUntraceableConversion(PythonInvokeInstruction invoke, DefUse defUse) {
+		SSAInstruction def = defUse.getDef(invoke.getUse(0));
+
+		if (!(def instanceof AstLexicalRead lexical))
+			return false;
+
+		Access[] accesses = lexical.getAccesses();
+		return accesses.length > 0 && UNTRACEABLE_CONVERSION_BUILTIN_NAMES.contains(accesses[0].getName().fst);
+	}
+
+	/**
+	 * True iff the paths out of one of {@code branches} disagree about {@code None} (issue 1074): one successor's region returns
+	 * {@code None}, explicitly or by falling off the end, while the other's returns a value, or the block where the two paths rejoin merges
+	 * {@code None} with a value. AutoGraph converts a branch on a tensor to {@code tf.cond}, which requires both paths to produce the same
+	 * structure, so either shape raises under tracing. Returns after the paths rejoin are not compared, since they follow the branch on
+	 * every path.
+	 *
+	 * @param ir The IR containing the branches.
+	 * @param branches Conditional branches on a value derived from the function's parameters.
+	 * @return Whether the paths of some branch disagree about None.
+	 */
+	private static boolean pathsDisagreeOnNone(IR ir, Set<SSAConditionalBranchInstruction> branches) {
+		var cfg = ir.getControlFlowGraph();
+		Dominators<ISSABasicBlock> dominators = Dominators.make(cfg, cfg.entry());
+		SymbolTable symbols = ir.getSymbolTable();
+
+		for (SSAConditionalBranchInstruction branch : branches) {
+			ISSABasicBlock block = cfg.getBlockForInstruction(branch.iIndex());
+			List<ISSABasicBlock> successors = new ArrayList<>(cfg.getNormalSuccessors(block));
+
+			if (successors.size() == 2) {
+				Set<Boolean> first = returnKinds(ir, dominators, successors.get(0), symbols);
+				Set<Boolean> second = returnKinds(ir, dominators, successors.get(1), symbols);
+
+				if (first.contains(true) && second.contains(false) || first.contains(false) && second.contains(true))
+					return true;
+			}
+
+			for (ISSABasicBlock merge : cfg)
+				if (dominators.getIdom(merge) == block)
+					for (Iterator<SSAPhiInstruction> phis = merge.iteratePhis(); phis.hasNext();) {
+						SSAPhiInstruction phi = phis.next();
+						boolean none = false;
+						boolean value = false;
+
+						for (int i = 0; i < phi.getNumberOfUses(); i++)
+							if (symbols.isNullConstant(phi.getUse(i)))
+								none = true;
+							else
+								value = true;
+
+						if (none && value)
+							return true;
+					}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether the returns in the region {@code head} dominates yield {@code None} (true) or a value (false). A return without a value is
+	 * {@code None}.
+	 */
+	private static Set<Boolean> returnKinds(IR ir, Dominators<ISSABasicBlock> dominators, ISSABasicBlock head, SymbolTable symbols) {
+		Set<Boolean> kinds = new HashSet<>();
+
+		for (SSAInstruction instruction : ir.getInstructions())
+			if (instruction instanceof SSAReturnInstruction ret
+					&& dominators.isDominatedBy(ir.getControlFlowGraph().getBlockForInstruction(ret.iIndex()), head))
+				kinds.add(ret.returnsVoid() || ret.getResult() < 0 || symbols.isNullConstant(ret.getResult()));
+
+		return kinds;
+	}
+
+	/**
 	 * The result of a two-color taint scan: whether numpy hit a value-tainted argument, whether a value taint escaped this node, and the
 	 * {@link ShapeDescriptor} the node's returns carry, so a caller keeps resolving staticness across the return boundary
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/756). The descriptor is {@code null} when no shape-tainted
 	 * value is returned <em>or</em> any returned shape lacks a descriptor (provenance is dropped rather than partially trusted);
 	 * conflicting tracked returns merge to the ambiguous descriptor instead.
 	 */
-	private record NumpyScanResult(boolean sink, boolean valueEscapes, ShapeDescriptor returnDescriptor) {
+	private record NumpyScanResult(boolean sink, boolean valueEscapes, ShapeDescriptor returnDescriptor, boolean untraceable) {
 	}
 
 	/**
@@ -372,25 +516,49 @@ class NumpyParameterFlowAnalysis {
 	 * {@code get_shape_list}), whose result then describes the tensor argument's shape — otherwise the result is value-tainted. A callee's
 	 * {@code valueEscapes} bit records whether any value taint reached a non-shape use inside it, and is what distinguishes a shape
 	 * extractor from a value carrier. A {@code dtype} read launders taint entirely. Memoized on (node, value seed, shape seed, shape
-	 * descriptor seed) with an optimistic cycle guard. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * descriptor seed, lexical seeds) with an optimistic cycle guard. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/747.
+	 * <p>
+	 * Taint also crosses into nested functions through their closures
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061). A nested function (a comprehension, a lambda, or a
+	 * nested {@code def}) reads an enclosing function's variable lexically rather than receiving it as an argument, and the enclosing
+	 * function publishes the variable with a lexical write, including a prologue write for each parameter a nested function reads. A
+	 * tainted value written lexically taints the variable, identified by its name and defining scope, and a lexical read of a tainted
+	 * variable, in this node or in any function scanned from it, inherits the taint. Since a nested function need not receive any tainted
+	 * argument, every function nested in a tainted variable's defining scope that this node calls is also scanned with the lexical taint,
+	 * and its call's result is value-tainted when a tainted value escapes it. A nested function's own write to an enclosing variable
+	 * ({@code nonlocal}) is not followed.
+	 *
+	 * @param node The node to scan.
+	 * @param valueSeed The value-tainted value numbers.
+	 * @param shapeSeed The shape-tainted value numbers.
+	 * @param shapeDescriptorSeed The descriptors of the shape-tainted value numbers whose provenance is tracked.
+	 * @param lexicalValueSeed The value-tainted lexical variables, as (name, defining scope).
+	 * @param lexicalShapeSeed The shape-tainted lexical variables, each with its {@link ShapeDescriptor} ({@code null} when untracked).
+	 * @return The scan's result.
 	 */
 	private NumpyScanResult scanForTaintedNumpySinks(CGNode node, Set<Integer> valueSeed, Set<Integer> shapeSeed,
-			Map<Integer, ShapeDescriptor> shapeDescriptorSeed) {
+			Map<Integer, ShapeDescriptor> shapeDescriptorSeed, Set<Pair<String, String>> lexicalValueSeed,
+			Map<Pair<String, String>, ShapeDescriptor> lexicalShapeSeed) {
 		Map<Integer, String> descriptorKey = new TreeMap<>();
 		shapeDescriptorSeed.forEach((value, descriptor) -> descriptorKey.put(value, this.renderDescriptorForMemoKey(descriptor)));
-		String key = this.callGraph.getNumber(node) + ":" + new TreeSet<>(valueSeed) + ":" + new TreeSet<>(shapeSeed) + ":" + descriptorKey;
+		Map<String, String> lexicalShapeKey = new TreeMap<>();
+		lexicalShapeSeed.forEach((name, descriptor) -> lexicalShapeKey.put(name.toString(),
+				descriptor == null ? "?" : this.renderDescriptorForMemoKey(descriptor)));
+		String key = this.callGraph.getNumber(node) + ":" + new TreeSet<>(valueSeed) + ":" + new TreeSet<>(shapeSeed) + ":" + descriptorKey
+				+ ":" + new TreeSet<>(lexicalValueSeed.stream().map(Pair::toString).toList()) + ":" + lexicalShapeKey;
 		NumpyScanResult cached = this.memo.get(key);
 
 		if (cached != null)
 			return cached;
 
 		// Optimistic cycle guard: a recursive revisit contributes nothing new.
-		this.memo.put(key, new NumpyScanResult(false, false, null));
+		this.memo.put(key, new NumpyScanResult(false, false, null, false));
 
 		IR ir = node.getIR();
 
 		if (ir == null)
-			return new NumpyScanResult(false, false, null);
+			return new NumpyScanResult(false, false, null, false);
 
 		DefUse defUse = node.getDU();
 		Set<Integer> valueTainted = new HashSet<>(valueSeed);
@@ -401,19 +569,110 @@ class NumpyParameterFlowAnalysis {
 		Deque<Integer> worklist = new ArrayDeque<>();
 		worklist.addAll(valueSeed);
 		worklist.addAll(shapeSeed);
+		// The tainted lexical variables: those inherited from the caller, and those this node writes from a tainted value (issue 1061).
+		Set<Pair<String, String>> lexicalValues = new HashSet<>(lexicalValueSeed);
+		Map<Pair<String, String>, ShapeDescriptor> lexicalShapes = new HashMap<>(lexicalShapeSeed);
+
+		for (Pair<String, String> name : lexicalValues)
+			colorLexicalReads(ir, name, true, null, valueTainted, shapeTainted, shapeDescriptors, worklist);
+
+		lexicalShapes.forEach((name, descriptor) -> colorLexicalReads(ir, name, false, descriptor, valueTainted, shapeTainted,
+				shapeDescriptors, worklist));
+
 		boolean sink = false;
 		boolean valueEscapes = false;
+		// Python applied to a tensor in a way tracing cannot carry, from a callee or a closure (issue 1074); this node's own uses are read
+		// after the walk.
+		boolean untraceable = false;
 		// The descriptor this node's returns carry back to the caller: set while all tracked-shape returns agree, poisoned to
 		// AMBIGUOUS_DESCRIPTOR on a conflict, and dropped entirely (null) when an untracked shape is returned.
 		ShapeDescriptor returnDescriptor = null;
 		boolean returnedUntrackedShape = false;
 
-		while (!worklist.isEmpty()) {
+		while (true) {
+			// A nested function reading a tainted variable through its closure need receive no tainted argument, so the walk may never
+			// reach its call. Once the walk settles, scan each function this node calls that is nested in a tainted variable's defining
+			// scope, with the lexical taint alone; a value escaping it taints the call's result, which resumes the walk (issue 1061).
+			if (worklist.isEmpty()) {
+				if (!lexicalValues.isEmpty() || !lexicalShapes.isEmpty())
+					for (SSAInstruction instruction : ir.getInstructions()) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							continue;
+
+						for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+							if (Util.isTensorFlowNode(target) || target.getIR() == null
+									|| !isNestedInAny(target, lexicalValues) && !isNestedInAny(target, lexicalShapes.keySet()))
+								continue;
+
+							NumpyScanResult r = this.scanForTaintedNumpySinks(target, new HashSet<>(), new HashSet<>(), new HashMap<>(),
+									enclosingNames(target, lexicalValues), enclosingNames(target, lexicalShapes));
+
+							if (r.sink())
+								sink = true;
+
+							if (r.untraceable())
+								untraceable = true;
+
+							if (r.valueEscapes()) {
+								valueEscapes = true;
+
+								for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+									colorValue(invoke.getDef(d), valueTainted, shapeTainted, worklist);
+							}
+						}
+					}
+
+				// A nested function this node does not call itself, such as a lambda a helper calls or `tf.map_fn` runs, still runs
+				// within the function's trace and reads the tainted variables, so it is scanned for sinks too, from the function defining
+				// them; with no call site here, its result colors nothing.
+				for (CGNode nested : nestedNodes(this.callGraph, node, lexicalValues, lexicalShapes.keySet())) {
+					NumpyScanResult r = this.scanForTaintedNumpySinks(nested, new HashSet<>(), new HashSet<>(), new HashMap<>(),
+							enclosingNames(nested, lexicalValues), enclosingNames(nested, lexicalShapes));
+
+					if (r.sink())
+						sink = true;
+
+					if (r.untraceable())
+						untraceable = true;
+				}
+
+				if (worklist.isEmpty())
+					break;
+			}
+
 			int valueNumber = worklist.pop();
 			boolean valueColored = valueTainted.contains(valueNumber);
 
+			// The two colors are disjoint by construction: colorValue() evicts the value from shapeTainted, and colorShape() and
+			// colorShapeFrom() both decline a value already in valueTainted. The two slice branches below partition on exactly this,
+			// so a dual-colored value would send a shape-tainted receiver down the value path and silently skip the dimension-aware
+			// narrowing. Assert it rather than rely on reading the three coloring methods together.
+			assert !(valueColored && shapeTainted.contains(valueNumber)) : "value " + valueNumber + " is both value- and shape-tainted";
+
 			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
 				SSAInstruction use = uses.next();
+
+				// A lexical write publishes the value to the nested functions that read the variable (issue 1061), so the variable
+				// takes the value's color, and its reads in this node inherit it.
+				if (use instanceof AstLexicalWrite write) {
+					for (Access access : write.getAccesses())
+						if (access.valueNumber() == valueNumber) {
+							Pair<String, String> name = access.getName();
+
+							if (valueColored) {
+								lexicalShapes.remove(name);
+
+								if (lexicalValues.add(name))
+									colorLexicalReads(ir, name, true, null, valueTainted, shapeTainted, shapeDescriptors, worklist);
+							} else if (!lexicalValues.contains(name) && !lexicalShapes.containsKey(name)) {
+								ShapeDescriptor descriptor = shapeDescriptors.get(valueNumber);
+								lexicalShapes.put(name, descriptor);
+								colorLexicalReads(ir, name, false, descriptor, valueTainted, shapeTainted, shapeDescriptors, worklist);
+							}
+						}
+
+					continue;
+				}
 
 				// A `dtype` read is a trace-time constant and launders taint entirely; a `shape` read yields shape metadata (SHAPE color)
 				// covering every dimension of the read tensor.
@@ -446,6 +705,25 @@ class NumpyParameterFlowAnalysis {
 							if (descriptor != null && this.numpyOverShapeStaticness(descriptor) == ShapeStaticness.DYNAMIC)
 								sink = true;
 						}
+
+						continue;
+					}
+
+					// A slice DERIVES its result from its receiver, and that derivation is asserted here rather than inferred from the
+					// callee. Until Ariadne 0.52.102 the `slice` builtin's summary body returned its receiver, so this walk carried
+					// the taint out through the callee's SSAReturnInstruction for free. wala/ML#916 made the body return nothing,
+					// supplying an identical points-to result through a builder constraint instead, which leaves the points-to set
+					// unchanged and DELETES the def-use edge this analysis walks. The derivation is a property of slicing, not of how
+					// the builtin happens to be summarized, so it belongs here
+					// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/967).
+					//
+					// Both shapes regressed and both are pinned: `np.maximum(boxes[:2], 0.0)`, where the slice is a direct operand of
+					// the numpy call, and `h = bboxA[:,3] - bboxA[:,1]; np.maximum(w, h)`, where the slice is consumed by arithmetic
+					// first and no slice appears at the call site. The second does not follow from the first, so each has its own fixture.
+					if (valueColored && invokesSliceBuiltin(invoke, defUse) && invoke.getNumberOfUses() > 1
+							&& invoke.getUse(1) == valueNumber) {
+						for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+							colorValue(invoke.getDef(d), valueTainted, shapeTainted, worklist);
 
 						continue;
 					}
@@ -539,10 +817,12 @@ class NumpyParameterFlowAnalysis {
 							analyzedCallee = true;
 
 							NumpyScanResult r = this.scanForTaintedNumpySinks(target, targetValueSeed, targetShapeSeed,
-									targetDescriptorSeed);
+									targetDescriptorSeed, enclosingNames(target, lexicalValues), enclosingNames(target, lexicalShapes));
 
 							if (r.sink())
 								sink = true;
+							if (r.untraceable())
+								untraceable = true;
 							if (r.valueEscapes())
 								calleeValueEscapes = true;
 
@@ -613,6 +893,26 @@ class NumpyParameterFlowAnalysis {
 					continue;
 				}
 
+				// A value stored into a container or an object: a tuple, list, or dict literal's element, a subscript store
+				// (`d[k] = x`, `l[i] = x`), or an attribute store (`obj.attr = x`), each of which the Python front end lowers to a
+				// property write. The write defines nothing, so without this the def-use walk would never reach a read of the value
+				// back out of the container, nor the container passed to a callee, such as a model called on `(x, w)`. A value-tainted
+				// stored value taints the whole object, whose every read is then value-tainted, and escapes this node. Tainting only the
+				// stored attribute of an attribute store waits for the engine to mark a literal's element writes as it marks subscript
+				// writes (wala/ML#1100), since neither the member nor the subscript mark alone tells an attribute store from a literal's
+				// element. Only the value taint is carried: a container colored with the shape taint would
+				// carry no provenance, and numpy over a shape without provenance is permitted at every sink (issue 751), so it would add no
+				// decline, while a returned untracked shape drops the descriptor the node's other returns carry (issue 756), which could
+				// lose one.
+				if (use instanceof AstPropertyWrite write && write.getValue() == valueNumber) {
+					if (valueColored) {
+						valueEscapes = true;
+						colorValue(write.getObjectRef(), valueTainted, shapeTainted, worklist);
+					}
+
+					continue;
+				}
+
 				// Any other instruction is a non-shape use: a value-tainted operand escapes (its value flows onward), and the definitions
 				// inherit the color (value dominates).
 				if (valueColored)
@@ -629,9 +929,157 @@ class NumpyParameterFlowAnalysis {
 			}
 		}
 
-		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor);
+		// `bool` of a tensor cannot be evaluated while tracing, and a branch on a tensor is converted by AutoGraph to `tf.cond`, which
+		// rejects
+		// paths that disagree about None (issue 1074). Both are decided by whether the tensor-type analysis types the argument or the
+		// condition as a tensor (issue 1083), so a parameter's `is None` test, a Python `bool`, is left alone. `int` and `float` of a
+		// tensor
+		// are left alone too, since AutoGraph converts them to casts.
+		if (!untraceable)
+			untraceable = this.appliesUntraceablePythonToTensors(node, ir, defUse);
+
+		NumpyScanResult result = new NumpyScanResult(sink, valueEscapes, returnedUntrackedShape ? null : returnDescriptor, untraceable);
 		this.memo.put(key, result);
 		return result;
+	}
+
+	/**
+	 * Colors the definitions of this IR's lexical reads of {@code name} (issue 1061): with the value taint when {@code value}, and
+	 * otherwise with the shape taint, carrying {@code descriptor} when it is tracked.
+	 */
+	private static void colorLexicalReads(IR ir, Pair<String, String> name, boolean value, ShapeDescriptor descriptor,
+			Set<Integer> valueTainted, Set<Integer> shapeTainted, Map<Integer, ShapeDescriptor> shapeDescriptors, Deque<Integer> worklist) {
+		for (SSAInstruction instruction : ir.getInstructions())
+			if (instruction instanceof AstLexicalRead read)
+				for (Access access : read.getAccesses())
+					if (access.getName().equals(name))
+						if (value)
+							colorValue(access.valueNumber(), valueTainted, shapeTainted, worklist);
+						else if (descriptor != null)
+							colorShapeFrom(access.valueNumber(), descriptor, valueTainted, shapeTainted, shapeDescriptors, worklist);
+						else
+							colorShape(access.valueNumber(), valueTainted, shapeTainted, worklist);
+	}
+
+	/**
+	 * True iff {@code target} is a function nested in the defining scope of one of {@code names}, so it may read that variable through its
+	 * closure (issue 1061). A nested function's type name extends its enclosing function's with a {@code /}-separated segment.
+	 *
+	 * @param target The call-graph node of a possible callee.
+	 * @param names Lexical variables, as (name, defining scope).
+	 * @return True iff {@code target} is nested in one of the defining scopes.
+	 */
+	static boolean isNestedInAny(CGNode target, Set<Pair<String, String>> names) {
+		String type = stripTypePrefix(target.getMethod().getDeclaringClass().getName().toString());
+
+		for (Pair<String, String> name : names)
+			if (name.snd != null && type.startsWith(stripTypePrefix(name.snd) + "/"))
+				return true;
+
+		return false;
+	}
+
+	/**
+	 * Per call graph, its user-code nodes with an IR, keyed by their type names with the {@code L} prefix removed, so the functions nested
+	 * in a scope are a range lookup rather than a pass over the whole graph (issue 1061).
+	 */
+	private static final Map<CallGraph, NavigableMap<String, Set<CGNode>>> NODES_BY_TYPE = Collections.synchronizedMap(new WeakHashMap<>());
+
+	/**
+	 * Clears the per-call-graph index. The map's weak keys do not release a call graph on their own, since each indexed node refers back to
+	 * its call graph, so the index is cleared with the other analysis caches between projects.
+	 */
+	static void clearCaches() {
+		NODES_BY_TYPE.clear();
+	}
+
+	/**
+	 * The call-graph nodes nested in {@code definer}'s own scope, wherever they are called from, when one of the given lexical variables is
+	 * defined there (issue 1061). Only the function defining a scope scans the functions nested in it: a function nested in a scope reads
+	 * that scope's variables too, but it is itself scanned from the scope's definer, along with every other function nested there, so
+	 * scanning the scope again from each of them would only recurse from sibling to sibling, as deep as the scope has functions.
+	 *
+	 * @param callGraph The call graph.
+	 * @param definer The node whose own scope's nested functions are wanted.
+	 * @param values The value-tainted lexical variables.
+	 * @param shapes The shape-tainted lexical variables.
+	 * @return The user-code nodes with an IR nested in {@code definer}'s scope, or none when no given variable is defined there.
+	 */
+	static Set<CGNode> nestedNodes(CallGraph callGraph, CGNode definer, Set<Pair<String, String>> values,
+			Set<Pair<String, String>> shapes) {
+		Set<CGNode> nodes = new HashSet<>();
+
+		if (values.isEmpty() && shapes.isEmpty())
+			return nodes;
+
+		NavigableMap<String, Set<CGNode>> index = NODES_BY_TYPE.computeIfAbsent(callGraph, k -> {
+			NavigableMap<String, Set<CGNode>> byType = new TreeMap<>();
+
+			for (CGNode node : k)
+				if (!Util.isTensorFlowNode(node) && node.getIR() != null)
+					byType.computeIfAbsent(stripTypePrefix(node.getMethod().getDeclaringClass().getName().toString()), t -> new HashSet<>())
+							.add(node);
+
+			return byType;
+		});
+
+		String own = stripTypePrefix(definer.getMethod().getDeclaringClass().getName().toString());
+		Set<String> scopes = new TreeSet<>();
+
+		for (Set<Pair<String, String>> names : List.of(values, shapes))
+			for (Pair<String, String> name : names)
+				if (name.snd != null && stripTypePrefix(name.snd).equals(own))
+					scopes.add(own);
+
+		// The types nested in a scope are exactly those that sort between "scope/" and "scope0", since '0' follows '/'.
+		for (String scope : scopes)
+			index.subMap(scope + "/", true, scope + "0", false).values().forEach(nodes::addAll);
+
+		return nodes;
+	}
+
+	/**
+	 * The lexical variables {@code target} can read: those whose defining scope encloses it. A function outside a scope, such as a
+	 * top-level helper a closure calls, cannot read that scope's variables, and neither can anything it calls that is not itself nested in
+	 * the scope, which is scanned from the scope's own node. Passing only these keeps the scan's seeds, and so its memo keys, bounded by
+	 * the target's enclosing scopes (issue 1061); passing every tainted variable made sibling closures rescan one another under
+	 * ever-growing seeds. The filter preserves every result: a lexical read is matched on its name and defining scope together, and a
+	 * function outside a scope contains no read of that scope's variables, so a dropped variable could never have colored anything there.
+	 *
+	 * @param target The call-graph node to be scanned.
+	 * @param names Lexical variables, as (name, defining scope).
+	 * @return The variables of {@code names} defined in a scope enclosing {@code target}.
+	 */
+	static Set<Pair<String, String>> enclosingNames(CGNode target, Set<Pair<String, String>> names) {
+		Set<Pair<String, String>> ret = new HashSet<>();
+
+		for (Pair<String, String> name : names)
+			if (isNestedInAny(target, Set.of(name)))
+				ret.add(name);
+
+		return ret;
+	}
+
+	/**
+	 * The entries of {@code names} whose variable {@code target} can read; see {@link #enclosingNames(CGNode, Set)}.
+	 *
+	 * @param <V> The type of the taint each variable carries.
+	 * @param target The call-graph node to be scanned.
+	 * @param names Lexical variables, as (name, defining scope), with their taint.
+	 * @return The entries of {@code names} defined in a scope enclosing {@code target}.
+	 */
+	static <V> Map<Pair<String, String>, V> enclosingNames(CGNode target, Map<Pair<String, String>, V> names) {
+		Map<Pair<String, String>, V> ret = new HashMap<>();
+		names.forEach((name, taint) -> {
+			if (isNestedInAny(target, Set.of(name)))
+				ret.put(name, taint);
+		});
+		return ret;
+	}
+
+	/** The name with a leading {@code L} type-descriptor prefix removed, so a scope's entity name and its type name compare equal. */
+	private static String stripTypePrefix(String name) {
+		return name.startsWith("L") ? name.substring(1) : name;
 	}
 
 	/**
@@ -806,7 +1254,7 @@ class NumpyParameterFlowAnalysis {
 
 	/** True iff {@code use}'s attribute chain roots at the numpy/scipy module (points-to preferred, import alias as fallback). */
 	private boolean isNumpyRooted(CGNode node, int use, DefUse defUse) {
-		if (this.isNumpyModule(node, use, defUse))
+		if (Util.isNumpyModule(node, use, defUse, this.pointerAnalysis))
 			return true;
 
 		SSAInstruction def = defUse.getDef(use);
@@ -815,14 +1263,5 @@ class NumpyParameterFlowAnalysis {
 			return this.isNumpyRooted(node, read.getObjectRef(), defUse);
 
 		return false;
-	}
-
-	/** True iff {@code use} refers to the numpy/scipy module. Prefers points-to; falls back to the import alias on a global read. */
-	private boolean isNumpyModule(CGNode node, int use, DefUse defUse) {
-		for (String prefix : NUMPY_MODULE_TYPE_NAME_PREFIXES)
-			if (Util.pointsToType(node, use, this.pointerAnalysis, prefix, false))
-				return true;
-
-		return defUse.getDef(use) instanceof AstGlobalRead global && NUMPY_MODULE_GLOBAL_NAMES.contains(global.getGlobalName());
 	}
 }

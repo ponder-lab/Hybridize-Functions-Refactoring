@@ -36,11 +36,11 @@
     <url>https://github.com/ponder-lab/Hybridize-Functions-Refactoring/actions/workflows/maven.yml</url>
   </ciManagement>
   <properties>
-    <tycho-version>5.0.2</tycho-version>
+    <tycho-version>5.0.4</tycho-version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jacoco-version>0.8.14</jacoco-version>
     <maven-checkstyle-plugin-version>3.6.0</maven-checkstyle-plugin-version>
-    <checkstyle-version>13.9.0</checkstyle-version>
+    <checkstyle-version>14.3.0</checkstyle-version>
     <junit-version>4.13.2</junit-version>
     <eclipse-site>https://download.eclipse.org/releases/${platform-version-name}</eclipse-site>
     <platform-version-name>2026-03</platform-version-name>
@@ -48,7 +48,7 @@
     <maven.compiler.source>25</maven.compiler.source>
     <maven.compiler.target>25</maven.compiler.target>
     <logging.config.file>${maven.multiModuleProjectDirectory}/logging.properties</logging.config.file>
-    <spotless.version>3.9.0</spotless.version>
+    <spotless.version>3.10.1</spotless.version>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -335,7 +335,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>versions-maven-plugin</artifactId>
-        <version>2.21.0</version>
+        <version>2.23.0</version>
         <reportSets>
           <reportSet>
             <reports>

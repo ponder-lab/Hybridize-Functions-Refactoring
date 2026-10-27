@@ -1,14 +1,17 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
+import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.UNRESOLVED_DECORATOR;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P1;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P2;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P3;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P4;
+import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P5;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess.P6;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.CONVERT_EAGER_FUNCTION_TO_HYBRID;
 import static edu.cuny.hunter.hybridize.core.analysis.Refactoring.OPTIMIZE_HYBRID_FUNCTION;
@@ -17,6 +20,7 @@ import static edu.cuny.hunter.hybridize.core.analysis.Transformation.CONVERT_TO_
 import static edu.cuny.hunter.hybridize.core.analysis.Transformation.RECONFIGURE;
 import static edu.cuny.hunter.hybridize.core.analysis.Util.getAllParentNames;
 import static edu.cuny.hunter.hybridize.core.utils.Util.getPythonPath;
+import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_FILE_SYSTEM_POINTER_KEY;
 import static edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions.PythonModVisitorWithBuiltinFunctions.GLOBAL_OUTPUT_STREAM_POINTER_KEY;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
@@ -32,9 +36,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -48,6 +55,8 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IFile;
@@ -68,8 +77,10 @@ import org.eclipse.text.edits.DeleteEdit;
 import org.eclipse.text.edits.InsertEdit;
 import org.eclipse.text.edits.MalformedTreeException;
 import org.eclipse.text.edits.MultiTextEdit;
+import org.eclipse.text.edits.ReplaceEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.osgi.framework.FrameworkUtil;
+import org.python.pydev.ast.codecompletion.shell.AbstractShell;
 import org.python.pydev.ast.refactoring.AbstractPyRefactoring;
 import org.python.pydev.ast.refactoring.HierarchyNodeModel;
 import org.python.pydev.ast.refactoring.IPyRefactoring2;
@@ -85,10 +96,13 @@ import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.If;
 import org.python.pydev.parser.jython.ast.Module;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.Num;
+import org.python.pydev.parser.jython.ast.Raise;
+import org.python.pydev.parser.jython.ast.Return;
 import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
@@ -98,14 +112,18 @@ import org.python.pydev.parser.jython.ast.expr_contextType;
 import org.python.pydev.parser.jython.ast.keywordType;
 import org.python.pydev.parser.jython.ast.name_contextType;
 import org.python.pydev.parser.jython.ast.stmtType;
+import org.python.pydev.parser.jython.ast.suiteType;
 import org.python.pydev.parser.visitors.NodeUtils;
 
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 import com.ibm.wala.cast.ipa.callgraph.AstGlobalPointerKey;
 import com.ibm.wala.cast.ipa.callgraph.ScopeMappingInstanceKeys.ScopeMappingInstanceKey;
+import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.loader.IPythonClass;
+import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion;
+import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion.Resolution;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
@@ -133,6 +151,7 @@ import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.StaticFieldKey;
+import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.ipa.modref.DelegatingExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ModRef;
@@ -140,6 +159,7 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.collections.Pair;
@@ -157,6 +177,21 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * @author <a href="mailto:tcastrovelez@gradcenter.cuny.edu">Tatiana Castro Vélez</a>
  */
 public class Function {
+
+	/**
+	 * The prefix Ariadne gives the name of a global's field.
+	 */
+	private static final String GLOBAL_PREFIX = "global ";
+
+	/**
+	 * The prefix Ariadne gives the name of a code body declared in a script.
+	 */
+	private static final String SCRIPT_PREFIX = "script ";
+
+	/**
+	 * The name the parser gives the global holding a {@code def}'s default, {@code <function>_default_<position>}.
+	 */
+	private static final Pattern PARSER_DEFAULT_BINDING = Pattern.compile(GLOBAL_PREFIX + "[A-Za-z_]\\w*_default_\\d+");
 
 	/**
 	 * Used for speculative analysis of the function name.
@@ -244,9 +279,8 @@ public class Function {
 		/**
 		 * The AST expression node of the supplied {@code input_signature} argument's value—the {@code [tf.TensorSpec(...)]} list/tuple, or
 		 * the bare name referencing one (#834)—whether supplied by keyword or by position, or {@code null} when none was supplied. Always
-		 * the node at the decorator site, never a resolved referent. Retained for reporting and for the sanctioned future find-and-fix
-		 * signature rewrite (issue 808); the refactoring itself never edits an existing signature. See
-		 * {@link #getSuppliedInputSignatureNode()}.
+		 * the node at the decorator site, never a resolved referent. Retained for reporting and for narrowing a broader literal signature
+		 * (issue 808); a signature given by name is never edited. See {@link #getSuppliedInputSignatureNode()}.
 		 */
 		private exprType suppliedInputSignatureNode;
 
@@ -419,8 +453,8 @@ public class Function {
 		/**
 		 * The AST expression node of the supplied {@code input_signature} value (the {@code [tf.TensorSpec(...)]} list/tuple, or the bare
 		 * name referencing one; #834), or {@code null} when none was supplied. Always the node at the decorator site, never a resolved
-		 * referent. Retained for reporting and for the sanctioned future find-and-fix signature rewrite (issue 808); the refactoring itself
-		 * never edits an existing signature.
+		 * referent. Retained for reporting and for narrowing a broader literal signature (issue 808); a signature given by name is never
+		 * edited.
 		 *
 		 * @return The supplied {@code input_signature} value node, or {@code null}.
 		 */
@@ -675,14 +709,23 @@ public class Function {
 			if (name == null)
 				return Optional.empty();
 			try {
-				return Optional.of(DType.valueOf(name.toUpperCase(Locale.ROOT)));
+				DType dType = DType.valueOf(name.toUpperCase(Locale.ROOT));
+
+				// UNKNOWN names no TensorFlow dtype, so a signature spelling it is one the parser cannot read.
+				return dType == DType.UNKNOWN ? Optional.empty() : Optional.of(dType);
 			} catch (IllegalArgumentException _) {
 				return Optional.empty();
 			}
 		}
 	}
 
-	private static Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = Maps.newHashMap();
+	/**
+	 * Remembered answers of {@link #allCreationsWithinClosure(MethodReference, InstanceKey, CallGraph)}. Only answers that do not depend on
+	 * the order of the walk are kept: a {@code true}, found at a creating method in the closure, and a {@code false} from a walk begun at
+	 * that method, which saw its whole closure. A {@code false} for a method reached inside another walk can come from a walk cut short
+	 * where it re-entered a method still being walked, so it is not kept. Concurrent because functions may be processed in parallel.
+	 */
+	private static final Map<MethodReference, Map<InstanceKey, Map<CallGraph, Boolean>>> creationsCache = new ConcurrentHashMap<>();
 
 	/**
 	 * Per-node direct (non-transitive) mod sets, shared across {@link Function}s since the closure walks revisit the same nodes. Concurrent
@@ -722,6 +765,11 @@ public class Function {
 	private static Map<File, Set<String>> fileInferredSpecTypeNames = new HashMap<>();
 
 	private static final String TF_FUNCTION_FQN = "tensorflow.python.eager.def_function.function";
+
+	/**
+	 * The FQN of {@code tf.custom_gradient}, above which a hybridizing {@code @tf.function} must go (#996).
+	 */
+	private static final String TF_CUSTOM_GRADIENT_FQN = "tensorflow.python.ops.custom_gradient.custom_gradient";
 
 	/**
 	 * The TensorFlow module name as it appears in Python {@code import} statements, used by {@link #getImportContext(IDocument)} to detect
@@ -784,21 +832,13 @@ public class Function {
 			}
 		}
 
+		// A walk begun here sees the whole closure; one entered from another walk may have been cut where it re-entered a method on it.
+		boolean complete = seen.isEmpty();
 		boolean result = allCreationsWithinClosureInteral2(methodReference, instanceKey, callGraph, seen);
 
-		if (cache2 == null) {
-			cache2 = Maps.newHashMap();
-			creationsCache.put(methodReference, cache2);
-		}
-
-		Map<CallGraph, Boolean> cache3 = cache2.get(instanceKey);
-
-		if (cache3 == null) {
-			cache3 = Maps.newHashMap();
-			cache2.put(instanceKey, cache3);
-		}
-
-		cache3.put(callGraph, result);
+		if (result || complete)
+			creationsCache.computeIfAbsent(methodReference, _ -> new ConcurrentHashMap<>())
+					.computeIfAbsent(instanceKey, _ -> new ConcurrentHashMap<>()).put(callGraph, result);
 
 		return result;
 	}
@@ -839,22 +879,24 @@ public class Function {
 		autoInjectedImportNames.clear();
 		fileInferredDTypeNames.clear();
 		fileInferredSpecTypeNames.clear();
+		NumpyParameterFlowAnalysis.clearCaches();
 	}
 
 	/**
 	 * Pre-computes, per file, the union of spec-type constructor names and dtype constants required by the inferred input signatures of the
-	 * functions about to be converted to hybrid, so {@link #convertToHybrid} can auto-inject a single {@code from tensorflow import ...}
-	 * line covering all of them. Without it, the first hybridizable function processed in an import-less file fixes the injected line to
-	 * its own spec types and dtypes, and a later function needing a different dtype (#588) or a {@code RaggedTensorSpec} (#524) is gated
-	 * off emission and left with a bare {@code @function} (follow-up to #574). Reads the memoized inferred signatures via
-	 * {@link #getInferredInputSignature}; it never triggers inference, so it adds no per-parameter INFOs. Call it once before transforming
-	 * a batch of functions.
+	 * functions about to be converted to hybrid or reconfigured, so {@link #convertToHybrid} and {@link #reconfigure} can auto-inject a
+	 * single {@code from tensorflow import ...} line covering all of them (issue 1018). Without it, the first hybridizable function
+	 * processed in an import-less file fixes the injected line to its own spec types and dtypes, and a later function needing a different
+	 * dtype (#588) or a {@code RaggedTensorSpec} (#524) is gated off emission and left with a bare {@code @function} (follow-up to #574).
+	 * Reads the memoized inferred signatures via {@link #getInferredInputSignature}; it never triggers inference, so it adds no
+	 * per-parameter INFOs. Call it once before transforming a batch of functions.
 	 *
 	 * @param functions The functions about to be transformed.
 	 */
 	public static void planAutoInjectedImports(Collection<Function> functions) {
 		for (Function function : functions) {
-			if (!function.getTransformations().contains(CONVERT_TO_HYBRID) || !function.getInferInputSignatures())
+			if (!(function.getTransformations().contains(CONVERT_TO_HYBRID) || function.getTransformations().contains(RECONFIGURE))
+					|| !function.getInferInputSignatures())
 				continue;
 
 			function.getInferredInputSignature().ifPresent(sig -> {
@@ -866,7 +908,11 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values.
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a list, a tuple, a dict or a
+	 * set with an element that takes one on. Any other object is keyed by {@code tf.function} by its identity, so its fields are not
+	 * examined (#1048). That includes an object of a library class that Ariadne models, which is keyed by its identity too (#1047), such as
+	 * a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar
+	 * type (wala/ML#1148), counts wherever a constant does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -885,22 +931,9 @@ public class Function {
 
 		seen.add(instanceKey);
 
-		if (instanceKey instanceof ConstantKey<?>) {
-			ConstantKey<?> constantKey = (ConstantKey<?>) instanceKey;
-			Object constantValue = constantKey.getValue();
-
-			if (constantValue != null) {
-				LOG.info("Found constant value: " + constantValue + ".");
-
-				boolean foundBooleanValue = constantValue.equals(TRUE) || constantValue.equals(FALSE);
-
-				// If it's not the case that we found a boolean value and we are ignoring booleans.
-				if ((!foundBooleanValue || !ignoreBooleans)) {
-					// We have found a primitive.
-					subMonitor.done();
-					return true;
-				}
-			}
+		if (isPythonScalarKey(instanceKey) || instanceKey instanceof ConstantKey<?>) {
+			subMonitor.done();
+			return isPrimitiveValue(instanceKey, ignoreBooleans);
 		} else if (instanceKey instanceof AllocationSiteInNode || instanceKey instanceof ScopeMappingInstanceKey
 				|| instanceKey instanceof ConcreteTypeKey) {
 			InstanceKey instanceKeyToProcess;
@@ -911,6 +944,16 @@ public class Function {
 				instanceKeyToProcess = instanceKey; // use the original.
 
 			IClass concreteType = instanceKeyToProcess.concreteType();
+
+			// `tf.function` keys a list, a tuple or a dict by its contents but any other object by its identity, so a primitive field of
+			// such an object never causes a retrace (#1048). Only the elements of a list, a tuple, a dict or a set are examined. That
+			// covers an object of a library class that Ariadne models too, such as an optimizer whose model stores its learning rate
+			// (#1047).
+			if (!isKeyedByContents(concreteType)) {
+				subMonitor.done();
+				return false;
+			}
+
 			Collection<IField> allInstanceFields = concreteType.getAllInstanceFields();
 
 			subMonitor.beginTask("Examining fields...", allInstanceFields.size());
@@ -935,6 +978,62 @@ public class Function {
 
 		subMonitor.done();
 		return false;
+	}
+
+	/**
+	 * Returns true iff the given {@link InstanceKey} is a primitive constant: a {@link ConstantKey} with a value other than {@code None}. A
+	 * Python value the engine represents without a constant is not one.
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @return True iff the given {@link InstanceKey} is a constant whose value is a primitive.
+	 */
+	static boolean isPrimitiveConstant(InstanceKey instanceKey, boolean ignoreBooleans) {
+		if (!(instanceKey instanceof ConstantKey<?> constantKey))
+			return false;
+
+		Object constantValue = constantKey.getValue();
+
+		if (constantValue == null)
+			return false;
+
+		LOG.info("Found constant value: " + constantValue + ".");
+
+		boolean foundBooleanValue = constantValue.equals(TRUE) || constantValue.equals(FALSE);
+
+		// It's a primitive unless it's a boolean value and we are ignoring booleans.
+		return !foundBooleanValue || !ignoreBooleans;
+	}
+
+	/**
+	 * Returns true iff the given {@link InstanceKey} is a Python primitive: a primitive constant per
+	 * {@link #isPrimitiveConstant(InstanceKey, boolean)}, or a Python {@code int}, {@code float} or {@code bool} of unknown value, which
+	 * the engine represents by one key per type (wala/ML#1148).
+	 *
+	 * @param instanceKey The {@link InstanceKey} in question.
+	 * @param ignoreBooleans True iff boolean values should not be considered.
+	 * @return True iff the given {@link InstanceKey} is a primitive constant or a Python scalar.
+	 */
+	static boolean isPrimitiveValue(InstanceKey instanceKey, boolean ignoreBooleans) {
+		if (isPythonScalarKey(instanceKey))
+			return !ignoreBooleans || !instanceKey.concreteType().getReference().equals(PythonTypes.PYTHON_BOOL);
+
+		return isPrimitiveConstant(instanceKey, ignoreBooleans);
+	}
+
+	/**
+	 * True iff {@code tf.function} keys an argument of the given class by its contents rather than by its identity: the class is a list, a
+	 * tuple or a dict, as the engine's types decide. An object of any other class is keyed by its identity, so its fields never enter the
+	 * trace key (https://www.tensorflow.org/guide/function#rules_of_tracing). Of the engine's other containers, an {@code enumerate} object
+	 * is keyed by its identity. A set is included as a safe stand-in: {@code tf.function} can't key a set at all, and examining its
+	 * elements at least gets a primitive element refused.
+	 *
+	 * @param type The class in question.
+	 * @return True iff the given class is a list, a tuple, a dict or a set.
+	 */
+	private static boolean isKeyedByContents(IClass type) {
+		TypeReference reference = type.getReference();
+		return Util.isSequenceType(reference) || PythonTypes.dict.equals(reference) || PythonTypes.set.equals(reference);
 	}
 
 	/**
@@ -1011,6 +1110,12 @@ public class Function {
 	private boolean inferInputSignatures;
 
 	/**
+	 * True iff this {@link Function} declares a rest-keyword ({@code **kwargs}) parameter. Read off the declaration in the constructor,
+	 * since an {@code input_signature} makes that slot inert and the reduction must decline rather than describe it (#902).
+	 */
+	private final boolean variableKeywordParameter;
+
+	/**
 	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the {@link InferenceResult} so
 	 * the per-parameter INFOs the computation emits as a side effect are added at most once, regardless of how many call sites request the
 	 * signature in a single pass (analysis, import injection, and the transform paths all ask for it).
@@ -1018,13 +1123,38 @@ public class Function {
 	private InferenceResult inferredInputSignature;
 
 	/**
-	 * Per-parameter blocking reasons from the last {@link #computeInputSignature()} run, in parameter declaration order. Empty when
-	 * inference produced a signature, was never run, or was blocked at the function level by
-	 * {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER} (where no parameter is the blocker). Where
-	 * {@link #getInferredInputSignatureAbsenceReason()} reports only the first blocking reason for the whole function, this retains every
-	 * blocking parameter's reason for read-only per-parameter reporting (e.g. the evaluator); see {@link #getBlockingParameterReasons()}.
+	 * Memoizes {@link #getDefinitionOrdinal()}. {@code null} means "not yet computed". The ordinal is a function of the containing module's
+	 * AST, which does not change while this {@link Function} exists, so computing it once per function rather than once per caller is
+	 * behaviour-preserving.
+	 * <p>
+	 * It is memoized because the accessor walks the WHOLE containing module, and {@code buildAttributeColumnValues} calls it while building
+	 * the primary key columns that every emitted CSV shares. Unmemoized that is one full module walk per row of every file, for a value
+	 * fixed per function, so the cost scales as rows times module size and the largest modules are the ones with the most rows (#960).
+	 * <p>
+	 * DELIBERATELY NOT RESET by {@link #computeHybridization(IProgressMonitor)} alongside {@code hybridDecorator} and
+	 * {@code hybridizationParameters}, and the asymmetry is intentional rather than an oversight. Those two are reset because they are
+	 * derived from the decorators that method re-reads, so a stale value could survive a re-computation that changed them. This one is
+	 * derived from the set of {@code FunctionDef}s in the module, which that method cannot change: it discovers decorators, and decorator
+	 * discovery neither adds, removes, nor reorders definitions. Resetting it there would discard a provably valid cache and reintroduce
+	 * the per-row module walk this field exists to remove.
+	 * <p>
+	 * The stronger reason not to reset, which does not rest on predicting whether the definition set can change: resetting would not help
+	 * if it did. Anything adding, removing, or reordering definitions mid-lifetime invalidates {@link #getBeginningLineNumber()} and every
+	 * other cached derivation on this object at the same moment, so clearing this one field would remove a single symptom of a broken
+	 * invariant and leave the rest. Memoizing therefore does not weaken the assumption {@link #getDefinitionOrdinal()} already documents
+	 * for the value itself, because a change violating it invalidates the ordinal whether or not it was cached.
 	 */
-	private Map<Parameter, AbsenceReason> blockingParameterReasons = new LinkedHashMap<>();
+	private Integer definitionOrdinal;
+
+	/**
+	 * Per-parameter blocking reasons from the last {@link #computeInputSignature()} run, in parameter declaration order, each parameter's
+	 * reasons in the order the dispatch found them. Empty when inference produced a signature, was never run, or was blocked at the
+	 * function level by {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER} (where no parameter is the blocker). Where
+	 * {@link #getInferredInputSignatureAbsenceReason()} reports only the first blocking reason for the whole function, this retains every
+	 * reason of every blocking parameter for read-only per-parameter reporting (e.g. the evaluator); see
+	 * {@link #getBlockingParameterReasons()}.
+	 */
+	private Map<Parameter, Set<AbsenceReason>> blockingParameterReasons = new LinkedHashMap<>();
 
 	/**
 	 * The per-parameter reduced spec entries from the last successful {@link #computeInputSignature()} run, in declaration order over the
@@ -1041,6 +1171,57 @@ public class Function {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
 	 */
 	private Boolean hasUnresolvedStaticallyReadAxes;
+
+	/**
+	 * The statically read shape surfaces {@link #computeUnresolvedStaticallyReadAxes} collected over this function's call-graph nodes, kept
+	 * so that narrowing a supplied input signature can ask whether it changes a shape the function reads (issue 808). {@code null} when the
+	 * reads were not computed or could not be determined.
+	 */
+	private StaticShapeReadAnalysis.StaticShapeReads staticShapeReads;
+
+	/**
+	 * The kind of argument a reachable call site passes a parameter, which decides what a dtype disagreement with a supplied input
+	 * signature does at runtime (issue 808). On the pinned TensorFlow, a tensor of the wrong dtype raises, while a NumPy array is silently
+	 * cast to the declared dtype in either direction. Other values, such as Python lists and scalars, raise or are cast depending on the
+	 * direction.
+	 */
+	enum ArgumentKind {
+		/** The argument is a tensor produced by a TensorFlow operation. */
+		TENSOR,
+
+		/** The argument is a NumPy array. */
+		NUMPY,
+
+		/**
+		 * The argument's kind is not decided: it is not tensor-typed at all (a Python list or scalar, say), it is a parameter passed
+		 * through from the caller, or its provenance is mixed.
+		 */
+		UNKNOWN
+	}
+
+	/**
+	 * The kinds of argument each non-{@code self} parameter receives at this function's reachable call sites, computed by
+	 * {@link #computeArgumentKinds} (issue 808). {@code null} until computed.
+	 */
+	private Map<Parameter, Set<ArgumentKind>> argumentKinds;
+
+	/**
+	 * Whether this function is part of an interface the program exports through a SavedModel or a TensorFlow Lite conversion, computed by
+	 * {@link #computeExported} (issue 808). {@code null} until computed.
+	 */
+	private Boolean exported;
+
+	/**
+	 * Whether this function is reached through {@code tf.distribute.Strategy.run} (issue 928). {@code null} until computed.
+	 */
+	private Boolean replicaInvoked;
+
+	/**
+	 * Whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine models it,
+	 * computed by {@link #computeExtendsKerasCallableClass(CallGraph)} (issue 1099). False until computed, when not a method, and when the
+	 * walk finds no such class.
+	 */
+	private boolean extendsKerasCallableClass;
 
 	/**
 	 * True iff this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body and
@@ -1064,6 +1245,151 @@ public class Function {
 	 * precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
 	 */
 	private Boolean hasTensorParameterIteration;
+
+	/**
+	 * True iff this {@link Function}'s body stores into a parameter-derived, tensor-typed value by subscript, which a symbolic tensor does
+	 * not support under {@code tf.function} tracing. {@code null} when it could not be determined (no call-graph node), in which case the
+	 * precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098.
+	 */
+	private Boolean hasTensorParameterItemAssignment;
+
+	/**
+	 * True iff this {@link Function}'s body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}, which
+	 * {@code tf.constant} rejects once tracing makes the value symbolic. {@code null} when it could not be determined (no call-graph node),
+	 * in which case the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169.
+	 */
+	private Boolean hasTensorParameterConstant;
+
+	/**
+	 * This {@link Function}'s call-graph nodes reached only from expected-failure call sites (a call inside {@code assertRaises} or
+	 * {@code pytest.raises}), whose evidence a specification must not be derived from (#888). Empty when none is, when the question was not
+	 * asked, or when every node is guarded, in which case nothing is excluded: a function called only from expected-failure tests would
+	 * otherwise lose its tensor-parameter classification, which moves preconditions rather than signatures and is out of scope here.
+	 */
+	private Set<CGNode> expectedFailureNodes = Set.of();
+
+	/**
+	 * For each call-graph node of this {@link Function} reached only from guarded call sites, the guards around each guarded call reaching
+	 * it, one list per call: the expected-failure guards, and for an eager function also the {@code except} clauses (#1014). Unlike
+	 * {@link #expectedFailureNodes}, it is kept with inference off and when every node is guarded. Read to tell whether the guard admits
+	 * the exception an inferred signature raises when it rejects the argument a declared failure passes (#1005), and whether a guard
+	 * dispatches differently on the exception tracing raises in place of the body's (#1014).
+	 */
+	private Map<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> callGuards = Map.of();
+
+	/**
+	 * What a {@code try} statement in this eager function's own body dispatches on, around a call that may run a TensorFlow operation, that
+	 * converting the function changes, rendered for the status message; empty when there is none or it was not computed (#1014).
+	 */
+	private Optional<String> bodyHandlerChange = Optional.empty();
+
+	/**
+	 * For each node of {@link #callGuards}, what the guarded call passes each parameter, by declaration index, read from the parameter's
+	 * points-to set there. The exception a specification raises depends on it as much as on the specification (#1005).
+	 */
+	private Map<CGNode, Map<Integer, GuardedArgument>> guardedArgumentKinds = Map.of();
+
+	/**
+	 * What a declared failure passes a parameter, by the objects its points-to set holds in the expected-failure node (#1005).
+	 */
+	private enum GuardedArgument {
+		/** Nothing but tensors, the only kind that may conform to a {@code TensorSpec}. */
+		TENSORS,
+
+		/** A list or tuple, possibly beside other values. */
+		SEQUENCE,
+
+		/** A dict, set, or other non-sequence container, possibly beside other values. */
+		NON_SEQUENCE_CONTAINER,
+
+		/** Anything else: {@code None}, a number, a string, an object, a tensor beside one of these, or nothing at all. */
+		OTHER
+	}
+
+	/** The type-name prefix of the TensorFlow objects a parameter's points-to set holds when it is passed a tensor. */
+	private static final String TENSORFLOW_TYPE_NAME_PREFIX = "Ltensorflow/";
+
+	/**
+	 * True iff some call site of this {@link Function} passes a Keras symbolic tensor ({@code KerasTensor}), which {@code tf.function}
+	 * refuses outright, so the decorator raises before anything is traced. {@code null} when it could not be determined (no call-graph
+	 * node, or a caller whose arguments are invisible), in which case the precondition does not block. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887.
+	 */
+	private Boolean hasKerasSymbolicArguments;
+
+	/**
+	 * True iff a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged: a returned
+	 * {@code tf.Variable} or {@code tf.TensorArray}, which is converted to a tensor, or a {@code tf.TensorSpec} a call site passes, which
+	 * makes the call raise, directly or inside a list, tuple, or dictionary. {@code null} when it could not be determined, in which case
+	 * the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
+	 */
+	private Boolean hasUncrossableBoundaryValues;
+
+	/**
+	 * True iff this {@link Function} may return a Python primitive, which {@code tf.function} converts to a tensor (issue 1117); null if
+	 * undetermined.
+	 */
+	private Boolean returnsPrimitive;
+
+	/**
+	 * True iff some call site of this {@link Function} uses its result (issue 1117); false if none does; null if undetermined.
+	 */
+	private Boolean hasUsedResults;
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0
+	 * ({@link ScalarShapeReshapeAnalysis}); null if undetermined, in which case the precondition does not block.
+	 */
+	private Boolean reshapesWithScalarShape;
+
+	/**
+	 * True iff a shape known only as a tensor value crosses this {@link Function}'s boundary, inbound or outbound
+	 * ({@link ShapeValueBoundaryAnalysis}); null if undetermined, in which case the precondition does not block.
+	 */
+	private Boolean passesShapeValueAcrossBoundary;
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, reads a tensor-typed or scalar-valued field of an object that another
+	 * function rebinds outside the {@code __init__} or Keras {@code build} that sets the object up, so a trace would capture the field's
+	 * first value. {@code null} when it could not be determined, in which case the precondition does not block. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 */
+	private Boolean hasReboundStateReads;
+
+	/**
+	 * A description of the write that rebinds a field this {@link Function} reads, naming the field and the write's location, when
+	 * {@link #hasReboundStateReads} is true; {@code null} otherwise.
+	 */
+	private String reboundStateWrite;
+
+	/**
+	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, so no single input signature
+	 * reproduces eager coercion (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1). {@code null} when it
+	 * could not be determined (no call-graph node), in which case the precondition does not block.
+	 */
+	private Boolean hasConflictingEagerDtypeCoercions;
+
+	/**
+	 * True iff a NumPy array some call site passes for a parameter has an element, read by a subscript, that the body combines with a value
+	 * of another dtype (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). {@code null} when it could not be
+	 * determined (no call-graph node), in which case the precondition does not block.
+	 */
+	private Boolean hasNumpyElementDtypeCoercions;
+
+	/**
+	 * Per-{@link Parameter} eager-effective dtype pins: a parameter maps here when its direct consumers impose exactly one concrete dtype
+	 * that differs from the parameter's own dtype evidence, and the emitted spec's dtype is substituted accordingly (the repair direction
+	 * of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1).
+	 */
+	private Map<Parameter, DType> eagerEffectiveDtypePins = new HashMap<>();
+
+	/**
+	 * The parameters whose applied dtype coercion resolves as {@link Resolution#CHANGED}, i.e. those the run feeds a dtype their consumers
+	 * do not impose. Distinct from {@link #eagerEffectiveDtypePins}, which compares a parameter's REPORTED dtype against the imposition and
+	 * is therefore empty for an operator spelling by construction: the analysis applies that coercion and reports its result, so the two
+	 * agree and the divergence with the FED dtype stays invisible (wala/ML#838).
+	 */
+	private Set<Parameter> changedDtypeCoercions = new HashSet<>();
 
 	/**
 	 * The {@link FunctionDefinition} representing this {@link Function}.
@@ -1090,6 +1416,22 @@ public class Function {
 	 */
 	private decoratorsType hybridDecorator;
 
+	/**
+	 * Why a decorator's name can't be resolved, for the {@link Information#UNRESOLVED_DECORATOR} entry, keyed by the exception the lookup
+	 * throws.
+	 */
+	private static final Map<Class<? extends Exception>, String> UNRESOLVED_DECORATOR_CAUSES = Map.of(
+			AmbiguousDeclaringModuleException.class, "its definition is found in more than one module", NoDeclaringModuleException.class,
+			"no definition of it is found", NoTextSelectionException.class, "no text selection covers it", BadLocationException.class,
+			"its location in the source is invalid");
+
+	/**
+	 * The decorators of this {@link Function} whose unresolvable names have already been recorded as
+	 * {@link Information#UNRESOLVED_DECORATOR} entries, so that a decorator more than one lookup fails to resolve is recorded once (#1121).
+	 */
+	private final Set<decoratorsType> unresolvedDecorators = Collections
+			.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
+
 	private boolean ignoreBooleans;
 
 	/**
@@ -1107,11 +1449,25 @@ public class Function {
 	private Boolean hasTensorComputation;
 
 	/**
+	 * True iff {@link #hasTensorComputation} is {@code false}, but the scan met a call it couldn't resolve that may compute tensors. The
+	 * absence of a tensor computation is then not established, so the hybrid-to-eager benefit precondition (P6) does not de-hybridize the
+	 * function. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 */
+	private boolean tensorComputationUnresolved;
+
+	/**
 	 * True iff this {@link Function}'s body (transitively) invokes an eager-only API (e.g. {@code Tensor.numpy()}), which raises under
 	 * {@code tf.function} tracing. {@code null} when it could not be determined (e.g., no call-graph node), in which case the precondition
 	 * does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/363.
 	 */
 	private Boolean hasEagerOnlyCalls;
+
+	/**
+	 * True iff this hybrid {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built
+	 * ({@link GraphOnlyCallAnalysis}), so that removing its decorator breaks it. {@code null} when it could not be determined, in which
+	 * case the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171.
+	 */
+	private Boolean hasGraphOnlyCalls;
 
 	/**
 	 * True iff this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters, which raises
@@ -1121,12 +1477,32 @@ public class Function {
 	private Boolean hasNumpyCallsOnParameters;
 
 	/**
+	 * True iff this {@link Function}'s body (transitively) applies Python to a tensor, as the tensor-type analysis types it, in a way
+	 * tracing cannot carry: {@code bool} of it, or a branch on it whose paths disagree about {@code None}. {@code null} when undetermined.
+	 * See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1074 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1083.
+	 */
+	private Boolean hasUntraceablePythonOnParameters;
+
+	/**
 	 * True iff this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name} parameter (e.g.,
 	 * {@code tf.sqrt(x, tf.float32)}), which raises under {@code tf.function} tracing. Unlike the call-graph-based safety checks above,
 	 * this is computed by a syntactic scan of the body. {@code null} when it could not be determined (an AST traversal failure), in which
 	 * case the precondition does not block hybridization. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
 	 */
 	private Boolean hasInvalidNameArguments;
+
+	/** Whether this function calls, directly or transitively, a function whose name argument raises under tracing (issue 1087). */
+	private boolean callsInvalidNameArguments;
+
+	/**
+	 * The parameters, defaulting to {@code None}, that this function's body forwards as the name of an API whose own default name is a
+	 * string, so that a call omitting one raises under tracing (issue 1087). Filled by {@link #computeInvalidNameArguments()}.
+	 */
+	private final Set<String> forwardedNoneNameParameters = new HashSet<>();
+
+	/** Whether this function's body passes an invalid name argument that is not a forwarded {@code None}-defaulting parameter. */
+	private boolean unconditionalInvalidNameArguments;
 
 	/**
 	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
@@ -1189,6 +1565,10 @@ public class Function {
 			for (int i = 0; i < args.kwonlyargs.length; i++)
 				built.add(new Parameter(args, i, this, true));
 		this.parameters = Collections.unmodifiableList(built);
+
+		// The rest-keyword slot is read off the declaration rather than wrapped, since what the signature reduction needs from it is only
+		// whether it exists (#902). Wrapping it as a `Parameter` is #465.
+		this.variableKeywordParameter = args != null && args.kwarg != null;
 	}
 
 	public void addFailure(PreconditionFailure failure, String message) {
@@ -1237,6 +1617,10 @@ public class Function {
 		this.addStatus(RefactoringStatus.WARNING, message, RefactoringStatusEntry.NO_CODE);
 	}
 
+	private void addWarning(Information information, String message) {
+		this.addStatus(RefactoringStatus.WARNING, message, information.getCode());
+	}
+
 	/**
 	 * Check refactoring preconditions. The status is added to this {@link Function}.
 	 *
@@ -1265,18 +1649,17 @@ public class Function {
 								// second safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS,
 										"Can't hybridize a function that applies numpy to values derived from its parameters.");
-							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments())
-								// Passes a non-string constant where a TensorFlow API declares `name`, which only tracing validates
-								// (issue 814). The third safety failure in the family; also precedes the benefit signal.
+							else if (this.getHasUntraceablePythonOnParameters() != null && this.getHasUntraceablePythonOnParameters())
+								// Applies Python to a tensor in a way tracing cannot carry (issues 1074 and 1083). A safety failure
+								// in the same family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_UNTRACEABLE_PYTHON_ON_PARAMETERS,
+										"Can't hybridize a function that applies bool to, or branches with paths disagreeing about None on, a tensor.");
+							else if (this.getHasInvalidNameArguments() != null && this.getHasInvalidNameArguments()
+									|| this.getCallsInvalidNameArguments())
+								// Passes, or calls a function that passes, a name argument that only tracing validates and rejects
+								// (issues 814 and 1087). The third safety failure in the family; also precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_INVALID_NAME_ARGUMENTS,
-										"Can't hybridize a function that passes a non-string name argument to a TensorFlow API.");
-							else if (this.getHasUnresolvedStaticallyReadAxes() != null && this.getHasUnresolvedStaticallyReadAxes())
-								// The inferred signature leaves unresolved an axis the body reads statically (issue 811). Emitting it
-								// would break the function at trace time, so the conversion is declined; the fourth safety failure in
-								// the family, also preceding the benefit signal.
-								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
-										"Can't hybridize this function with the inferred input signature: "
-												+ "its body reads a tensor dimension the signature leaves unspecified.");
+										"Can't hybridize a function that passes, or calls a function that passes, an invalid name argument to a TensorFlow API.");
 							else if (this.getHasStaleVariableReads() != null && this.getHasStaleVariableReads())
 								// Snapshots a model's variables before the model's first call, which raises under tracing when
 								// optimizer slot creation lands on the lifting re-trace (issue 822). The fifth safety failure in the
@@ -1290,6 +1673,110 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION,
 										"Can't hybridize a function that iterates one of its tensor arguments with a Python loop; "
 												+ "tracing makes the argument symbolic, which cannot be iterated.");
+							else if (this.getHasTensorParameterItemAssignment() != null && this.getHasTensorParameterItemAssignment())
+								// Stores into a parameter-derived tensor by subscript, which a symbolic tensor does not support (issue
+								// 1098). A safety failure in the same family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT,
+										"Can't hybridize a function that assigns into one of its tensor arguments by index; "
+												+ "tracing makes the argument symbolic, which does not support item assignment.");
+							else if (this.getHasTensorParameterConstant() != null && this.getHasTensorParameterConstant())
+								// Passes a parameter-derived tensor to tf.constant, which rejects a symbolic tensor (issue 1169). A safety
+								// failure in the same family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_TENSOR_PARAMETER_CONSTANT,
+										"Can't hybridize a function that passes one of its tensor arguments to tf.constant; "
+												+ "tracing makes the argument symbolic, which tf.constant rejects.");
+							else if (this.getHasConflictingEagerDtypeCoercions() != null && this.getHasConflictingEagerDtypeCoercions())
+								// A parameter's direct consumers impose different eager-effective dtypes (issue 861, Case 1): eager
+								// execution coerces the argument differently at each op, so no single input signature preserves
+								// semantics and a bare decorator raises at the first mismatched op. The seventh safety failure in the
+								// family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_CONFLICTING_EAGER_DTYPE_COERCIONS,
+										"Can't hybridize a function whose parameter combines with tensors of different dtypes; "
+												+ "eager execution coerces the argument per operation, so no single input signature "
+												+ "preserves its semantics.");
+							else if (TRUE.equals(this.getHasNumpyElementDtypeCoercions()))
+								// An element of a NumPy argument is combined with a value of another dtype (issue 1111): eagerly the
+								// element is a NumPy scalar the operation converts, but traced the argument is a tensor of its own dtype,
+								// whose element the operation rejects. A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_NUMPY_ELEMENT_DTYPE_COERCIONS,
+										"Can't hybridize a function that combines an element of a NumPy argument with a tensor of another "
+												+ "dtype; eager execution converts the element, but tracing makes the argument a tensor of "
+												+ "its own dtype, which the operation rejects.");
+							else if (this.requiresUnwritableEagerDtypePin())
+								// A parameter is fed a dtype its consumers do not impose, and no specification will be written to
+								// reproduce the conversion at the trace boundary. Eagerly the argument converts at the operation; under
+								// tracing it materializes at the dtype it was fed and the operation raises (#861, Case 1). Unlike the
+								// conflicting case above, a specification WOULD preserve this function exactly, naming the imposed dtype;
+								// what is missing is the specification, not the answer.
+								this.addFailure(PreconditionFailure.HAS_UNWRITABLE_EAGER_DTYPE_PIN,
+										"Can't hybridize a function whose parameter is fed a dtype its consumers do not impose unless an "
+												+ "input signature is written: eager execution converts the argument at the operation, and "
+												+ "tracing without a signature carries the fed dtype in instead.");
+							else if (this.getHasKerasSymbolicArguments() != null && this.getHasKerasSymbolicArguments())
+								// A call site passes a Keras symbolic tensor (issue 887): tf.function is one of the APIs a KerasTensor
+								// refuses, so the decorator raises on the first call before anything is traced, bare or with a
+								// signature. The eighth safety failure in the family; also precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_KERAS_SYMBOLIC_ARGUMENTS,
+										"Can't hybridize a function called with a Keras symbolic tensor; tf.function refuses a "
+												+ "KerasTensor, so the decorator raises before anything is traced.");
+							else if (this.getHasUncrossableBoundaryValues() != null && this.getHasUncrossableBoundaryValues())
+								// A returned variable or tensor array is converted to a tensor at the tf.function boundary, losing its
+								// identity and mutability, and a passed tensor spec makes the call raise (issue 1075). A safety failure;
+								// it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES,
+										"Can't hybridize a function that returns a tf.Variable or tf.TensorArray, which tf.function "
+												+ "converts to a tensor, or is passed a tf.TensorSpec, which makes the call raise.");
+							else if (this.getHasReboundStateReads() != null && this.getHasReboundStateReads())
+								// Reads a tensor or a Python scalar from a field another function rebinds between calls, so a trace
+								// keeps the value the field held when it was traced (issues 1076 and 1048). A safety failure; it
+								// precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_REBOUND_STATE_READS,
+										"Can't hybridize a function that reads a tensor or a Python scalar from a field another function "
+												+ "rebinds; a trace would keep the value the field held when it was traced. It reads the "
+												+ this.reboundStateWrite + ".");
+							else if (TRUE.equals(this.getReturnsPrimitive()) && !FALSE.equals(this.getHasUsedResults()))
+								// A returned Python primitive, at the top level or inside a returned container, is converted to a
+								// tensor at the tf.function boundary, so the caller no longer receives a Python value (issue 1117). A
+								// function whose every call discards its result has no caller the change can reach; ignorance of the
+								// callers still refuses. A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE,
+										"Can't hybridize a function that may return a Python int, float, str, or bool, which tf.function "
+												+ "converts to a tensor.");
+							else if (TRUE.equals(this.getPassesShapeValueAcrossBoundary()))
+								// A shape known only as a tensor value crosses the boundary, inbound into a returned op's shape operand or
+								// outbound from a dynamic shape op: tracing keeps the shape tensor's type but not its value, so a caller's
+								// static dimensions become None. Conservative: no downstream static read is proven. A safety failure; it
+								// precedes the benefit signal. Converting a hybrid function's decorator cannot introduce it, since its
+								// boundary already exists, so the hybrid side does not check it.
+								this.addFailure(PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY,
+										"Can't hybridize a function that passes a tensor shape's value across its boundary; tracing keeps the "
+												+ "shape tensor's type but not its value, so a caller's static shape is lost.");
+							else if (this.isBoundCustomGradientMethod())
+								// A `tf.custom_gradient` method with a bound first argument fails under tf.function in either decorator
+								// order (issue 1000): above it, graph-mode custom_gradient converts `self` or `cls` to a tensor; beneath
+								// it, the gradient function's return is rejected. A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD,
+										"Can't hybridize a tf.custom_gradient method with a bound self or cls argument; tf.function "
+												+ "fails with it in either decorator order.");
+							else if (TRUE.equals(this.getReshapesWithScalarShape()))
+								// Reshapes with a shape operand that may be rank 0, which the eager kernel accepts and
+								// graph shape inference rejects (issue 1170). A safety failure; it precedes the benefit
+								// signal.
+								this.addFailure(PreconditionFailure.RESHAPES_WITH_SCALAR_SHAPE,
+										"Can't hybridize a function that calls tf.reshape with a scalar shape, such as -1; tracing requires "
+												+ "a rank-1 shape.");
+							else if (this.tracingChangesGuardedException().isPresent() || this.bodyHandlerChange.isPresent())
+								// A guard around a call dispatches on its exception, but the argument may fail a static check, which a
+								// bare decorator raises at trace time as another exception than the kernel's (issue 1014). The decorator
+								// itself changes the exception, so no signature can be withheld to preserve the dispatch. A safety
+								// failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION, this.tracingChangesGuardedException()
+										.map(exceptions -> "Can't hybridize a function called inside an assertRaises, pytest.raises, or try "
+												+ "statement with an argument whose shape or dtype no unguarded call is known to pass; tracing "
+												+ "it may raise " + exceptions
+												+ " in place of the TensorFlow error, which the guard treats differently.")
+										.orElseGet(() -> "Can't hybridize a function whose body calls TensorFlow inside a try statement "
+												+ "that dispatches on " + this.bodyHandlerChange.get() + "."));
 							else if (this.getHasTensorComputation() != null && !this.getHasTensorComputation())
 								// Performs no tensor computation, so hybridization is unlikely to help (issue 709). Leaving it eager is
 								// incompleteness-safe: it never violates semantics preservation.
@@ -1302,6 +1789,14 @@ public class Function {
 								this.addFailure(PreconditionFailure.HAS_COVERED_CALLERS,
 										"Every known call path to this function comes from hybridized code, so its computation "
 												+ "is already traced; hybridizing it would add no benefit.");
+							else if (this.returnsOperation())
+								// Issue 929: the tracer accepts only Tensors, ExtensionTypes, or None as a return. A function returning
+								// an Operation therefore raises under any decorator, with or without a signature, so the conversion is
+								// declined rather than its specification withheld: there is no decoration of it that works.
+								this.addFailure(PreconditionFailure.RETURNS_OPERATION,
+										"Can't hybridize a function returning a tf.Operation: tf.function accepts only Tensors, "
+												+ "ExtensionTypes, or None as a return value, so the decorator raises regardless of "
+												+ "any input signature.");
 							else {
 								this.addTransformation(Transformation.CONVERT_TO_HYBRID);
 								this.setPassingPrecondition(P1);
@@ -1313,8 +1808,41 @@ public class Function {
 								 * result is memoized, so the change does not recompute it, and computing it has no bearing on the P1
 								 * decision.
 								 */
-								if (this.getInferInputSignatures())
+								if (this.getInferInputSignatures()) {
 									this.inferInputSignature();
+
+									// The third disposition of issue 864: the signature leaves unresolved an axis the body reads
+									// statically (issue 811), so emitting it would break the function at trace time, while the bare
+									// decorator is exactly what the tool ships with inference off and works there. Withhold the
+									// signature, keep the conversion, and surface the withholding as the function-level absence so a
+									// reader can tell "hybridized without a signature because one could not be written safely" from
+									// both "hybridized with a signature" and "not hybridized". The reconfiguration path keeps
+									// declining with the precondition failure: there the decoration already exists, and changing its
+									// argument is the only action on the table.
+									// Issue 928: the function is reached through `tf.distribute.Strategy.run`, which does not preserve
+									// the declared argument structure. A signature accurate for a direct call therefore describes a
+									// calling convention this function will not be called by, and it raises on arity before any
+									// argument is examined. The bare decorator is what runs on that path, so withhold the signature
+									// and keep the conversion, exactly as for the statically-read-axis case below.
+									if (TRUE.equals(this.getReplicaInvoked()) && this.getInferredInputSignature().isPresent()) {
+										this.inferredInputSignature = new InferenceResult.Absent(
+												InferenceResult.AbsenceReason.WITHHELD_REPLICA_INVOKED);
+										this.addInfo(INPUT_SIGNATURE_INFERENCE,
+												"`" + this + "` is invoked through a distribution strategy, which does not preserve its "
+														+ "declared argument structure, so the signature is withheld and the function is "
+														+ "hybridized with a bare decorator instead.");
+									}
+
+									if (TRUE.equals(this.getHasUnresolvedStaticallyReadAxes())
+											&& this.getInferredInputSignature().isPresent()) {
+										this.inferredInputSignature = new InferenceResult.Absent(
+												InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES);
+										this.addInfo(INPUT_SIGNATURE_INFERENCE,
+												"The inferred input signature of `" + this + "` leaves unspecified a tensor dimension "
+														+ "its body reads statically, so the signature is withheld and the function is "
+														+ "hybridized with a bare decorator instead.");
+									}
+								}
 							}
 						} else if (this.isRecursive() != null) // it's recursive.
 							this.addFailure(PreconditionFailure.IS_RECURSIVE, "Can't hybridize a recursive function.");
@@ -1361,14 +1889,24 @@ public class Function {
 						"Every known call path to this hybrid function comes from hybridized code, so its decorator is redundant "
 								+ "on every executed path; de-hybridizing it may be beneficial.");
 
-			if (this.getHasTensorParameter() != null && !this.getHasTensorParameter()) {
+			// A supplied `input_signature` keeps the function hybrid where a hybrid-to-eager rule below would otherwise remove it (issue
+			// 997): the rule still runs, side-effect and recursion checks included, but its CONVERT_TO_EAGER decision is replaced by a
+			// HAS_SUPPLIED_INPUT_SIGNATURE failure. See `convertToEagerUnlessSignatureSupplied`.
+
+			// A "no tensor parameter" verdict is an established absence only if every parameter's classification is a determination. One
+			// with no abstract value (an argument produced by an op the analysis doesn't model, such as `"_%d" % i` or `d.get(k)`, or lost
+			// through `wrapper(*args, **kwargs)`) concluded nothing, so the function is kept hybrid and reported as having tensor
+			// parameters that can't be inferred (issue 997).
+			if (FALSE.equals(this.getHasTensorParameter()) && !this.isTensorParameterAbsenceEstablished()
+					&& !this.getHybridizationParameters().hasInputSignatureParam())
+				this.addFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER,
+						"Can't infer tensor parameters for this hybrid function: a parameter has no abstract value, so it is kept hybrid.");
+			else if (FALSE.equals(this.getHasTensorParameter())) {
 				this.addInfo("This hybrid function does not likely have a tensor parameter from tensor analysis.");
 
 				if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 					this.addInfo("This hybrid function does not have Python side-effects.");
-					this.addTransformation(CONVERT_TO_EAGER);
-					this.setPassingPrecondition(P2);
-
+					this.convertToEagerUnlessSignatureSupplied(P2);
 				} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 					this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
 							"De-hybridizing a function with Python side-effects may alter semantics.");
@@ -1380,12 +1918,19 @@ public class Function {
 					// if it does not have side-effects.
 					if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 						this.addInfo("This hybrid function does not have Python side-effects.");
-						this.addTransformation(CONVERT_TO_EAGER);
-						this.setPassingPrecondition(P3);
+						this.convertToEagerUnlessSignatureSupplied(P3);
 					} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 						this.addFailure(HAS_PYTHON_SIDE_EFFECTS, "De-hybridizing a function with Python side-effects may alter semantics.");
 				} else if (this.getHasPrimitiveParameter() != null) { // no primitive parameters.
-					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation()) {
+					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation() && this.isTensorComputationUnresolved())
+						// Not established as barren: a call the analysis could not resolve may compute tensors, and de-hybridizing a
+						// function that does (and possibly relies on graph mode, such as `optimizer.get_gradients`) breaks it (issue 997).
+						// Keep the developer's decorator.
+						this.addInfo(
+								"This hybrid function performs no tensor computation the analysis can see, but it has an unresolved call, so it is kept hybrid.");
+
+					if (this.getHasTensorComputation() != null && !this.getHasTensorComputation()
+							&& !this.isTensorComputationUnresolved()) {
 						// Barren (issue 709): a hybrid function performing no tensor computation gains nothing from graph execution, only
 						// tracing overhead, so de-hybridize it when semantics are preserved (no Python side-effects). This is the
 						// hybrid-to-eager counterpart of the eager-to-hybrid NO_TENSOR_COMPUTATION precondition and a peer of P2/P3.
@@ -1393,8 +1938,7 @@ public class Function {
 
 						if (this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects()) {
 							this.addInfo("This hybrid function does not have Python side-effects.");
-							this.addTransformation(CONVERT_TO_EAGER);
-							this.setPassingPrecondition(P6);
+							this.convertToEagerUnlessSignatureSupplied(P6);
 						} else if (this.getHasPythonSideEffects() != null) // it has side-effects.
 							this.addFailure(HAS_PYTHON_SIDE_EFFECTS,
 									"De-hybridizing a function with Python side-effects may alter semantics.");
@@ -1403,66 +1947,99 @@ public class Function {
 						 * This function is already correctly hybrid (tensor parameter, no primitive parameter). When input-signature
 						 * inference is enabled, the function is side-effect-free and non-recursive, and a signature can be inferred and
 						 * emitted, the decorator is reconfigured: if it carries no `input_signature` yet, add the inferred one (the add
-						 * path); if it carries one that is more specific than, or incomparable with, the inferred one, overwrite it; if it
-						 * carries one broader than the inferred one, preserve it (the broader signature may be intentional); if they agree,
-						 * do nothing. A supplied signature whose content could not be modeled is left untouched. Gating on the flag keeps
-						 * the default precondition matrix unchanged.
+						 * path); if it carries one broader than the inferred one, narrow it unless a precondition declines (issue 808); if
+						 * it carries one more specific than, or incomparable with, the inferred one, report the disagreement and leave it
+						 * unchanged; if they agree, do nothing. A supplied signature whose content could not be modeled is left untouched.
+						 * Gating on the flag keeps the default precondition matrix unchanged.
 						 */
+						// A signature the developer already supplied has already disabled a rest-keyword slot, so a caller passing a
+						// keyword raises today, before this refactoring touches anything. Nothing here can repair that, and rewriting
+						// the signature would not: the report is the action. Warned rather than failed, since the function's
+						// hybridization is not what is wrong with it, and gated on inference like every other signature diagnostic
+						// (#902).
+						if (this.getInferInputSignatures() && this.hasVariableKeywordParameter()
+								&& this.getHybridizationParameters().hasInputSignatureParam())
+							this.addWarning("This hybrid function declares a `**kwargs` parameter alongside an input signature. The "
+									+ "signature fixes the arguments the function accepts, so that parameter absorbs nothing and any "
+									+ "caller passing a keyword argument raises; for a Keras layer that caller is Keras itself, which "
+									+ "passes `training`. Removing the input signature, or the `**kwargs` parameter, resolves it.");
+
 						// An unresolved statically-read axis blocks every reconfigure path: writing the inferred signature (adding or
 						// overwriting) would break the function at trace time (issue 811).
 						boolean unresolvedStaticallyReadAxes = this.getHasUnresolvedStaticallyReadAxes() != null
 								&& this.getHasUnresolvedStaticallyReadAxes();
 
-						boolean canReconfigure = this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
-								&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
-								&& this.canEmitInferredInputSignature() && !unresolvedStaticallyReadAxes;
+						// A bound `tf.custom_gradient` method already fails under its `tf.function` in either decorator order (issue
+						// 1000), so a signature written into that decorator would change nothing that runs; it is reported, not edited.
+						boolean boundCustomGradient = this.getInferInputSignatures() && this.isBoundCustomGradientMethod();
+
+						// The reconfiguration gates minus the axis check, so the blocked case below can tell "the axis was the sole
+						// blocker" (code 18 reports alone) from "reconfiguration was never otherwise viable" (the pre-inference
+						// terminal applies); see issue 865.
+						boolean reconfigureOtherwiseViable = !boundCustomGradient && this.getInferInputSignatures()
+								&& this.getHasPythonSideEffects() != null && !this.getHasPythonSideEffects() && this.isRecursive() != null
+								&& !this.isRecursive() && this.canEmitInferredInputSignature();
+
+						boolean canReconfigure = reconfigureOtherwiseViable && !unresolvedStaticallyReadAxes;
 
 						if (canReconfigure && !this.getHybridizationParameters().hasInputSignatureParam()) {
 							// Add path: no existing `input_signature`.
-							this.addInfo("This hybrid function has no input signature and will be reconfigured to add the inferred one.");
 							this.addTransformation(RECONFIGURE);
 							this.setPassingPrecondition(P4);
 						} else if (canReconfigure && this.getHybridizationParameters().getSuppliedInputSignature().isPresent()
 								&& this.inferInputSignature() instanceof InferenceResult.Inferred(InputSignature inferred)) {
-							// Adjudication path: an existing, fully-modeled `input_signature` is present. Compare it against the
-							// inferred one and REPORT; no relation rewrites the signature (issue 808). Since the inferred signature is
-							// the join over the observed call sites, the tighter and incomparable relations can only arise when some
-							// observed call violates the existing signature, i.e., the original program raises at that site; rewriting
-							// the signature to admit those calls would repair rather than refactor, with zero retracing benefit (a
-							// present signature already pins one trace). The rewrite is a sanctioned future find-and-fix
-							// transformation, not this refactoring. `canReconfigure` implies inference succeeded (it gates on
-							// `canEmitInferredInputSignature`), so the pattern always binds here; a hypothetical `Absent` falls
-							// through to the no-primitive-parameter failure below.
+							// Adjudication path: an existing, fully-modeled `input_signature` is present, and it is compared against the
+							// inferred one (issue 808). Under the closed-world assumption the reachable call sites are all the callers,
+							// and the inferred signature is their join. A broader supplied signature is therefore narrowed: every caller
+							// already conforms to the inferred one. A tighter or incomparable one means some reachable call already
+							// violates it, so rewriting it would repair the program rather than refactor it; that is a failing
+							// precondition, reported per parameter. `canReconfigure` implies inference succeeded (it gates on
+							// `canEmitInferredInputSignature`), so the pattern always binds here.
 							InputSignature supplied = this.getHybridizationParameters().getSuppliedInputSignature().get();
 
 							switch (supplied.relate(inferred)) {
-							case SUPPLIED_TIGHTER -> this
-									.addWarning("This hybrid function's input signature is narrower than its call sites require; "
-											+ "a nonconforming observed call raises at runtime. The signature is left unchanged: "
-											+ "admitting those calls would change program behavior rather than preserve it.");
-							case INCOMPARABLE -> this.addWarning("This hybrid function's input signature disagrees with its call sites; "
-									+ "a nonconforming observed call raises at runtime. The signature is left unchanged: "
-									+ "reconciling it would change the inputs the function accepts.");
-							case SUPPLIED_BROADER -> this
-									.addInfo("This hybrid function's input signature is broader than its call sites require; "
-											+ "it is left unchanged in case the broader signature is intentional.");
-							case AGREEMENT -> {
-								// Nothing to report: the supplied signature matches the call-site evidence.
+							case SUPPLIED_BROADER -> this.adjudicateBroaderSuppliedSignature(supplied, inferred);
+							case SUPPLIED_TIGHTER, INCOMPARABLE -> this.reportSuppliedSignatureDisagreement(supplied, inferred);
+							case AGREEMENT ->
+									// No transformation applies, so the already-optimal verdict reports (issue 865's model: a function the
+									// refactoring cannot further improve "fails" it, benignly).
+									this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+											"Functions with no Python literal arguments may benefit from hybridization.");
 							}
-							}
-
-							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-									"Functions with no Python literal arguments may benefit from hybridization.");
+						} else if (reconfigureOtherwiseViable && unresolvedStaticallyReadAxes) {
+							// The one emission issue 865 removes: this function is NOT already optimal, since a signature
+							// improvement existed and was withheld as unwritable, so the already-optimal verdict would be false
+							// here. The unresolved axis is the operative failure and reports alone (issue 811).
+							// This branch is reached whether or not a signature is supplied: `canReconfigure` is false whenever the axis
+							// is unresolved, so neither the add path nor the adjudication path above can have run. A single sentence
+							// naming an `input_signature` would therefore name one the function may not have, which reads as though an
+							// existing signature were being preserved (issue 953). Describe the effect on the program instead of the
+							// transformation's name, which is `RECONFIGURE` in both cases because it acts on the decorator.
+							this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
+									(this.getHybridizationParameters().hasInputSignatureParam()
+											? "Can't reconfigure this function's input signature: "
+											: "Can't add an input signature to this function: ")
+											+ "its body reads a tensor dimension the inferred signature leaves unspecified.");
 						} else {
-							if (unresolvedStaticallyReadAxes)
-								// Report the honest blocking reason alongside the default terminal failure: the reconfiguration was
-								// declined because writing the inferred signature would break the function (issue 811).
-								this.addFailure(PreconditionFailure.HAS_UNRESOLVED_STATICALLY_READ_AXES,
-										"Can't reconfigure this function's input signature: "
-												+ "its body reads a tensor dimension the inferred signature leaves unspecified.");
-
-							this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
-									"Functions with no Python literal arguments may benefit from hybridization.");
+							if (boundCustomGradient)
+								// Not already optimal: the function's own decorator fails on every call, so the already-optimal verdict
+								// would be false here. The bound method is the operative failure and reports instead (issue 1000).
+								this.addFailure(PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD,
+										"This hybrid tf.custom_gradient method has a bound self or cls argument, which tf.function "
+												+ "fails with in either decorator order, so its decorator is not reconfigured.");
+							else if (this.getInferInputSignatures() && this.getHasPythonSideEffects() != null
+									&& !this.getHasPythonSideEffects() && this.isRecursive() != null && !this.isRecursive()
+									&& !this.canEmitInferredInputSignature() && this.inferInputSignature().signature().isPresent())
+								// Not already optimal either: a signature was inferred but is withheld as unwritable, since its names
+								// aren't in scope under the file's import shape (issue 1018).
+								this.addFailure(PreconditionFailure.INFERRED_INPUT_SIGNATURE_NAMES_NOT_IMPORTED,
+										"This hybrid function's inferred input signature uses TensorFlow names its file doesn't import, so its "
+												+ "decorator is not reconfigured.");
+							else
+								// The pre-inference terminal, unchanged: no signature flow resolved anything here, so the already-optimal
+								// verdict reports as it always did.
+								this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+										"Functions with no Python literal arguments may benefit from hybridization.");
 
 							if (this.getHasPythonSideEffects() != null && this.getHasPythonSideEffects())
 								this.addFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS,
@@ -1553,6 +2130,8 @@ public class Function {
 								"Can't determine if decorator: %s in selection: %s, module: %s, file: %s, and project; %s is hybrid.",
 								decoratorFunctionRepresentation, selectedText, containingModuleName, containingFileName,
 								nature.getProject()), e);
+
+					this.addUnresolvedDecorator(decorator, e);
 				}
 
 				if (hybrid)
@@ -1631,7 +2210,83 @@ public class Function {
 
 		this.hasTensorComputation = performsTensorOp;
 
-		LOG.info(this + (performsTensorOp ? " performs a tensor computation." : " performs no tensor computation."));
+		// No tensor op found is an established absence only if every call the scan passed was resolved; an unresolved call may perform
+		// a computation the scan cannot see.
+		if (!performsTensorOp)
+			this.tensorComputationUnresolved = nodes.stream()
+					.anyMatch(cgNode -> Util.hasUnresolvedCall(cgNode, callGraph, pointerAnalysis));
+
+		LOG.info(this + (performsTensorOp ? " performs a tensor computation."
+				: this.tensorComputationUnresolved ? " performs no tensor computation the analysis can see, but has an unresolved call."
+						: " performs no tensor computation."));
+	}
+
+	/**
+	 * Selects {@link Transformation#CONVERT_TO_EAGER} with the given passing precondition, unless this hybrid function carries a supplied
+	 * {@code input_signature}, in which case it is kept hybrid with {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} instead. Only
+	 * the conversion is replaced; the checks that lead to it (side-effects, recursion) have already run as they would without a signature.
+	 * The failure gives the rule's own reason for keeping the decorator. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 * <p>
+	 * A function that calls a graph-only API ({@link #getHasGraphOnlyCalls()}) is kept hybrid with
+	 * {@link PreconditionFailure#HAS_GRAPH_ONLY_CALLS} before either, whichever hybrid-to-eager rule selected the conversion, since running
+	 * the call eagerly breaks it (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171).
+	 *
+	 * @param precondition The precondition the conversion passes when it is selected.
+	 */
+	private void convertToEagerUnlessSignatureSupplied(PreconditionSuccess precondition) {
+		if (TRUE.equals(this.getHasGraphOnlyCalls()))
+			// Calls an API that works only while a graph is being built, which eagerly raises or returns None gradients (issue 1171).
+			// A safety failure, so it holds whatever the rule that would have de-hybridized the function.
+			this.addFailure(PreconditionFailure.HAS_GRAPH_ONLY_CALLS,
+					"Can't de-hybridize a function that calls an API that works only while a graph is being built, such as tf.gradients "
+							+ "or an optimizer's get_gradients; eagerly, it raises or returns None gradients.");
+		else if (this.getHybridizationParameters().hasInputSignatureParam())
+			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE, getSuppliedInputSignatureMessage(precondition));
+		else {
+			this.addTransformation(CONVERT_TO_EAGER);
+			this.setPassingPrecondition(precondition);
+		}
+	}
+
+	/**
+	 * The reason a hybrid function with a supplied {@code input_signature} is kept hybrid where the hybrid-to-eager rule with the given
+	 * precondition would otherwise de-hybridize it.
+	 *
+	 * @param precondition The precondition the replaced conversion would have passed: {@link PreconditionSuccess#P2},
+	 *        {@link PreconditionSuccess#P3}, or {@link PreconditionSuccess#P6}.
+	 * @return The message of the {@link PreconditionFailure#HAS_SUPPLIED_INPUT_SIGNATURE} failure.
+	 */
+	private static String getSuppliedInputSignatureMessage(PreconditionSuccess precondition) {
+		return switch (precondition) {
+		case P2 -> "This hybrid function has a supplied input_signature, so its body receives tensors, and removing the decorator would change how its arguments are converted and validated; it is not de-hybridized.";
+		case P3 -> "This hybrid function has a supplied input_signature, under which a primitive argument does not cause retracing; it is not de-hybridized.";
+		case P6 -> "This hybrid function has a supplied input_signature, and removing the decorator would delete the validation and conversion of its arguments; it is not de-hybridized.";
+		default -> throw new IllegalArgumentException("Not a hybrid-to-eager precondition: " + precondition + ".");
+		};
+	}
+
+	/**
+	 * True iff every non-{@code self} parameter's tensor classification is a determination, so that a "no tensor parameter" verdict is an
+	 * established absence rather than a lack of evidence. A parameter with no abstract value
+	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}) or one whose classification didn't run concluded nothing. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
+	 *
+	 * @return True iff the parameters' non-tensor classifications are all determinations.
+	 */
+	public boolean isTensorParameterAbsenceEstablished() {
+		return this.getParameters().stream().filter(p -> !p.isSelf()).map(Parameter::getTensorClassificationBasis).noneMatch(b -> b == null
+				|| b == TensorClassificationBasis.NO_ABSTRACT_VALUE || b == TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN);
+	}
+
+	/**
+	 * True iff no tensor computation was found in this {@link Function}'s body, but the body (transitively) holds a call the call graph
+	 * does not resolve, so the absence is not established.
+	 *
+	 * @return True iff the "no tensor computation" verdict rests on an incomplete scan.
+	 */
+	public boolean isTensorComputationUnresolved() {
+		return this.tensorComputationUnresolved;
 	}
 
 	/**
@@ -1650,8 +2305,11 @@ public class Function {
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}), used to scope a read of an eager-only tensor member to a tensor receiver.
 	 */
-	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeEagerOnlyCalls(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
 		Set<CGNode> nodes;
 
 		try {
@@ -1670,7 +2328,7 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). It calls an eager-only API if any of
 		// them does; sampling a single node can miss the call at an imprecise context.
-		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis);
+		EagerOnlyCallAnalysis analysis = new EagerOnlyCallAnalysis(callGraph, pointerAnalysis, tensorTypedKeys);
 		boolean eagerOnly = nodes.stream().anyMatch(analysis::callsEagerOnlyApi);
 
 		this.hasEagerOnlyCalls = eagerOnly;
@@ -1688,9 +2346,52 @@ public class Function {
 	}
 
 	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built
+	 * ({@link GraphOnlyCallAnalysis}), storing the result for {@link #getHasGraphOnlyCalls()}. When the function has no call-graph node,
+	 * the result is left undetermined, mirroring {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks for the APIs a call invokes.
+	 */
+	public void computeGraphOnlyCalls(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " calls a graph-only API.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " calls a graph-only API without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes; it calls a graph-only API if any of them does.
+		GraphOnlyCallAnalysis analysis = new GraphOnlyCallAnalysis(callGraph, builder);
+		this.hasGraphOnlyCalls = nodes.stream().anyMatch(analysis::callsGraphOnlyApi);
+
+		LOG.info(this + (this.hasGraphOnlyCalls ? " calls a graph-only API." : " calls no graph-only APIs."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls an API that works only while a graph is being built, {@code null} if
+	 * undetermined.
+	 *
+	 * @return True iff a call of a graph-only API is reachable from this function; null if undetermined.
+	 */
+	public Boolean getHasGraphOnlyCalls() {
+		return this.hasGraphOnlyCalls;
+	}
+
+	/**
 	 * Computes whether this {@link Function}'s body (transitively) applies a numpy/scipy API to a value flowing from its parameters,
-	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis)}:
-	 * when the function has no call-graph node, the result is left undetermined and the precondition neither blocks nor passes on it.
+	 * storing the result for {@link #getHasNumpyCallsOnParameters()}. Mirrors
+	 * {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}: when the function has no call-graph node, the result is left
+	 * undetermined and the precondition neither blocks nor passes on it.
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
@@ -1725,6 +2426,20 @@ public class Function {
 		this.hasNumpyCallsOnParameters = numpyOnParameters;
 
 		LOG.info(this + (numpyOnParameters ? " applies numpy to its parameters." : " applies no numpy to its parameters."));
+
+		// The same walk decides the untraceable Python uses (issue 1074), so its memo serves both.
+		this.hasUntraceablePythonOnParameters = nodes.stream()
+				.anyMatch(cgNode -> numpyParameterFlowAnalysis.appliesUntraceablePythonToParameters(cgNode, this.isMethod()));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body (transitively) applies Python to a parameter-flowing value in a way tracing cannot carry,
+	 * {@code null} if undetermined (issue 1074).
+	 *
+	 * @return True iff this function applies untraceable Python to a tensor, null if undetermined.
+	 */
+	public Boolean getHasUntraceablePythonOnParameters() {
+		return this.hasUntraceablePythonOnParameters;
 	}
 
 	/**
@@ -1738,6 +2453,331 @@ public class Function {
 	}
 
 	/**
+	 * Callees whose result is a {@code tf.Operation} rather than a Tensor. A function returning one cannot be traced at all, so it is not a
+	 * hybridization candidate (issue 929).
+	 * <p>
+	 * This is an ENUMERATION AND IT IS NOT COMPLETE. An Operation reached by any route not named here passes unnoticed, so a green check is
+	 * not evidence that a function is safe to decorate, only that it does not return an Operation by one of these. The complete form is a
+	 * type query, and wala/ML#864 supplies it for exactly these four callees as of Ariadne 0.52.91: the swap there changes the mechanism
+	 * and not the verdict. It does not remove this set, because a producer the engine does not model still passes silently and this
+	 * enumeration is what catches one.
+	 * <p>
+	 * Every entry was confirmed by decorating a function that returns it and observing the {@code TypeError}, rather than by reasoning
+	 * about which APIs sound operation-like. That distinction removed a member: {@code tf.summary.scalar} reads as an operation producer
+	 * and is not one, returning a boolean Tensor that decorates and runs, so excluding such a function would decline traceable work.
+	 * <p>
+	 * The entries other than {@code group} and {@code no_op} yield an operation only under tracing and {@code None} eagerly. They belong
+	 * here regardless, because decoration is what puts the function under tracing: the conditional branch is the one a hybridized function
+	 * takes.
+	 */
+	private static final Set<String> OPERATION_PRODUCING_CALLEES = Set.of("group", "no_op", "assert_equal", "print");
+
+	/**
+	 * The {@code tf.Variable} methods that perform an assignment. Reading {@code op} on what one of them returns yields the Operation that
+	 * carries the assignment out, which is the form issue 929 reports.
+	 * <p>
+	 * Every entry was confirmed the way {@link #OPERATION_PRODUCING_CALLEES}'s were, by decorating a function returning it and observing
+	 * the {@code TypeError}. As there, the list IS NOT COMPLETE.
+	 * <p>
+	 * Unlike that set, these are matched without reaching a TensorFlow root. The receiver is the variable being assigned, and its type is
+	 * not available here, so the spelling is all there is to go on: a non-TensorFlow object with a method of one of these names whose
+	 * result carries an {@code op} attribute would be refused a conversion that is sound. Requiring the trailing {@code op} read narrows
+	 * that considerably, but the residual is real.
+	 * <p>
+	 * DO NOT DELETE THIS ARM FOR wala/ML#864. That issue models {@code group}, {@code no_op}, {@code print}, and {@code assert_equal}, and
+	 * none of the methods named here: as of Ariadne 0.52.91 the assignment family is unmodeled entirely, so {@code v.assign_add(1.0)}
+	 * resolves to nothing at all rather than to something whose {@code op} field could be read. Issue 929's own minimal reproduction is
+	 * {@code return v.assign_add(1.0).op}, so swapping this arm for that type query would stop the check catching the case it was written
+	 * for. A separate change to model these six is in progress upstream; until a release carries it, this is the only arm that sees them.
+	 */
+	private static final Set<String> ASSIGNMENT_CALLEES = Set.of("assign", "assign_add", "assign_sub", "scatter_add", "scatter_sub",
+			"scatter_update");
+
+	/**
+	 * Whether every value this {@link Function} can return is a {@code tf.Operation}.
+	 * <p>
+	 * The predicate is ALL rather than ANY, deliberately. A function whose returns are an Operation on one path and a Tensor on another is
+	 * not one this check can decide, and deciding it either way is worse than declining to: declaring it an Operation refuses a conversion
+	 * that may be sound, and declaring it a Tensor permits one that cannot work. Only a function returning nothing else is declined.
+	 * <p>
+	 * A path is a {@code return} statement or the end of the body, since control reaching the end returns {@code None}. Whether the end is
+	 * reachable is answered by {@link #terminates(stmtType[])}, which approximates rather than analyzes control flow, so a function this
+	 * reports on is one whose every <em>examined</em> path returns an Operation.
+	 * <p>
+	 * A function with no {@code return} statement returns {@code None}, which the tracer accepts, so it is not an Operation returner.
+	 *
+	 * @return {@code true} when the function returns an Operation on every returning path.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/929">Issue 929</a>
+	 */
+	private boolean returnsOperation() {
+		FunctionDef functionDef = this.getFunctionDefinition().getFunctionDef();
+		List<exprType> returned = new ArrayList<>();
+
+		// A bare `return` yields None, which is not an Operation. Recorded separately because it contributes no expression to test, and
+		// dropping it would let a function that returns None on one path and an Operation on another satisfy "all returns are
+		// Operations" on the strength of the paths that happen to carry a value.
+		boolean[] returnsNone = { false };
+
+		try {
+			functionDef.traverse(new VisitorBase() {
+
+				@Override
+				public void traverse(SimpleNode node) throws Exception {
+					node.traverse(this);
+				}
+
+				@Override
+				protected Object unhandled_node(SimpleNode node) throws Exception {
+					return null;
+				}
+
+				@Override
+				public Object visitFunctionDef(FunctionDef node) throws Exception {
+					// Do not descend: a `return` inside a nested definition belongs to that function, not this one. Counting it here
+					// would decline or clear the wrong function, and the outer one's own returns would be judged by the inner one's.
+					return node == functionDef ? super.visitFunctionDef(node) : null;
+				}
+
+				@Override
+				public Object visitReturn(Return node) throws Exception {
+					if (node.value != null)
+						returned.add(node.value);
+					else
+						returnsNone[0] = true;
+
+					return super.visitReturn(node);
+				}
+			});
+		} catch (Exception e) {
+			LOG.warn("Can't walk the returns of: " + this + ".", e);
+			return false;
+		}
+
+		// No valued return at all, or some path returning None, means not every return is an Operation. The tracer accepts None, so
+		// such a function is not one this check declines. Falling off the end of the body returns None just as a bare `return` does,
+		// and collecting `return` statements cannot see that path, so the body is asked separately whether control can reach its end.
+		// The two spellings of one situation have to reach the same verdict.
+		if (returned.isEmpty() || returnsNone[0] || !terminates(functionDef.body))
+			return false;
+
+		return returned.stream().allMatch(Function::isOperationValued);
+	}
+
+	/**
+	 * Whether the given returned expression is an Operation, either by one of the forms {@link #OPERATION_PRODUCING_CALLEES} names or by an
+	 * {@code op} attribute read on something TensorFlow-rooted or on one of the assignments {@link #ASSIGNMENT_CALLEES} names.
+	 *
+	 * @param value The returned expression.
+	 * @return {@code true} when the expression is a recognized Operation producer.
+	 */
+	private static boolean isOperationValued(exprType value) {
+		// Both forms are scoped to TensorFlow-rooted expressions. Matching on the trailing name alone would decline a function
+		// returning any `group(...)` or `print(...)`, or reading any attribute named `op`, whatever library it belongs to, which
+		// refuses conversions that are perfectly sound. The rule is about what TensorFlow returns, not about a spelling.
+		// The rooted form alone would leave the reported case uncaught. Reaching the module by walking attribute links requires an
+		// unbroken chain of them, and an assignment interposes a call, so `v.assign_add(1.0).op` roots at the variable rather than at
+		// TensorFlow and no chain reaches it. That expression is the issue's own reproduction.
+		if (value instanceof Attribute attribute && attribute.attr instanceof NameTok name && "op".equals(name.id))
+			return isTensorFlowRooted(attribute.value) || isAssignmentCall(attribute.value);
+
+		if (value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name)
+			return OPERATION_PRODUCING_CALLEES.contains(name.id) && isTensorFlowRooted(call.func);
+
+		return false;
+	}
+
+	/**
+	 * Whether the given expression is a call to one of the assignments {@link #ASSIGNMENT_CALLEES} names.
+	 *
+	 * @param value The expression to examine.
+	 * @return {@code true} when the expression performs an assignment.
+	 */
+	private static boolean isAssignmentCall(exprType value) {
+		return value instanceof Call call && call.func instanceof Attribute callee && callee.attr instanceof NameTok name
+				&& ASSIGNMENT_CALLEES.contains(name.id);
+	}
+
+	/**
+	 * Whether control leaves the given suite on every path, rather than reaching its end. Where control can reach the end, the function
+	 * returns {@code None} there, which the tracer accepts, so a function whose body can be run off the end is not a function every return
+	 * of which is an Operation.
+	 * <p>
+	 * The shapes decided here are a trailing {@code return} or {@code raise}, and a trailing {@code if} whose branches both leave. Every
+	 * other shape is reported as reaching the end. That is an approximation and not a control-flow analysis: a loop no iteration exits, or
+	 * a {@code try} whose handlers all return, leaves on every path and is reported as not doing so. The consequence is the check declining
+	 * to decide rather than deciding wrongly, which is the direction the ALL rule already takes when paths disagree.
+	 *
+	 * @param suite The statements to examine.
+	 * @return {@code true} when control cannot reach the end of the suite.
+	 */
+	private static boolean terminates(stmtType[] suite) {
+		if (suite == null || suite.length == 0)
+			return false;
+
+		stmtType last = suite[suite.length - 1];
+
+		if (last instanceof Return || last instanceof Raise)
+			return true;
+
+		// An `if` decides only when it has an `else`. Without one the untaken branch continues past the statement, and an `elif` chain
+		// is a nested `if` in that position, so the same question asked of it answers the whole chain.
+		if (last instanceof If branch) {
+			suiteType orelse = branch.orelse;
+			return orelse != null && terminates(branch.body) && terminates(orelse.body);
+		}
+
+		return false;
+	}
+
+	/**
+	 * The declaring class of the synthetic node the engine uses to model {@code tf.distribute.Strategy.run}. A function invoked through
+	 * that node receives the arguments {@code run} distributes rather than the ones its declaration names.
+	 * <p>
+	 * Only the plain spelling is matched. The {@code $}-prefixed form elsewhere in this package is the method trampoline of a
+	 * <em>summarized</em> endpoint, and the dispatch is modeled as a synthetic node rather than a summary: no {@code $} variant of it
+	 * appears in the call graph. Should that modeling change, this check stops firing rather than failing, which is why the coupling is
+	 * stated on the issue rather than left implicit.
+	 */
+	private static final String DISTRIBUTE_RUN_CLASS_NAME = "Ltensorflow/distribute/run/run";
+
+	/**
+	 * Computes whether this {@link Function} is reached through {@code tf.distribute.Strategy.run}, storing the result for
+	 * {@link #getReplicaInvoked()}. That call path does not preserve the declared argument structure: a single structured parameter arrives
+	 * as separate positional arguments, so an emitted signature describes a calling convention that will not be used and the function
+	 * raises on arity before any argument is examined. A direct call to the same function with the same signature succeeds, so this is a
+	 * property of the caller rather than of the specification.
+	 *
+	 * @param callGraph The call graph, queried in the caller direction.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
+	 */
+	public void computeReplicaInvoked(CallGraph callGraph) {
+		// Without an emitted signature there is nothing to withhold, so the caller walk is not worth doing. The verdict is left UNSET
+		// rather than set to FALSE: no caller was examined, and "not examined" is not "examined and found not to be the dispatch".
+		// Setting FALSE here would report evidence that was never gathered, which is the distinction this check exists to preserve.
+		if (!this.getInferInputSignatures())
+			return;
+
+		Set<CGNode> nodes;
+
+		try {
+			// Queried directly rather than through the shared `getNodes` helper, which logs at ERROR when the set is empty. Here an
+			// empty set is the expected undetermined outcome for a function nothing calls, not a fault, and an error line for it
+			// would be noise on a path this check takes routinely.
+			nodes = callGraph.getNodes(this.getMethodReference());
+		} catch (CoreException e) {
+			// Undeterminable; leave the verdict unset so nothing is withheld on an unresolved reference.
+			LOG.warn("Can't determine whether " + this + " is reached through the replica dispatch.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node: no caller is visible, so absence of evidence is not evidence of absence.
+			LOG.info("Can't determine whether " + this + " is reached through the replica dispatch without a call graph node.");
+			return;
+		}
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node)))
+				if (DISTRIBUTE_RUN_CLASS_NAME.equals(predecessor.getMethod().getDeclaringClass().getName().toString())) {
+					this.replicaInvoked = TRUE;
+					return;
+				}
+
+		this.replicaInvoked = FALSE;
+	}
+
+	/**
+	 * The engine type names of the Keras classes whose {@code call} overrides Keras dispatches to: the summary classes of {@code Layer} and
+	 * {@code Model}. The other spellings of a model base ({@code tf.keras.Model}, {@code tf.keras.Sequential}, the private
+	 * {@code tensorflow.python.keras} module) are summary classes whose superclass chain reaches {@code Ltensorflow/keras/models/Model}.
+	 */
+	static final Set<TypeName> KERAS_CALLABLE_TYPE_NAMES = Set.of(TypeName.string2TypeName("Ltensorflow/keras/layers/Layer"),
+			TypeName.string2TypeName("Ltensorflow/keras/models/Model"));
+
+	/**
+	 * Computes whether this function's enclosing class transitively extends the Keras {@code Layer} or {@code Model} class as the engine
+	 * models it, storing the result for {@link #isKerasCallOverride()}, whose only source it is
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107). The bases are the engine's: a base the program defines
+	 * is followed to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified name names, whose
+	 * superclass the summary declares. So a base resolves however it was imported or aliased, and without walking TensorFlow's sources.
+	 * <p>
+	 * PyDev's class hierarchy stops at a base it can't resolve, and a base written through {@code tf.keras} is one: it then sees only the
+	 * base's own last segment, so {@code tf.keras.Sequential} answers {@code Sequential}, not {@code Model} (issue 1099), and a
+	 * program-defined class merely named {@code Layer} answers {@code Layer}. The engine's walk reaches {@code Model} through the summary's
+	 * superclass chain, and {@code Layer} from the built-in layers the engine summarizes ({@code BatchNormalization}, {@code Dense}, ...),
+	 * whose summaries declare it as their superclass (https://github.com/wala/ML/issues/1098). Since
+	 * https://github.com/wala/ML/issues/1127, it also reaches {@code Layer} or {@code Model} through the other spellings of the Keras
+	 * bases, the standalone {@code keras} package, {@code tensorflow.python.keras}, and {@code tf.compat.v1} and {@code v2}, and from
+	 * built-in layers that alias a summarized one, such as {@code MaxPooling2D} for {@code MaxPool2D}. A base with no summary class, or
+	 * whose summary declares no superclass, resolves to nothing here, and the class is not recognized.
+	 *
+	 * @param callGraph The call graph, whose class hierarchy holds the engine's classes.
+	 * @throws CoreException If this function's declaring class can't be determined.
+	 */
+	public void computeExtendsKerasCallableClass(CallGraph callGraph) throws CoreException {
+		if (!(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
+			return;
+
+		// The function's own type is its class's type followed by its name.
+		String functionTypeName = this.getDeclaringClass().getName().toString();
+		TypeName classTypeName = TypeName.string2TypeName(functionTypeName.substring(0, functionTypeName.lastIndexOf('/')));
+
+		this.extendsKerasCallableClass = !Collections.disjoint(getClassAndBaseNames(callGraph.getClassHierarchy(), classTypeName),
+				KERAS_CALLABLE_TYPE_NAMES);
+	}
+
+	/**
+	 * The engine type names of a class and of every base it transitively declares, as the engine's class hierarchy models them: a base the
+	 * program defines is followed to its own bases, and a base imported from TensorFlow resolves to the summary class its fully qualified
+	 * name names, whose superclass the summary declares. A name the walk reaches is included whether or not it is a class of the hierarchy,
+	 * but only a class's bases are followed.
+	 *
+	 * @param classHierarchy The engine's class hierarchy.
+	 * @param classTypeName The type name of the class to start from.
+	 * @return The type names of the class and its transitive bases.
+	 */
+	static Set<TypeName> getClassAndBaseNames(IClassHierarchy classHierarchy, TypeName classTypeName) {
+		Set<TypeName> ret = new HashSet<>();
+		Set<TypeName> seen = new HashSet<>();
+		Deque<TypeName> worklist = new ArrayDeque<>();
+		worklist.add(classTypeName);
+
+		while (!worklist.isEmpty()) {
+			TypeName name = worklist.remove();
+			ret.add(name);
+
+			IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
+
+			// A diamond reaches a shared base along each path, and its bases were already queued. A name with no class is not followed:
+			// a caller's first name may be derived from another type's, and the bases are resolved at the loader
+			// (https://github.com/wala/ML/issues/1006), whose cross-module resolution depends on translation order
+			// (https://github.com/wala/ML/issues/944), so neither is promised to be a class of the hierarchy.
+			if (cls == null || !seen.add(name))
+				continue;
+
+			// Every declared base, not only the superclass, so a Keras base after the first under multiple inheritance is reached. A
+			// class outside the Python loader's modeled classes (`object`, the root) records only its superclass.
+			if (cls instanceof IPythonClass)
+				worklist.addAll(((IPythonClass) cls).getBaseTypeNames());
+			else if (cls.getSuperclass() != null)
+				worklist.add(cls.getSuperclass().getName());
+		}
+
+		return ret;
+	}
+
+	/**
+	 * Whether this {@link Function} is reached through {@code tf.distribute.Strategy.run}.
+	 *
+	 * @return {@code TRUE} when some caller is the replica dispatch, {@code FALSE} when none is, or {@code null} when no caller could be
+	 *         examined.
+	 * @see #computeReplicaInvoked(CallGraph)
+	 */
+	public Boolean getReplicaInvoked() {
+		return this.replicaInvoked;
+	}
+
+	/**
 	 * Computes whether a parameter axis that this {@link Function}'s body (transitively) reads statically and consumes where a Python
 	 * integer is required is left unresolved (wildcard) by the inferred input signature, storing the result for
 	 * {@link #getHasUnresolvedStaticallyReadAxes()}. Under an emitted signature, a wildcard axis is {@code None} at trace time; a static
@@ -1748,9 +2788,10 @@ public class Function {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811.
 	 *
 	 * @param callGraph The call graph.
-	 * @param pointerAnalysis The pointer analysis.
+	 * @param builder The call-graph builder, whose pointer analysis resolves the reads and through which the engine names the TensorFlow
+	 *        APIs a call invokes.
 	 */
-	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	public void computeUnresolvedStaticallyReadAxes(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
 		// Without an emitted signature there is no wildcard to break on: inference off is determinately safe.
 		if (!this.getInferInputSignatures()) {
 			this.hasUnresolvedStaticallyReadAxes = FALSE;
@@ -1794,7 +2835,7 @@ public class Function {
 
 		// A function may have several call-graph nodes (context-sensitive copies, trampolines). Union the axis reads over all of them;
 		// sampling a single node can miss a read at an imprecise context.
-		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, pointerAnalysis);
+		StaticShapeReadAnalysis analysis = new StaticShapeReadAnalysis(callGraph, builder);
 		Set<StaticShapeReadAnalysis.AxisRead> reads = new HashSet<>();
 		Set<StaticShapeReadAnalysis.AxisRead> rankReads = new HashSet<>();
 
@@ -1803,6 +2844,8 @@ public class Function {
 			reads.addAll(nodeReads.axisReads());
 			rankReads.addAll(nodeReads.rankReads());
 		}
+
+		this.staticShapeReads = new StaticShapeReadAnalysis.StaticShapeReads(reads, rankReads);
 
 		// An extent-sensitive read blocks on any non-concrete covered axis; a rank-sensitive-only read (`as_list`, `rank`/`ndims`,
 		// `len`; #809) blocks only when the affected spec's rank itself is unknown (`shape=None`), which every such surface breaks on.
@@ -1825,7 +2868,14 @@ public class Function {
 	 */
 	private boolean isUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
 		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read)) {
-			// A container spec's per-element axes are not attributable to the read: conservative.
+			// Deliberately still refuses a container outright, where the rank arm below attributes the read across the elements
+			// instead. The two are asymmetric on purpose rather than by oversight. Relaxing a refusal is the direction that emits a
+			// specification where one was withheld, so it wants a witness, and the rank arm has one: a container parameter whose
+			// elements all answer the read, executed in both directions. No witness reaches this arm. A read is attributed to a
+			// parameter rather than to a value derived from one, so an extent read on an unpacked element does not present here, and
+			// three attempts to construct a case that does all resolved identically with the attribution removed. Whether this arm is
+			// reachable at all is the open question; until someone answers it, refusing costs precision on a path nobody has
+			// exhibited and risks nothing (#914).
 			if (!(entry instanceof InputSignature.Single single))
 				return true;
 
@@ -1857,6 +2907,343 @@ public class Function {
 	}
 
 	/**
+	 * Adjudicates a supplied input signature that is strictly broader than the inferred one (issue 808). Every reachable caller conforms to
+	 * the inferred signature, so narrowing to it preserves behavior, and the decorator is reconfigured ({@link PreconditionSuccess#P5}).
+	 * The narrowing is declined in these cases, each leaving the supplied signature unchanged:
+	 * <ul>
+	 * <li>The signature is given by name rather than as a literal. The name may be shared with other decorators, and rewriting it for this
+	 * function alone would split it ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME}).</li>
+	 * <li>The function is part of an interface the program exports, or whether it is could not be determined
+	 * ({@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_EXPORTED}).</li>
+	 * <li>The literal carries text the narrowed signature would drop, such as a spec's {@code name}, a comment, or a string
+	 * ({@link PreconditionFailure#NARROWING_WOULD_DROP_SPEC_TEXT}).</li>
+	 * <li>The narrowing changes a shape the function reads statically at trace time, so it changes the traced program
+	 * ({@link PreconditionFailure#NARROWING_CHANGES_STATICALLY_READ_SHAPE}). The reads are those collected for the static-shape-read check
+	 * (issue 811): a {@code .shape} or {@code get_shape()} read of a parameter flowing into a shape-consuming operation in the function
+	 * itself. A read reached only through a callee, or consumed by plain Python code, is not seen.</li>
+	 * </ul>
+	 * A supplied dtype is never {@link DType#UNKNOWN} here: the supplied-signature parser declines to model any dtype it cannot read, so
+	 * the narrowing never replaces a dtype that was never read, which could change how non-tensor arguments are cast. An assertion keeps
+	 * that invariant explicit.
+	 *
+	 * @param supplied The supplied input signature.
+	 * @param inferred The inferred input signature, which {@code supplied} is strictly broader than.
+	 */
+	private void adjudicateBroaderSuppliedSignature(InputSignature supplied, InputSignature inferred) {
+		exprType suppliedNode = this.getHybridizationParameters().getSuppliedInputSignatureNode();
+
+		if (!(suppliedNode instanceof org.python.pydev.parser.jython.ast.List || suppliedNode instanceof Tuple)) {
+			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_SHARED_BY_NAME,
+					"This hybrid function's input signature is broader than its call sites require, but it is given by name and may be "
+							+ "shared with other functions, so it is left unchanged.");
+			return;
+		}
+
+		if (!FALSE.equals(this.exported)) {
+			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_EXPORTED, this.exported == null
+					? "This hybrid function's input signature is broader than its call sites require, but whether the function is part of "
+							+ "an exported interface could not be determined, so it is left unchanged."
+					: "This hybrid function's input signature is broader than its call sites require, but the function is part of an "
+							+ "interface the program exports, which fixes the signature for its consumers too, so it is left unchanged.");
+			return;
+		}
+
+		if (this.narrowingWouldDropSpecText(suppliedNode)) {
+			this.addFailure(PreconditionFailure.NARROWING_WOULD_DROP_SPEC_TEXT,
+					"This hybrid function's input signature is broader than its call sites require, but it carries text the narrowed "
+							+ "signature would drop (a spec argument such as a name, a comment, or a string), so it is left unchanged.");
+			return;
+		}
+
+		assert supplied.entries().stream().flatMap(entry -> coveredTypes(entry).stream())
+				.noneMatch(type -> type.getDType() == DType.UNKNOWN) : "The parser modeled a supplied dtype it could not read.";
+
+		if (this.narrowingChangesStaticallyReadShape(supplied, inferred)) {
+			this.addFailure(PreconditionFailure.NARROWING_CHANGES_STATICALLY_READ_SHAPE,
+					"This hybrid function's input signature is broader than its call sites require, but narrowing it would change a shape "
+							+ "the function reads while it is traced, so it is left unchanged.");
+			return;
+		}
+
+		this.addTransformation(RECONFIGURE);
+		this.setPassingPrecondition(P5);
+	}
+
+	/**
+	 * Reports a supplied input signature that is strictly tighter than the inferred one, or incomparable with it (issue 808). Some
+	 * reachable call violates the supplied signature, so rewriting it would repair the program rather than refactor it, and the
+	 * precondition {@link PreconditionFailure#SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS} fails. Each disagreeing parameter gets a
+	 * warning saying what the violating call does at runtime: a shape mismatch raises; a dtype mismatch raises for a tensor argument and is
+	 * silently cast for a NumPy array, per the argument kinds {@link #computeArgumentKinds} found at the reachable call sites. A supplied
+	 * signature declaring fewer parameters than the reachable calls pass disagrees with them too, since such a call raises. One declaring
+	 * more, as when the inferred signature leaves out a defaulted parameter no call passes, cannot be compared parameter by parameter, and
+	 * is left unchanged without failing this precondition.
+	 *
+	 * @param supplied The supplied input signature.
+	 * @param inferred The inferred input signature.
+	 */
+	private void reportSuppliedSignatureDisagreement(InputSignature supplied, InputSignature inferred) {
+		List<InputSignature.SpecEntry> suppliedEntries = supplied.entries();
+		List<InputSignature.SpecEntry> inferredEntries = inferred.entries();
+
+		List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
+				.toList();
+
+		// A parameter the inferred signature covers beyond the supplied one is passed by every reachable call when it has no default, and
+		// by some reachable call only when the call-site analysis says so. A tensor-typed parameter with a default is covered even when no
+		// call passes it, and TensorFlow then fills in the default.
+		assert covered.size() == inferredEntries.size() : "The inferred signature covers each parameter once, in declaration order.";
+
+		boolean uncoveredArgumentPassed = suppliedEntries.size() < inferredEntries.size()
+				&& covered.subList(suppliedEntries.size(), covered.size()).stream()
+						.allMatch(p -> !p.hasDefault() || TRUE.equals(p.isSuppliedAtCallSite()));
+
+		if (uncoveredArgumentPassed) {
+			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size() + " parameters, but its "
+					+ "reachable calls pass " + inferredEntries.size()
+					+ "; a call passing an argument the signature does not declare raises at runtime.");
+			this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS,
+					"This hybrid function's input signature disagrees with its reachable calls. It is left unchanged, since admitting those "
+							+ "calls would repair the program rather than refactor it.");
+			return;
+		}
+
+		if (suppliedEntries.size() != inferredEntries.size()) {
+			// The inferred signature leaves out a defaulted parameter no reachable call passes (#787), or covers one a call may not pass,
+			// so the two need not disagree: TensorFlow fills in the default and converts it against the supplied signature. They cannot be
+			// compared parameter by parameter, so the signature is left unchanged without claiming that a call violates it.
+			this.addWarning("This hybrid function's input signature declares " + suppliedEntries.size() + " parameters, but "
+					+ inferredEntries.size() + " are inferred from its reachable calls, so the two cannot be compared parameter by "
+					+ "parameter; the signature is left unchanged.");
+			this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+					"Functions with no Python literal arguments may benefit from hybridization.");
+			return;
+		}
+
+		for (int i = 0; i < suppliedEntries.size(); i++) {
+			InputSignature.SpecEntry suppliedEntry = suppliedEntries.get(i);
+			InputSignature.SpecEntry inferredEntry = inferredEntries.get(i);
+			InputSignature.Relation relation = InputSignature.relate(suppliedEntry, inferredEntry);
+
+			if (relation != InputSignature.Relation.SUPPLIED_TIGHTER && relation != InputSignature.Relation.INCOMPARABLE)
+				continue;
+
+			Parameter parameter = i < covered.size() ? covered.get(i) : null;
+			String subject = parameter == null ? "Parameter " + (i + 1) : "Parameter `" + parameter.getName() + "`";
+
+			if (!(suppliedEntry instanceof InputSignature.Single suppliedSingle
+					&& inferredEntry instanceof InputSignature.Single inferredSingle)) {
+				this.addWarning(subject + " is declared with a different structure than a reachable call passes; that call raises at "
+						+ "runtime.");
+				continue;
+			}
+
+			TensorType suppliedType = suppliedSingle.type();
+			TensorType inferredType = inferredSingle.type();
+			InputSignature.Relation shapeRelation = InputSignature.relateShape(suppliedType.getDims(), inferredType.getDims());
+			InputSignature.Relation dtypeRelation = InputSignature.relateDType(suppliedType.getDType(), inferredType.getDType());
+
+			if (shapeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || shapeRelation == InputSignature.Relation.INCOMPARABLE)
+				this.addWarning(subject + " is declared with shape " + describeShape(suppliedType.getDims())
+						+ ", which the reachable calls' evidence does not fit; a call whose argument does not match it raises at runtime.");
+
+			if (dtypeRelation == InputSignature.Relation.SUPPLIED_TIGHTER || dtypeRelation == InputSignature.Relation.INCOMPARABLE) {
+				String declared = suppliedType.getDType().name().toLowerCase(Locale.ROOT);
+				String passed = inferredType.getDType().name().toLowerCase(Locale.ROOT);
+				Set<ArgumentKind> kinds = parameter == null || this.argumentKinds == null ? null : this.argumentKinds.get(parameter);
+
+				if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.TENSOR)))
+					this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a tensor of dtype "
+							+ passed + "; that call raises at runtime.");
+				else if (kinds != null && kinds.equals(EnumSet.of(ArgumentKind.NUMPY)))
+					this.addWarning(
+							subject + " is declared with dtype " + declared + ", but a reachable call passes a NumPy array of dtype "
+									+ passed + ", which TensorFlow silently casts to " + declared + ".");
+				else
+					this.addWarning(subject + " is declared with dtype " + declared + ", but a reachable call passes a value of dtype "
+							+ passed + "; depending on the kind of value, that call raises at runtime or is silently cast to " + declared
+							+ ".");
+			}
+		}
+
+		this.addFailure(PreconditionFailure.SUPPLIED_INPUT_SIGNATURE_DISAGREES_WITH_CALLS,
+				"This hybrid function's input signature disagrees with its reachable calls. It is left unchanged, since admitting those "
+						+ "calls would repair the program rather than refactor it.");
+	}
+
+	/**
+	 * Whether replacing the supplied literal would drop text the developer wrote (issue 808). The supplied-signature parser reads only each
+	 * spec's shape and dtype, so a spec carrying anything else, most often a {@code name}, would lose it, and a name changes the traced
+	 * placeholders and the function's structured input signature. A comment or a string inside the literal would be lost too. The literal's
+	 * span is found by bracket matching that ignores strings, so a string there can also end it early; declining on any quote covers that.
+	 *
+	 * @param suppliedNode The supplied literal, a list or a tuple.
+	 * @return True iff narrowing would drop developer text, or the literal's text cannot be read.
+	 */
+	private boolean narrowingWouldDropSpecText(exprType suppliedNode) {
+		exprType[] elements = suppliedNode instanceof org.python.pydev.parser.jython.ast.List list ? list.elts
+				: ((Tuple) suppliedNode).elts;
+
+		if (elements != null)
+			for (exprType element : elements) {
+				if (!(element instanceof Call call) || call.args != null && call.args.length > 2 || call.starargs != null
+						|| call.kwargs != null)
+					return true;
+
+				if (call.keywords != null)
+					for (keywordType keyword : call.keywords)
+						if (!(keyword.arg instanceof NameTok name) || !"shape".equals(name.id) && !"dtype".equals(name.id))
+							return true;
+			}
+
+		try {
+			IDocument doc = this.getContainingDocument();
+			int[] span = literalSpan(doc, suppliedNode);
+
+			if (span == null)
+				return true;
+
+			String text = doc.get(span[0], span[1] - span[0]);
+			return text.indexOf('#') >= 0 || text.indexOf('"') >= 0 || text.indexOf('\'') >= 0;
+		} catch (BadLocationException e) {
+			LOG.warn("Can't read the supplied input signature of " + this + ".", e);
+			return true;
+		}
+	}
+
+	/**
+	 * Renders a shape the way {@code tf.TensorSpec} spells it: {@code None} for an unknown rank, otherwise a tuple with {@code None} for
+	 * each axis that is not a concrete extent.
+	 *
+	 * @param dims The dimensions, or {@code null} for an unknown rank.
+	 * @return The rendered shape.
+	 */
+	private static String describeShape(List<Dimension<?>> dims) {
+		if (dims == null)
+			return "None";
+
+		List<String> parts = dims.stream().map(dim -> dim instanceof NumericDim numeric ? String.valueOf(numeric.value()) : "None")
+				.toList();
+
+		return "(" + String.join(", ", parts) + (parts.size() == 1 ? ",)" : ")");
+	}
+
+	/**
+	 * Whether narrowing the supplied input signature to the inferred one would change a shape this function reads statically at trace time
+	 * (issue 808). Under a signature, a statically read axis is whatever the signature declares; narrowing changes the program the function
+	 * traces wherever a read touches an axis, or a rank, on which the two signatures differ. Lost provenance widens to every parameter and
+	 * lost coverage to every axis, and reads that were never collected count as a change, so the answer errs toward declining.
+	 *
+	 * @param supplied The supplied input signature.
+	 * @param inferred The inferred input signature, which {@code supplied} is broader than.
+	 * @return True iff some static read touches a position where the two signatures differ, or the reads are unknown.
+	 */
+	private boolean narrowingChangesStaticallyReadShape(InputSignature supplied, InputSignature inferred) {
+		if (this.staticShapeReads == null)
+			return true;
+
+		// The positions a read's parameter ordinals name: the index of each named non-`self` parameter among those the inferred signature
+		// covers, which is also the supplied signature's index for that parameter, since the two relate position by position.
+		List<Parameter> covered = this.getParameters().stream().filter(p -> !p.isSelf() && this.inferredSpecByParameter.containsKey(p))
+				.toList();
+		List<Parameter> nonSelfParameters = this.getParameters().stream().filter(p -> !p.isSelf()).toList();
+
+		List<InputSignature.SpecEntry> suppliedEntries = supplied.entries();
+		List<InputSignature.SpecEntry> inferredEntries = inferred.entries();
+
+		java.util.function.Function<StaticShapeReadAnalysis.AxisRead, List<Integer>> positions = read -> {
+			if (read.parameterOrdinals() == null)
+				return java.util.stream.IntStream.range(0, Math.min(suppliedEntries.size(), inferredEntries.size())).boxed().toList();
+
+			List<Integer> ret = new ArrayList<>();
+
+			for (int ordinal : read.parameterOrdinals())
+				if (ordinal < nonSelfParameters.size()) {
+					int position = covered.indexOf(nonSelfParameters.get(ordinal));
+
+					if (position >= 0 && position < suppliedEntries.size() && position < inferredEntries.size())
+						ret.add(position);
+				}
+
+			return ret;
+		};
+
+		for (StaticShapeReadAnalysis.AxisRead read : this.staticShapeReads.rankReads())
+			for (int position : positions.apply(read))
+				if (!sameRanks(suppliedEntries.get(position), inferredEntries.get(position)))
+					return true;
+
+		for (StaticShapeReadAnalysis.AxisRead read : this.staticShapeReads.axisReads())
+			for (int position : positions.apply(read))
+				if (!sameAxes(suppliedEntries.get(position), inferredEntries.get(position), read.axes()))
+					return true;
+
+		return false;
+	}
+
+	/**
+	 * Whether two spec entries declare the same rank for every tensor they cover. Entries of different structure never do.
+	 *
+	 * @param a One entry.
+	 * @param b The other entry.
+	 * @return True iff the entries cover the same number of tensors and each pair has equal ranks (both unknown counts as equal).
+	 */
+	private static boolean sameRanks(InputSignature.SpecEntry a, InputSignature.SpecEntry b) {
+		List<TensorType> as = coveredTypes(a);
+		List<TensorType> bs = coveredTypes(b);
+
+		if (a.getClass() != b.getClass() || as.size() != bs.size())
+			return false;
+
+		for (int i = 0; i < as.size(); i++) {
+			List<Dimension<?>> ad = as.get(i).getDims();
+			List<Dimension<?>> bd = bs.get(i).getDims();
+
+			if (ad == null || bd == null ? ad != bd : ad.size() != bd.size())
+				return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Whether two spec entries declare the same extent on the given axes of every tensor they cover, which requires the same ranks too.
+	 *
+	 * @param a One entry.
+	 * @param b The other entry.
+	 * @param axes The axes read, or {@code null} when coverage was lost and any axis may be read.
+	 * @return True iff the entries agree on every read axis.
+	 */
+	private static boolean sameAxes(InputSignature.SpecEntry a, InputSignature.SpecEntry b, Set<Integer> axes) {
+		if (!sameRanks(a, b))
+			return false;
+
+		List<TensorType> as = coveredTypes(a);
+		List<TensorType> bs = coveredTypes(b);
+
+		for (int i = 0; i < as.size(); i++) {
+			List<Dimension<?>> ad = as.get(i).getDims();
+			List<Dimension<?>> bd = bs.get(i).getDims();
+
+			if (ad == null)
+				continue; // Both unknown rank (sameRanks): no axis is declared by either.
+
+			if (axes == null) {
+				if (!ad.equals(bd))
+					return false;
+			} else
+				for (int axis : axes) {
+					int index = axis < 0 ? ad.size() + axis : axis;
+
+					if (index >= 0 && index < ad.size() && !ad.get(index).equals(bd.get(index)))
+						return false;
+				}
+		}
+
+		return true;
+	}
+
+	/**
 	 * True iff the given rank-sensitive-only read ({@code as_list}, {@code rank}/{@code ndims}, {@code len}; #809) is unresolved by the
 	 * inferred signature: some affected spec entry has an unknown rank ({@code shape=None}), which every rank-reading surface breaks on. A
 	 * known rank satisfies the read even when axes are dynamic ({@code [None, 3].as_list()} succeeds; {@code rank} is a trace-time
@@ -1867,10 +3254,26 @@ public class Function {
 	 */
 	private boolean isRankUnresolvedRead(StaticShapeReadAnalysis.AxisRead read) {
 		for (InputSignature.SpecEntry entry : this.affectedSpecEntries(read))
-			if (!(entry instanceof InputSignature.Single single) || single.type().getDims() == null)
-				return true;
+			for (TensorType covered : coveredTypes(entry))
+				if (covered.getDims() == null)
+					return true;
 
 		return false;
+	}
+
+	/**
+	 * The tensor types a spec entry covers: the one type of a single-tensor entry, or every element type of a container's.
+	 * <p>
+	 * A read's provenance names a parameter rather than a position inside it, so a read against a container cannot be attributed to one
+	 * element. Requiring every element to satisfy the read is what that unattributability licenses, and it is strictly weaker than the
+	 * refusal it replaces: a container whose elements all answer the read resolves it, where before no container ever did, and one whose
+	 * elements do not still blocks (#914).
+	 *
+	 * @param entry The spec entry to expand.
+	 * @return Every tensor type the entry covers.
+	 */
+	private static List<TensorType> coveredTypes(InputSignature.SpecEntry entry) {
+		return entry instanceof InputSignature.Single single ? List.of(single.type()) : ((InputSignature.Sequence) entry).elementTypes();
 	}
 
 	/**
@@ -1911,11 +3314,13 @@ public class Function {
 	}
 
 	/**
-	 * Computes whether this {@link Function}'s body snapshots a model's variable collection before the model's first invocation in the body
-	 * and feeds the snapshot to an optimizer or gradient computation, storing the result for {@link #getHasStaleVariableReads()}. The
-	 * hazard is trace-time only (the snapshot is silently empty eagerly), so the check is what keeps the refactoring from introducing it;
-	 * reading the collection after the forward pass never fires. When the function has no call-graph node, the result is left undetermined,
-	 * mirroring the sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822.
+	 * Computes whether this {@link Function}'s body snapshots a model's variable collection before the model's first invocation, directly
+	 * in the body or transitively through a callee, and feeds the snapshot to an optimizer or gradient computation, storing the result for
+	 * {@link #getHasStaleVariableReads()}. The hazard is trace-time only (the snapshot is silently empty eagerly), so the check is what
+	 * keeps the refactoring from introducing it; reading the collection after the forward pass never fires. When the function has no
+	 * call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/822 and, for the transitive invocation scan,
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861.
 	 *
 	 * @param callGraph The call graph.
 	 * @param pointerAnalysis The pointer analysis.
@@ -1937,7 +3342,7 @@ public class Function {
 			return;
 		}
 
-		boolean stale = new StaleVariableReadAnalysis(pointerAnalysis).hasStaleVariableRead(nodes);
+		boolean stale = new StaleVariableReadAnalysis(callGraph, pointerAnalysis).hasStaleVariableRead(nodes);
 
 		this.hasStaleVariableReads = stale;
 
@@ -1955,17 +3360,23 @@ public class Function {
 	}
 
 	/**
-	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, storing the result for
-	 * {@link #getHasTensorParameterIteration()}. Eagerly such iteration works; under tracing the parameter is symbolic and iterating it
-	 * raises, so the conversion must be declined (issue 830, the shield the barren verdict accidentally provided at earlier Ariadne
-	 * versions). When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830.
+	 * Computes whether this {@link Function}'s body iterates a parameter-derived, tensor-typed value, directly or through a builtin that
+	 * iterates it, storing the result for {@link #getHasTensorParameterIteration()}, whether it stores into one by subscript, storing that
+	 * for {@link #getHasTensorParameterItemAssignment()}, and whether it passes one to {@code tf.constant}, storing that for
+	 * {@link #getHasTensorParameterConstant()}. Eagerly all three work; under tracing the parameter is symbolic, and iterating it,
+	 * assigning into it, or giving it to {@code tf.constant} raises, so the conversion must be declined (issue 830, the shield the barren
+	 * verdict accidentally provided at earlier Ariadne versions; issues 1098 and 1169). When the function has no call-graph node, the
+	 * results are left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830,
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169.
 	 *
-	 * @param callGraph The call graph.
-	 * @param pointerAnalysis The pointer analysis, used to resolve the iterated value's producer for the {@code tf.range} exemption.
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, used to resolve the builtin a tensor is passed to and the iterated value's producer for the
+	 *        {@code tf.range} exemption, and which the engine asks to name the TensorFlow API a call invokes.
 	 * @param tensorTypeAnalysis The tensor-type analysis, whose typing gates the iterated value.
 	 */
-	public void computeTensorParameterIteration(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+	public void computeTensorParameterIteration(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			TensorTypeAnalysis tensorTypeAnalysis) {
 		Set<CGNode> nodes;
 
@@ -1983,12 +3394,18 @@ public class Function {
 			return;
 		}
 
-		TensorIterationAnalysis analysis = new TensorIterationAnalysis(pointerAnalysis, tensorTypeAnalysis);
+		TensorIterationAnalysis analysis = new TensorIterationAnalysis(builder, tensorTypeAnalysis);
 		boolean iterates = nodes.stream().anyMatch(node -> analysis.iteratesTensorParameter(node, this.isMethod()));
+		boolean assigns = nodes.stream().anyMatch(node -> analysis.assignsIntoTensorParameter(node, this.isMethod()));
+		boolean constant = nodes.stream().anyMatch(node -> analysis.passesTensorParameterToConstant(node, this.isMethod()));
 
 		this.hasTensorParameterIteration = iterates;
+		this.hasTensorParameterItemAssignment = assigns;
+		this.hasTensorParameterConstant = constant;
 
 		LOG.info(this + (iterates ? " iterates a tensor parameter." : " iterates no tensor parameter."));
+		LOG.info(this + (assigns ? " assigns into a tensor parameter by index." : " assigns into no tensor parameter by index."));
+		LOG.info(this + (constant ? " passes a tensor parameter to tf.constant." : " passes no tensor parameter to tf.constant."));
 	}
 
 	/**
@@ -1996,8 +3413,750 @@ public class Function {
 	 *
 	 * @return True iff a tensor parameter is iterated, null if undetermined.
 	 */
+	/**
+	 * True iff this {@link Function} declares a rest-keyword ({@code **kwargs}) parameter, which is what makes an {@code input_signature}
+	 * unwritable for it (#902).
+	 *
+	 * @return True iff a {@code **kwargs} parameter is declared.
+	 */
+	public boolean hasVariableKeywordParameter() {
+		return this.variableKeywordParameter;
+	}
+
 	public Boolean getHasTensorParameterIteration() {
 		return this.hasTensorParameterIteration;
+	}
+
+	/**
+	 * True iff this {@link Function}'s body stores into a parameter-derived, tensor-typed value by subscript, {@code null} if undetermined.
+	 *
+	 * @return True iff a tensor parameter is assigned into by index, null if undetermined.
+	 */
+	public Boolean getHasTensorParameterItemAssignment() {
+		return this.hasTensorParameterItemAssignment;
+	}
+
+	/**
+	 * True iff this {@link Function}'s body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value},
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff a tensor parameter reaches {@code tf.constant}, null if undetermined.
+	 */
+	public Boolean getHasTensorParameterConstant() {
+		return this.hasTensorParameterConstant;
+	}
+
+	/**
+	 * Computes this {@link Function}'s expected-failure nodes ({@link ExpectedFailureContextAnalysis}), the ones reached only from call
+	 * sites the developer has declared must fail, whose evidence the signature reduction then leaves out (#888). Must run before
+	 * {@link #inferTensorParameters}, which is where the per-node evidence is read. Excluding every node is treated as excluding none, so
+	 * the change stays confined to what is emitted rather than to which precondition passes. For an eager function, the nodes reached only
+	 * from guarded calls, inside an expected-failure guard or a {@code try} statement's body, are recorded with their guards whatever is
+	 * excluded, since its conversion is checked against them with inference on or off (#1014).
+	 *
+	 * @param callGraph The call graph, walked in the caller direction.
+	 * @param pointerAnalysis The pointer analysis, used to resolve each guard call's member name.
+	 * @param modules The modules whose {@code try} statements are read, by the absolute path of their file.
+	 */
+	public void computeExpectedFailureNodes(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<String, ExceptionHandlerAnalysis> modules) {
+		// The exclusion is read only by the signature reduction, and the guards otherwise only by the conversion of an eager function
+		// (#1014), so with inference off a hybrid function has nothing for the walk to affect, and it is pure cost. Gating here rather than
+		// at the call site keeps that invariant next to the code that relies on it.
+		boolean eager = !TRUE.equals(this.isHybrid());
+
+		if (!this.getInferInputSignatures() && !eager)
+			return;
+
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			LOG.warn("Can't determine expected-failure call sites for " + this + ".", e);
+			return;
+		}
+
+		if (nodes.isEmpty())
+			return;
+
+		ExpectedFailureContextAnalysis analysis = new ExpectedFailureContextAnalysis(callGraph, pointerAnalysis, modules);
+		Set<CGNode> guarded = analysis.guardedOnlyNodes(nodes);
+
+		// A call inside a `try` statement's body is guarded too, but only the conversion reads it (#1014), and it does not set evidence
+		// aside: a handler declares nothing about whether the call raises.
+		Set<CGNode> handled = eager ? analysis.guardedOnlyNodes(nodes, true) : guarded;
+
+		if (eager)
+			this.bodyHandlerChange = bodyHandlerChange(nodes, analysis, callGraph);
+
+		if (handled.isEmpty())
+			return;
+
+		LOG.info(this + " has " + handled.size() + " node(s) reached only from guarded call sites, " + guarded.size()
+				+ " from expected-failure ones.");
+		this.callGuards = analysis.guardsOf(handled);
+		this.guardedArgumentKinds = this.guardedArguments(handled, pointerAnalysis);
+
+		if (!this.getInferInputSignatures() || guarded.isEmpty())
+			return;
+
+		if (guarded.size() == nodes.size()) {
+			LOG.info("Every call site of " + this + " is an expected failure; excluding none.");
+			return;
+		}
+
+		this.expectedFailureNodes = guarded;
+	}
+
+	/**
+	 * What each of {@code nodes} is passed for each parameter, by the objects the parameter's points-to set holds there (#1005).
+	 *
+	 * @param nodes Call-graph nodes of this {@link Function}.
+	 * @param pointerAnalysis The pointer analysis, for the parameters' points-to sets.
+	 * @return For each node, each parameter's {@link GuardedArgument} by declaration index.
+	 */
+	private Map<CGNode, Map<Integer, GuardedArgument>> guardedArguments(Set<CGNode> nodes, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Map<CGNode, Map<Integer, GuardedArgument>> ret = new HashMap<>();
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			Map<Integer, GuardedArgument> kinds = new HashMap<>();
+
+			if (ir != null)
+				for (Parameter param : this.getParameters()) {
+					// The first parameter of the node is the function object itself, so declaration index i is parameter i + 1.
+					int position = param.getIndex() + 1;
+
+					if (param.isSelf() || position >= ir.getNumberOfParameters())
+						continue;
+
+					PointerKey key = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, ir.getParameter(position));
+					kinds.put(param.getIndex(), guardedArgument(pointerAnalysis.getPointsToSet(key)));
+				}
+
+			ret.put(node, kinds);
+		}
+
+		return ret;
+	}
+
+	/**
+	 * Classifies the objects a parameter may hold. A container of either kind outranks the rest, since TensorFlow converts it rather than
+	 * rejecting it outright; otherwise the argument is {@link GuardedArgument#TENSORS} only when every object is a TensorFlow tensor.
+	 *
+	 * @param objects The parameter's points-to set.
+	 * @return The kind of argument.
+	 */
+	private static GuardedArgument guardedArgument(Iterable<InstanceKey> objects) {
+		boolean any = false;
+		boolean sequence = false;
+		boolean onlyTensors = true;
+
+		for (InstanceKey object : objects) {
+			any = true;
+			IClass type = object.concreteType();
+			TypeReference reference = type == null ? null : type.getReference();
+
+			if (reference != null && Util.isContainerType(reference) && !Util.isSequenceType(reference))
+				return GuardedArgument.NON_SEQUENCE_CONTAINER;
+
+			if (reference != null && Util.isSequenceType(reference))
+				sequence = true;
+
+			if (reference == null || !reference.getName().toString().startsWith(TENSORFLOW_TYPE_NAME_PREFIX))
+				onlyTensors = false;
+		}
+
+		if (sequence)
+			return GuardedArgument.SEQUENCE;
+
+		return any && onlyTensors ? GuardedArgument.TENSORS : GuardedArgument.OTHER;
+	}
+
+	/**
+	 * This {@link Function}'s call-graph nodes reached only from expected-failure call sites, whose evidence the signature reduction leaves
+	 * out.
+	 *
+	 * @return The excluded nodes; empty when none is excluded.
+	 */
+	Set<CGNode> getExpectedFailureNodes() {
+		return this.expectedFailureNodes;
+	}
+
+	/**
+	 * Computes whether some call site of this {@link Function} passes a Keras symbolic tensor ({@link KerasSymbolicArgumentAnalysis}),
+	 * storing the result for {@link #getHasKerasSymbolicArguments()}. {@code tf.function} refuses a {@code KerasTensor} outright, so
+	 * decorating such a function raises a {@code TypeError} on the first call, before anything is traced, and the conversion must be
+	 * declined. When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/887 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1097.
+	 *
+	 * @param callGraph The call graph, used to find this function's nodes.
+	 * @param pointerAnalysis The pointer analysis, used to resolve each parameter's pointer key.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their origins (see {@link Util#computeTensorTypedOrigins}), whose
+	 *        {@link TensorOrigin#KERAS_SYMBOLIC} origin marks a symbolic value.
+	 */
+	public void computeKerasSymbolicArguments(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " is passed a Keras symbolic tensor.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " is passed a Keras symbolic tensor without a call graph node.");
+			return;
+		}
+
+		this.hasKerasSymbolicArguments = new KerasSymbolicArgumentAnalysis(pointerAnalysis, tensorTypedKeys)
+				.hasKerasSymbolicArgument(nodes);
+
+		LOG.info(this + " passed a Keras symbolic tensor: " + this.hasKerasSymbolicArguments + ".");
+	}
+
+	/**
+	 * True iff some call site of this {@link Function} passes a Keras symbolic tensor, {@code null} if undetermined.
+	 *
+	 * @return True iff a call site passes a {@code KerasTensor}, null if undetermined.
+	 */
+	public Boolean getHasKerasSymbolicArguments() {
+		return this.hasKerasSymbolicArguments;
+	}
+
+	/**
+	 * Computes whether a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged
+	 * ({@link UncrossableBoundaryValueAnalysis}), storing the result for {@link #getHasUncrossableBoundaryValues()}. A determinate
+	 * {@code TRUE} from either side, the returns or the call sites, decides it; otherwise ignorance on either side leaves it undetermined.
+	 * When the function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
+	 * <p>
+	 * The same nodes also decide whether the function may return a Python primitive and whether a caller uses its result, stored for
+	 * {@link #getReturnsPrimitive()} and {@link #getHasUsedResults()} (issue 1117).
+	 *
+	 * @param callGraph The call graph, walked in the caller direction for the arguments.
+	 * @param builder The call-graph builder, whose pointer analysis and object catalogs resolve the values and their elements.
+	 */
+	public void computeUncrossableBoundaryValues(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " has uncrossable boundary values.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " has uncrossable boundary values without a call graph node.");
+			return;
+		}
+
+		UncrossableBoundaryValueAnalysis analysis = new UncrossableBoundaryValueAnalysis(builder);
+		Boolean returns = analysis.returnsUncrossableValue(nodes);
+		Boolean arguments = analysis.passesUncrossableArgument(nodes, callGraph);
+
+		if (Boolean.TRUE.equals(returns) || Boolean.TRUE.equals(arguments))
+			this.hasUncrossableBoundaryValues = Boolean.TRUE;
+		else if (returns != null && arguments != null)
+			this.hasUncrossableBoundaryValues = Boolean.FALSE;
+
+		LOG.info(this + " has uncrossable boundary values: " + this.hasUncrossableBoundaryValues + ".");
+
+		this.returnsPrimitive = analysis.returnsPrimitive(nodes);
+		this.hasUsedResults = UncrossableBoundaryValueAnalysis.usesResult(nodes, callGraph);
+		LOG.info(this + " returns a Python primitive: " + this.returnsPrimitive + "; a caller uses its result: " + this.hasUsedResults
+				+ ".");
+	}
+
+	/**
+	 * True iff a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged, {@code null} if
+	 * undetermined (issue 1075).
+	 *
+	 * @return True iff this function returns a variable or tensor array, or is passed a tensor spec, null if undetermined.
+	 */
+	public Boolean getHasUncrossableBoundaryValues() {
+		return this.hasUncrossableBoundaryValues;
+	}
+
+	/**
+	 * True iff this {@link Function} may return a Python primitive, {@code null} if undetermined (issue 1117).
+	 *
+	 * @return True iff this function may return an {@code int}, {@code float}, {@code str}, or {@code bool} constant, null if undetermined.
+	 */
+	public Boolean getReturnsPrimitive() {
+		return this.returnsPrimitive;
+	}
+
+	/**
+	 * True iff some call site of this {@link Function} uses its result, {@code null} if undetermined (issue 1117). A function whose every
+	 * call discards its result has no caller the return type can matter to.
+	 *
+	 * @return True iff some call site's result has a use, false if no call site's does, null if undetermined.
+	 */
+	public Boolean getHasUsedResults() {
+		return this.hasUsedResults;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0
+	 * ({@link ScalarShapeReshapeAnalysis}), storing the result for {@link #getReshapesWithScalarShape()}. When the function has no
+	 * call-graph node, the result is left undetermined, mirroring {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks for the APIs a call invokes and for a shape operand's values.
+	 * @param tensorTypeAnalysis The solved tensor-type analysis, which gives a tensor shape operand's rank.
+	 */
+	public void computeReshapesWithScalarShape(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " reshapes with a scalar shape.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " reshapes with a scalar shape without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes; it reshapes with a scalar shape if any of them does.
+		ScalarShapeReshapeAnalysis analysis = new ScalarShapeReshapeAnalysis(callGraph, builder, tensorTypeAnalysis);
+		this.reshapesWithScalarShape = nodes.stream().anyMatch(analysis::reshapesWithScalarShape);
+
+		LOG.info(this + (this.reshapesWithScalarShape ? " reshapes with a scalar shape." : " reshapes with no scalar shape."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0,
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff a reshape by a shape that may be a scalar is reachable from this function; null if undetermined.
+	 */
+	public Boolean getReshapesWithScalarShape() {
+		return this.reshapesWithScalarShape;
+	}
+
+	/**
+	 * Computes whether a shape known only as a tensor value crosses this {@link Function}'s boundary ({@link ShapeValueBoundaryAnalysis}),
+	 * storing the result for {@link #getPassesShapeValueAcrossBoundary()}. A determinate {@code TRUE} from any of the function's nodes
+	 * decides it; otherwise a node without an IR leaves it undetermined. When the function has no call-graph node, the result is left
+	 * undetermined, mirroring the sibling safety checks.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks to name the TensorFlow APIs a call invokes.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}), which tell a shape value combined with data apart from one combined with constants.
+	 */
+	public void computeShapeValueAcrossBoundary(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " passes a shape value across its boundary.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " passes a shape value across its boundary without a call graph node.");
+			return;
+		}
+
+		ShapeValueBoundaryAnalysis analysis = new ShapeValueBoundaryAnalysis(builder, tensorTypedKeys);
+		Boolean ret = Boolean.FALSE;
+
+		for (CGNode node : nodes) {
+			Boolean passes = analysis.passesShapeValue(node, this.isMethod());
+
+			if (Boolean.TRUE.equals(passes)) {
+				ret = Boolean.TRUE;
+				break;
+			}
+
+			if (passes == null)
+				ret = null;
+		}
+
+		this.passesShapeValueAcrossBoundary = ret;
+		LOG.info(this + " passes a shape value across its boundary: " + ret + ".");
+	}
+
+	/**
+	 * True iff a shape known only as a tensor value crosses this {@link Function}'s boundary, {@code null} if undetermined.
+	 *
+	 * @return True iff a parameter's value gives a returned result's static dimensions, or a returned value derives from a dynamic shape
+	 *         op; null if undetermined.
+	 */
+	public Boolean getPassesShapeValueAcrossBoundary() {
+		return this.passesShapeValueAcrossBoundary;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, reads a tensor-typed or scalar-valued field that another function
+	 * rebinds outside the {@code __init__} or Keras {@code build} that sets the object up ({@link ReboundStateReadAnalysis}), storing the
+	 * result for {@link #getHasReboundStateReads()}. When the function has no call-graph node, the result is left undetermined, mirroring
+	 * the sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 *
+	 * @param callGraph The call graph, walked to the function's callees and over the whole program for the writers.
+	 * @param pointerAnalysis The pointer analysis, whose heap model names the fields read and written.
+	 * @param tensorTypedKeys The pointer keys the tensor-type analysis types as tensors (see {@link Util#computeTensorTypedOrigins}).
+	 */
+	public void computeReboundStateReads(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " reads rebound state.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " reads rebound state without a call graph node.");
+			return;
+		}
+
+		Optional<String> write = new ReboundStateReadAnalysis(callGraph, pointerAnalysis, tensorTypedKeys).readsReboundState(nodes)
+				.map(ReboundStateReadAnalysis.ReboundWrite::describe);
+		this.hasReboundStateReads = write.isPresent();
+		this.reboundStateWrite = write.orElse(null);
+		LOG.info(this + " reads rebound state: " + this.hasReboundStateReads + write.map(w -> " (" + w + ")").orElse("") + ".");
+	}
+
+	/**
+	 * True iff this {@link Function} reads a tensor-typed or scalar-valued field that another function rebinds outside the methods setting
+	 * its object up, {@code null} if undetermined (issue 1076).
+	 *
+	 * @return True iff this function reads rebound tensor state, null if undetermined.
+	 */
+	public Boolean getHasReboundStateReads() {
+		return this.hasReboundStateReads;
+	}
+
+	/**
+	 * Computes the eager-effective dtypes each parameter's direct consumers impose (see {@link EagerCoercionAnalysis}), storing a
+	 * per-parameter pin when the set is a singleton that diverges from the parameter's own dtype evidence, and the conflicting verdict for
+	 * {@link #getHasConflictingEagerDtypeCoercions()} when some parameter's set is plural. An indeterminate collection (a partner operand
+	 * with ⊤ dtype) fires neither, the allowing direction. A pair of parameters combined directly with each other under single, divergent
+	 * evidence also sets the conflicting verdict (#878): no single signature, and no bare decorator, reproduces eager coercion there. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1.
+	 *
+	 * @param callGraph The call graph.
+	 * @param tensorTypeAnalysis The tensor-type analysis whose typing supplies partner-operand dtypes.
+	 * @param pointerAnalysis The pointer analysis, used to resolve a coercing call's callee.
+	 */
+	public void computeEagerDtypeCoercions(CallGraph callGraph, TensorTypeAnalysis tensorTypeAnalysis,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine eager-effective dtypes for " + this + ".", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine eager-effective dtypes for " + this + " without a call graph node.");
+			return;
+		}
+
+		EagerCoercionAnalysis analysis = new EagerCoercionAnalysis(tensorTypeAnalysis, pointerAnalysis);
+		List<Parameter> parameters = this.getParameters();
+		boolean conflicting = false;
+		Map<Parameter, DType> pins = new HashMap<>();
+		Set<Parameter> changed = new HashSet<>();
+
+		for (int position = 0; position < parameters.size(); position++) {
+			Parameter parameter = parameters.get(position);
+
+			// Keyword-only parameters are excluded: their IR value-number ordering relative to the positional block is unproven,
+			// and a misaligned lookup here could pin the wrong dtype. Positional parameters map to value slots by list position
+			// (keyword-only entries trail the positional block in `getParameters()`, so skipping them keeps `position` aligned).
+			if (parameter.isSelf() || parameter.isKeywordOnly())
+				continue;
+
+			// Merge outcomes across the function's nodes (contexts): dtypes union, indeterminate if any node is, parameter partners
+			// mapped back to their declared parameters by value slot.
+			Set<DType> dtypes = new HashSet<>();
+			boolean indeterminate = false;
+			Set<Parameter> parameterPartners = new HashSet<>();
+
+			for (CGNode node : nodes) {
+				IR ir = node.getIR();
+
+				if (ir == null)
+					continue;
+
+				int[] parameterValues = ir.getSymbolTable().getParameterValueNumbers();
+
+				// Value slot 0 is the callable itself; declared parameter `position` sits at `position + 1`.
+				if (position + 1 >= parameterValues.length)
+					continue;
+
+				// The fed-versus-imposed question, which the pin below cannot ask (wala/ML#838). UNRESOLVED is deliberately not
+				// folded in with CHANGED: it means the fed side could not be established, not that it diverges, and declining on it
+				// would cost a working function its transformation. Recorded, never treated as safe, never silently dropped.
+				PointerKey parameterKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, parameterValues[position + 1]);
+				AppliedDTypeCoercion coercion = tensorTypeAnalysis.getAppliedDTypeCoercions().get(parameterKey);
+
+				if (coercion != null && coercion.resolution() == Resolution.CHANGED) {
+					changed.add(parameter);
+					LOG.info("Parameter " + parameter.getName() + " of " + this + " is fed " + coercion.fed() + " where its consumers "
+							+ "impose " + coercion.imposed() + "; the conversion needs reproducing at the trace boundary.");
+				}
+
+				EagerCoercionAnalysis.Outcome outcome = analysis.eagerEffectiveDtypes(node, parameterValues[position + 1]);
+				dtypes.addAll(outcome.dtypes());
+				indeterminate |= outcome.indeterminate();
+
+				for (int partnerValue : outcome.parameterPartners())
+					for (int slot = 1; slot < parameterValues.length; slot++)
+						if (parameterValues[slot] == partnerValue && slot - 1 < parameters.size()) {
+							Parameter partner = parameters.get(slot - 1);
+
+							// A keyword-only partner's slot alignment is unproven (the same exclusion the outer loop applies).
+							if (!partner.isSelf() && !partner.isKeywordOnly())
+								parameterPartners.add(partner);
+
+							break;
+						}
+			}
+
+			// A partner that is another parameter imposes nothing (wala/ML#828's exclusion), but a definite evidence divergence
+			// between the pair is a definite hazard (#878): the eager program's survival implies a weak operand whose identity the
+			// pair alone cannot decide, either-orientation pin breaks one reading, a spec naming the fed dtypes raises at the op,
+			// and the bare decorator materializes the weak argument at its own dtype and raises the same way. No transformation
+			// survives, which is this precondition's plural-set meaning. ⊤ or plural evidence on either side stays allowing, the
+			// established polarity.
+			DType own = singleEvidenceDtype(parameter);
+
+			if (own != null)
+				for (Parameter partner : parameterPartners) {
+					DType partnerDtype = singleEvidenceDtype(partner);
+
+					if (partnerDtype != null && partnerDtype != own) {
+						conflicting = true;
+						LOG.info("Parameters " + parameter.getName() + " and " + partner.getName() + " of " + this
+								+ " are combined with each other under divergent evidence (" + own + " vs. " + partnerDtype + ").");
+					}
+				}
+
+			if (indeterminate) {
+				LOG.info("Parameter " + parameter.getName() + " of " + this + " has an indeterminate eager-effective dtype set.");
+				continue;
+			}
+
+			if (dtypes.size() > 1) {
+				conflicting = true;
+				LOG.info("Parameter " + parameter.getName() + " of " + this + " has conflicting eager-effective dtypes: " + dtypes + ".");
+			} else if (dtypes.size() == 1) {
+				DType eagerEffective = dtypes.iterator().next();
+				Set<DType> parameterDtypes = parameter.getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet());
+
+				// The pin exists only on a determinate divergence: the parameter's own evidence is a single concrete dtype that
+				// differs from the eager-effective one. Matching dtypes need no repair; ⊤ or mixed parameter evidence already drops
+				// the spec elsewhere.
+				if (parameterDtypes.size() == 1) {
+					DType parameterDtype = parameterDtypes.iterator().next();
+
+					if (parameterDtype != DType.UNKNOWN && parameterDtype != eagerEffective) {
+						pins.put(parameter, eagerEffective);
+						LOG.info("Parameter " + parameter.getName() + " of " + this + " pins to the eager-effective dtype " + eagerEffective
+								+ " (evidence " + parameterDtype + ").");
+					}
+				}
+			}
+		}
+
+		this.hasConflictingEagerDtypeCoercions = conflicting;
+		this.eagerEffectiveDtypePins = pins;
+		this.changedDtypeCoercions = changed;
+	}
+
+	/**
+	 * Reduces a container parameter's per-position element evidence into a nested specification entry, or records the reason a position
+	 * could not be reduced. The sequence reduction of #781, shared by the two routes that reach it: a parameter whose own evidence is
+	 * unusable, and one whose own evidence exists but is outranked by the elements it is the union of (#888).
+	 *
+	 * @param param The container parameter whose elements to reduce. Its element types must be non-null.
+	 * @param specByParameter Receives the nested entry when every position reduces.
+	 * @param blocking Receives every drop reason of every position that does not reduce otherwise, in position order, the first position's
+	 *        first reason first.
+	 */
+	private void reduceContainerElements(Parameter param, Map<Parameter, InputSignature.SpecEntry> specByParameter,
+			Map<Parameter, Set<AbsenceReason>> blocking) {
+		List<Set<TensorType>> elements = param.getContainerElementTypes();
+		List<TensorType> reduced = new ArrayList<>(elements.size());
+		boolean dropped = false;
+
+		// Each position reduces independently of the others, so one that bottoms does not deny the premise of the next, and every
+		// position is reduced so that each one's reasons are reported.
+		for (int j = 0; j < elements.size(); j++) {
+			Optional<TensorType> elementSpec = inferSpec(elements.get(j));
+
+			if (elementSpec.isPresent())
+				reduced.add(elementSpec.get());
+			else {
+				dropped = true;
+
+				for (AbsenceReason reason : this.reportElementDrop(param, j, elements.get(j)))
+					addBlockingReason(blocking, param, reason);
+			}
+		}
+
+		if (!dropped)
+			specByParameter.put(param, new InputSignature.Sequence(reduced));
+	}
+
+	/**
+	 * True iff some parameter is fed a dtype its consumers do not impose and no emitted specification will carry the conversion. The repair
+	 * lives in the specification, so it is unavailable exactly when none is written: inference is off, or inference is on and the
+	 * specification turns out to be absent.
+	 *
+	 * @return True iff a required boundary conversion cannot be written.
+	 */
+	private boolean requiresUnwritableEagerDtypePin() {
+		if (this.changedDtypeCoercions.isEmpty())
+			return false;
+
+		if (!this.getInferInputSignatures())
+			return true;
+
+		return !(this.inferInputSignature() instanceof InferenceResult.Inferred);
+	}
+
+	/**
+	 * The single concrete dtype of a parameter's own evidence, or {@code null} when the evidence is absent, plural, or ⊤.
+	 *
+	 * @param parameter The parameter whose evidence to reduce.
+	 * @return The single concrete evidence dtype, or {@code null} if none.
+	 */
+	private static DType singleEvidenceDtype(Parameter parameter) {
+		Set<DType> dtypes = parameter.getTensorTypes().stream().map(TensorType::getDType).collect(Collectors.toSet());
+
+		if (dtypes.size() != 1)
+			return null;
+
+		DType only = dtypes.iterator().next();
+		return only == null || only == DType.UNKNOWN ? null : only;
+	}
+
+	/**
+	 * True iff some parameter's direct consumers impose more than one concrete eager-effective dtype, {@code null} if undetermined.
+	 *
+	 * @return True iff no single input signature reproduces eager coercion, null if undetermined.
+	 */
+	public Boolean getHasConflictingEagerDtypeCoercions() {
+		return this.hasConflictingEagerDtypeCoercions;
+	}
+
+	/**
+	 * Computes whether a NumPy array some call site passes for a parameter has an element, read by a subscript, that the body combines with
+	 * a value of another dtype (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). Eagerly the element is a NumPy
+	 * scalar, which the operation converts to its other operand's dtype; traced, the array is a tensor of its own dtype, whose element the
+	 * operation rejects. No input signature repairs this: a signature casting the array to the imposed dtype changes every other read of
+	 * it. Whether the argument is an array is the engine's fact, the NumPy producing-library origin of the value the call site passes; the
+	 * element's dtype and the dtypes its consumers impose are the tensor-type analysis's, read as
+	 * {@link EagerCoercionAnalysis#divergentElementDtypes} reads them.
+	 *
+	 * @param callGraph The call graph.
+	 * @param tensorTypeAnalysis The tensor-type analysis whose typing supplies the element's and its partner operands' dtypes.
+	 * @param pointerAnalysis The pointer analysis, used to resolve a call site's arguments and a coercing call's callee.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}).
+	 */
+	public void computeNumpyElementDtypeCoercions(CallGraph callGraph, TensorTypeAnalysis tensorTypeAnalysis,
+			PointerAnalysis<InstanceKey> pointerAnalysis, Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " combines an element of a NumPy argument with another dtype.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " combines an element of a NumPy argument with another dtype without a call "
+					+ "graph node.");
+			return;
+		}
+
+		List<Parameter> parameters = this.getParameters();
+		EagerCoercionAnalysis analysis = null;
+		boolean divergent = false;
+
+		for (int position = 0; position < parameters.size() && !divergent; position++) {
+			Parameter parameter = parameters.get(position);
+
+			// Keyword-only parameters are excluded, as in `computeEagerDtypeCoercions`: their value-slot alignment is unproven.
+			if (parameter.isSelf() || parameter.isKeywordOnly()
+					|| !argumentKinds(parameter, nodes, callGraph, pointerAnalysis, tensorTypedKeys).contains(ArgumentKind.NUMPY))
+				continue;
+
+			// Built only once some parameter is passed an array, since indexing the tensor types is the expensive part.
+			if (analysis == null)
+				analysis = new EagerCoercionAnalysis(tensorTypeAnalysis, pointerAnalysis);
+
+			for (CGNode node : nodes) {
+				IR ir = node.getIR();
+
+				if (ir == null)
+					continue;
+
+				int[] parameterValues = ir.getSymbolTable().getParameterValueNumbers();
+
+				// Value slot 0 is the callable itself; declared parameter `position` sits at `position + 1`.
+				if (position + 1 >= parameterValues.length)
+					continue;
+
+				Set<DType> imposed = analysis.divergentElementDtypes(node, parameterValues[position + 1]);
+
+				if (!imposed.isEmpty()) {
+					divergent = true;
+					LOG.info("Parameter " + parameter.getName() + " of " + this + " is passed a NumPy array whose elements are combined "
+							+ "with values of dtype " + imposed + ".");
+					break;
+				}
+			}
+		}
+
+		this.hasNumpyElementDtypeCoercions = divergent;
+	}
+
+	/**
+	 * True iff a NumPy array some call site passes for a parameter has an element the body combines with a value of another dtype,
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff tracing changes the dtype at which an element of a NumPy argument is combined, null if undetermined.
+	 */
+	public Boolean getHasNumpyElementDtypeCoercions() {
+		return this.hasNumpyElementDtypeCoercions;
 	}
 
 	/**
@@ -2050,12 +4209,25 @@ public class Function {
 	private static final Set<String> TENSORFLOW_MODULE_ALIASES = Set.of("tf", "tensorflow");
 
 	/**
+	 * The export paths, after the TensorFlow module alias, of the TensorFlow APIs whose {@code name} parameter defaults to a string and
+	 * that raise under tracing when passed {@code None}: the explicit {@code None} overrides the default, and the name scope they open has
+	 * neither a name nor a default name. Measured by calling, with {@code name=None} inside {@code tf.function}, every public function of
+	 * TensorFlow 2.9.3 whose {@code name} defaults to a string; only {@code boolean_mask} and {@code matrix_transpose} raise, and these are
+	 * every path that resolves to either. Keyed by the full path rather than the trailing name, since {@code tf.ragged.boolean_mask} and
+	 * {@code tf.transpose} share trailing names and accept {@code None}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1087).
+	 */
+	private static final Set<String> STRING_DEFAULT_NAME_OP_PATHS = Set.of("boolean_mask", "compat.v1.boolean_mask",
+			"compat.v2.boolean_mask", "linalg.matrix_transpose", "compat.v1.matrix_transpose", "compat.v1.linalg.matrix_transpose",
+			"compat.v1.linalg.transpose", "compat.v2.linalg.matrix_transpose");
+
+	/**
 	 * Computes whether this {@link Function}'s body passes a non-string constant where a TensorFlow API declares its {@code name}
-	 * parameter, storing the result for {@link #getHasInvalidNameArguments()}. Eager execution never validates the name, but tracing opens
-	 * a name scope with it and raises, so such a function must not be hybridized. Unlike its sibling safety checks, this is a purely
-	 * syntactic scan of the body; no call graph is consulted. Mirrors the siblings' undetermined discipline: if the body cannot be scanned,
-	 * the result is left {@code null} and the precondition does not block. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
+	 * parameter, or {@code None} where the API's own default name is a string, storing the result for
+	 * {@link #getHasInvalidNameArguments()}. Eager execution never validates the name, but tracing opens a name scope with it and raises,
+	 * so such a function must not be hybridized. Unlike its sibling safety checks, this is a purely syntactic scan of the body; no call
+	 * graph is consulted. Mirrors the siblings' undetermined discipline: if the body cannot be scanned, the result is left {@code null} and
+	 * the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/814.
 	 */
 	public void computeInvalidNameArguments() {
 		boolean[] found = { false };
@@ -2094,25 +4266,120 @@ public class Function {
 	}
 
 	/**
-	 * True iff the given call passes a non-string constant where the callee declares its {@code name} parameter. A keyword {@code name=...}
-	 * argument binds unambiguously for any TensorFlow callee; a positional argument is only recognized for the ops in
-	 * {@link #UNARY_TENSORFLOW_OP_NAMES}, whose signatures declare {@code name} second.
+	 * True iff the given call passes a non-string constant where the callee declares its {@code name} parameter, or passes {@code None} by
+	 * keyword to one of {@link #STRING_DEFAULT_NAME_OP_PATHS}. A keyword {@code name=...} argument binds unambiguously for any TensorFlow
+	 * callee; a positional argument is only recognized for the ops in {@link #UNARY_TENSORFLOW_OP_NAMES}, whose signatures declare
+	 * {@code name} second.
 	 *
 	 * @param call A call in this {@link Function}'s body.
-	 * @return True iff the call passes a non-string constant as its {@code name} argument.
+	 * @return True iff the call passes an invalid {@code name} argument.
 	 */
-	private static boolean passesInvalidNameArgument(Call call) {
+	private boolean passesInvalidNameArgument(Call call) {
 		if (!isTensorFlowRooted(call.func))
 			return false;
 
 		if (call.keywords != null)
 			for (keywordType keyword : call.keywords)
-				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id) && isNonStringConstant(keyword.value))
-					return true;
+				if (keyword.arg instanceof NameTok && "name".equals(((NameTok) keyword.arg).id)) {
+					if (isNonStringConstant(keyword.value))
+						return this.passesUnconditionally();
+
+					if (STRING_DEFAULT_NAME_OP_PATHS.contains(tensorFlowPath(call.func)) && keyword.value instanceof Name value) {
+						if ("None".equals(value.id))
+							return this.passesUnconditionally();
+
+						if (this.isUnreboundNoneParameter(value.id)) {
+							this.forwardedNoneNameParameters.add(value.id);
+							return true;
+						}
+					}
+				}
 
 		String calleeName = NodeUtils.getRepresentationString(call.func);
-		return calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
-				&& isNonStringConstant(call.args[1]);
+
+		if (calleeName != null && UNARY_TENSORFLOW_OP_NAMES.contains(calleeName) && call.args != null && call.args.length >= 2
+				&& isNonStringConstant(call.args[1]))
+			return this.passesUnconditionally();
+
+		return false;
+	}
+
+	/**
+	 * Records that this {@link Function}'s body passes an invalid name argument whatever its callers pass.
+	 *
+	 * @return True, the call's verdict.
+	 */
+	private boolean passesUnconditionally() {
+		this.unconditionalInvalidNameArguments = true;
+		return true;
+	}
+
+	/**
+	 * True iff the given name is a parameter of this {@link Function} that defaults to {@code None} and that the body never rebinds (as
+	 * {@code name = name or "kept"} does), so it is {@code None} whenever a call omits it.
+	 *
+	 * @param id The name.
+	 * @return True iff {@code id} is an unrebound parameter defaulting to {@code None}.
+	 */
+	private boolean isUnreboundNoneParameter(String id) {
+		return this.getParameters().stream().anyMatch(p -> id.equals(p.getName()) && p.defaultsToNone()) && !this.rebinds(id);
+	}
+
+	/**
+	 * True iff this {@link Function}'s body binds the given name: assigns it, or names it as a loop, {@code with}, or comprehension target.
+	 *
+	 * @param id The name.
+	 * @return True iff the body binds {@code id}, or if the body cannot be scanned.
+	 */
+	private boolean rebinds(String id) {
+		boolean[] found = { false };
+
+		try {
+			for (stmtType statement : this.getFunctionDefinition().getFunctionDef().body)
+				statement.accept(new VisitorBase() {
+
+					@Override
+					public void traverse(SimpleNode node) throws Exception {
+						node.traverse(this);
+					}
+
+					@Override
+					protected Object unhandled_node(SimpleNode node) throws Exception {
+						return null;
+					}
+
+					@Override
+					public Object visitName(Name node) throws Exception {
+						if (id.equals(node.id) && (node.ctx == expr_contextType.Store || node.ctx == expr_contextType.AugStore))
+							found[0] = true;
+						return null;
+					}
+				});
+		} catch (Exception e) {
+			LOG.warn("Can't determine whether " + this + " rebinds " + id + ".", e);
+			return true;
+		}
+
+		return found[0];
+	}
+
+	/**
+	 * The attribute path of the given callee after its TensorFlow module alias (e.g., {@code compat.v1.boolean_mask} for
+	 * {@code tf.compat.v1.boolean_mask}), or {@code null} if it is not an attribute chain rooted at one.
+	 *
+	 * @param callee A call's callee expression.
+	 * @return The path after the alias, or {@code null}.
+	 */
+	private static String tensorFlowPath(exprType callee) {
+		Deque<String> path = new ArrayDeque<>();
+		exprType node = callee;
+
+		while (node instanceof Attribute attribute && attribute.attr instanceof NameTok attr) {
+			path.addFirst(attr.id);
+			node = attribute.value;
+		}
+
+		return node instanceof Name root && TENSORFLOW_MODULE_ALIASES.contains(root.id) && !path.isEmpty() ? String.join(".", path) : null;
 	}
 
 	/**
@@ -2133,8 +4400,9 @@ public class Function {
 
 	/**
 	 * True iff the given expression is a constant that is definitely not a string: a numeric literal, a boolean literal, or a TensorFlow
-	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged—it is the declared default for {@code name}—and anything whose
-	 * value is unknown (a variable, a call) is conservatively accepted.
+	 * dtype constant (e.g., {@code tf.float32}). {@code None} is not flagged here—it is most APIs' declared default for {@code name}, and
+	 * {@link #STRING_DEFAULT_NAME_OP_PATHS} lists the APIs it is not—and anything whose value is unknown (a variable, a call) is
+	 * conservatively accepted.
 	 *
 	 * @param expression The expression bound to a {@code name} argument.
 	 * @return True iff the expression is a non-string constant.
@@ -2164,6 +4432,56 @@ public class Function {
 		return this.hasInvalidNameArguments;
 	}
 
+	/**
+	 * True iff this {@link Function} calls, directly or transitively, a function whose name argument raises under tracing.
+	 *
+	 * @return True iff such a call is reachable.
+	 */
+	public boolean getCallsInvalidNameArguments() {
+		return this.callsInvalidNameArguments;
+	}
+
+	/**
+	 * Sets whether this {@link Function} calls, directly or transitively, a function whose name argument raises under tracing.
+	 *
+	 * @param callsInvalidNameArguments Whether such a call is reachable.
+	 */
+	void setCallsInvalidNameArguments(boolean callsInvalidNameArguments) {
+		this.callsInvalidNameArguments = callsInvalidNameArguments;
+	}
+
+	/**
+	 * The parameters, defaulting to {@code None}, that this function's body forwards as the name of an API whose own default name is a
+	 * string. A call to this function that omits one passes that API {@code None}.
+	 *
+	 * @return The forwarded parameters' names.
+	 */
+	Set<String> getForwardedNoneNameParameters() {
+		return Collections.unmodifiableSet(this.forwardedNoneNameParameters);
+	}
+
+	/**
+	 * True iff this {@link Function}'s body passes an invalid name argument whatever its callers pass: one that is not a forwarded
+	 * parameter defaulting to {@code None}.
+	 *
+	 * @return True iff the body's own invalid name argument does not depend on the call.
+	 */
+	boolean passesInvalidNameArgumentsUnconditionally() {
+		return TRUE.equals(this.hasInvalidNameArguments) && this.unconditionalInvalidNameArguments;
+	}
+
+	/**
+	 * Computes, over {@code functions}, which call a function whose name argument raises under tracing, directly or through other such
+	 * callers, and records it on each (issue 1087). Every function's own {@link #computeInvalidNameArguments()} must already have run.
+	 *
+	 * @param functions Every function under analysis in the project.
+	 * @param callGraph The call graph.
+	 */
+	public static void computeInvalidNameArgumentCallers(Set<Function> functions, CallGraph callGraph) {
+		Set<Function> callers = InvalidNameCallerAnalysis.computeCallers(functions, callGraph);
+		functions.forEach(f -> f.setCallsInvalidNameArguments(callers.contains(f)));
+	}
+
 	@Override
 	public boolean equals(Object obj) {
 		if (this == obj)
@@ -2172,6 +4490,28 @@ public class Function {
 			return false;
 		Function other = (Function) obj;
 		return Objects.equals(this.functionDefinition, other.functionDefinition);
+	}
+
+	/**
+	 * True iff the given {@link StaticFieldKey} is Ariadne's binding of a nested definition, which is scoped to the enclosing call like a
+	 * local rather than outliving it like a module-level global (whose field is named by the variable alone, for example, {@code x}).
+	 * Ariadne names three such bindings:
+	 * <ul>
+	 * <li>A {@code def}, class, or comprehension nested in a function, by its path under the enclosing code body (for example,
+	 * {@code script A.py/f/g} for a {@code g} defined in {@code f}).</li>
+	 * <li>Each default of a nested {@code def}, as the translator binds it, by the definition's type and the default's position (for
+	 * example, {@code Lscript A.py/f/g_defaults_0}).</li>
+	 * <li>Each default of a nested {@code def}, as the parser evaluates it, by the definition's name and the default's position (for
+	 * example, {@code g_default_0}). A user global spelled the same way would be read as a binding.</li>
+	 * </ul>
+	 *
+	 * @param staticFieldKey A {@link StaticFieldKey} in a function's mod set.
+	 * @return True iff the field is named as one of those bindings.
+	 */
+	private static boolean isNestedDefinitionBinding(StaticFieldKey staticFieldKey) {
+		String fieldName = staticFieldKey.getField().getName().toString();
+		return fieldName.startsWith(GLOBAL_PREFIX + SCRIPT_PREFIX) || fieldName.startsWith(GLOBAL_PREFIX + "L" + SCRIPT_PREFIX)
+				|| PARSER_DEFAULT_BINDING.matcher(fieldName).matches();
 	}
 
 	private Set<PointerKey> filterSideEffects(Iterable<PointerKey> modSet, CallGraph callGraph,
@@ -2194,7 +4534,10 @@ public class Function {
 					continue; // filter this pointer out.
 
 				ret.add(fieldPointerKey);
-			} else if (pointerKey instanceof LocalPointerKey || pointerKey instanceof StaticFieldKey) {
+			} else if (pointerKey instanceof StaticFieldKey staticFieldKey && !isNestedDefinitionBinding(staticFieldKey))
+				// A global outlives the call, so writing it is a side-effect wherever the value written was created.
+				ret.add(pointerKey);
+			else if (pointerKey instanceof LocalPointerKey || pointerKey instanceof StaticFieldKey) {
 				OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
 
 				boolean skipPointerKey = true;
@@ -2209,7 +4552,7 @@ public class Function {
 			} else if (pointerKey instanceof AstGlobalPointerKey) {
 				AstGlobalPointerKey globalPointerKey = (AstGlobalPointerKey) pointerKey;
 
-				if (!globalPointerKey.equals(GLOBAL_OUTPUT_STREAM_POINTER_KEY))
+				if (!globalPointerKey.equals(GLOBAL_OUTPUT_STREAM_POINTER_KEY) && !globalPointerKey.equals(GLOBAL_FILE_SYSTEM_POINTER_KEY))
 					throw new IllegalArgumentException("Not expecting global pointer key: " + globalPointerKey + ".");
 				ret.add(globalPointerKey);
 			} else
@@ -2290,7 +4633,7 @@ public class Function {
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
 	 * @return The pointer keys directly written by {@code node}.
 	 */
-	private static Set<PointerKey> getDirectMod(CGNode node, ModRef<InstanceKey> modRef, ExtendedHeapModel heapModel,
+	static Set<PointerKey> getDirectMod(CGNode node, ModRef<InstanceKey> modRef, ExtendedHeapModel heapModel,
 			PointerAnalysis<InstanceKey> pointerAnalysis) {
 		return directModCache.computeIfAbsent(node, n -> {
 			Set<PointerKey> ret = new HashSet<>();
@@ -2397,7 +4740,27 @@ public class Function {
 		return Optional.empty(); // Not found.
 	}
 
+	/**
+	 * Returns the fully qualified names of this {@link Function}'s decorators. A decorator whose name can't be resolved is left out and
+	 * recorded as an {@link Information#UNRESOLVED_DECORATOR} entry (#1121).
+	 *
+	 * @param monitor For progress monitoring.
+	 * @return The names of the decorators that resolve.
+	 */
 	public Set<String> getDecoratorNames(IProgressMonitor monitor) {
+		return this.getDecoratorNames(monitor, true);
+	}
+
+	/**
+	 * Returns the fully qualified names of this {@link Function}'s decorators.
+	 *
+	 * @param monitor For progress monitoring.
+	 * @param recordFailures True iff a decorator whose name can't be resolved is to be recorded as an
+	 *        {@link Information#UNRESOLVED_DECORATOR} entry. False for lookups inside assertions, so that enabling assertions doesn't
+	 *        change the entries.
+	 * @return The names of the decorators that resolve.
+	 */
+	private Set<String> getDecoratorNames(IProgressMonitor monitor, boolean recordFailures) {
 		SubMonitor progress = SubMonitor.convert(monitor);
 		Set<String> ret = new HashSet<>();
 
@@ -2415,11 +4778,34 @@ public class Function {
 				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
 						| NoTextSelectionException e) {
 					// Best effort.
-					LOG.info("Can't get name of decorator: " + decorator, e);
+					LOG.warn("Can't get name of decorator: " + decorator, e);
+
+					if (recordFailures)
+						this.addUnresolvedDecorator(decorator, e);
 				}
 		}
 
 		return ret;
+	}
+
+	/**
+	 * Records that the name of the given decorator of this {@link Function} can't be resolved, as an
+	 * {@link Information#UNRESOLVED_DECORATOR} warning naming the decorator and the reason, unless that decorator has already been recorded
+	 * (#1121). The entry is a warning rather than an error: it doesn't fail the refactoring by itself, since some such lookups fail
+	 * legitimately and repeatably, but the decorator is then missing from the reported names and can't be ruled out as the hybridization
+	 * decorator.
+	 *
+	 * @param decorator The decorator whose name can't be resolved.
+	 * @param cause Why the name can't be resolved.
+	 */
+	private void addUnresolvedDecorator(decoratorsType decorator, Exception cause) {
+		if (!this.unresolvedDecorators.add(decorator))
+			return; // Already recorded.
+
+		this.addWarning(UNRESOLVED_DECORATOR,
+				"Can't resolve the name of decorator `" + getFullRepresentationString(decorator.func) + "` ("
+						+ cause.getClass().getSimpleName() + "): "
+						+ UNRESOLVED_DECORATOR_CAUSES.getOrDefault(cause.getClass(), "its lookup failed") + ".");
 	}
 
 	/**
@@ -2460,12 +4846,100 @@ public class Function {
 	}
 
 	/**
+	 * Returns the AST root of the module containing this {@link Function}.
+	 *
+	 * @return The module's AST root, or {@code null} when it was not available.
+	 */
+	public SimpleNode getContainingModule() {
+		return this.getFunctionDefinition().getContainingModule();
+	}
+
+	/**
 	 * This {@link Function}'s {@link FunctionDefinition}.
 	 *
 	 * @return The {@link FunctionDefinition} representing this {@link Function}.
 	 */
 	protected FunctionDefinition getFunctionDefinition() {
 		return this.functionDefinition;
+	}
+
+	/**
+	 * The one-based line number on which this {@link Function}'s definition begins in its containing file. Distinguishes two bindings of
+	 * one name in one module (Python legally rebinds a def), which the name-based identity columns alone cannot; see
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/860.
+	 *
+	 * @return The definition's beginning line number.
+	 */
+	public int getBeginningLineNumber() {
+		return this.getFunctionDefinition().getFunctionDef().beginLine;
+	}
+
+	/**
+	 * This {@link Function}'s one-based index among the definitions in its containing file that share its {@link #getIdentifier()}
+	 * qualified name, in source order. A name defined once has ordinal 1, so the ordinal never weakens a key it joins.
+	 * <p>
+	 * It exists because {@link #getBeginningLineNumber()} is a function of the file content <em>above</em> what it identifies, and the
+	 * transformation inserts decorator lines above definitions. So the line moves under exactly the operation this tool performs, while an
+	 * ordinal does not: decorator insertion adds lines, not definitions. A consumer joining emitted rows against anything captured on a
+	 * transformed tree needs a key that survives that.
+	 * <p>
+	 * The counting rule is shared with the runtime side that also computes it, and is written once in the evaluation repository's
+	 * {@code union-emission.py} rather than restated here. The clauses this implementation satisfies, and how: definitions are collected
+	 * with {@link FunctionExtractor}, which visits only {@code FunctionDef} nodes and traverses every body, so nested and
+	 * conditionally-defined functions are counted whether or not their branch executes, functions inside {@code with}, {@code if} and
+	 * {@code try} bodies are reached, and a name rebound by assignment is not counted because an assignment is not a {@code FunctionDef}.
+	 * Counting is per qualified name rather than per file, so a module-level {@code f} and a method {@code C.f} are separate sequences that
+	 * each start at 1.
+	 * <p>
+	 * Counted from the module's AST rather than from the rows this evaluator emits. Deriving it from emitted rows would be sound only while
+	 * every definition of an emitted name also produces a row, and would fail by renumbering rather than by going missing.
+	 * <p>
+	 * THE ASSUMPTION THIS RESTS ON, stated because nothing fails loudly when it breaks: the ordinal is a join key only while the
+	 * transformation neither adds, removes, nor reorders definitions. It inserts decorators today. If the tool ever synthesizes or moves a
+	 * function, rows join and are <em>wrong</em> rather than going missing, which is the misattribution the beginning line was added to
+	 * prevent, reintroduced from the other end.
+	 *
+	 * @return The one-based definition ordinal, which is at least 1.
+	 * @see #getBeginningLineNumber()
+	 * @see #getIdentifier()
+	 */
+	public int getDefinitionOrdinal() {
+		// READ ONCE into a local. Two reads of a non-volatile field is the racy-single-check shape, and it is unsafe for a reason that
+		// outlives the current caller: the second read is UNBOXED, so a reader that saw non-null and then null throws a
+		// NullPointerException rather than recomputing. That cannot happen while the field only ever goes null-to-value, which is true
+		// today and is exactly the invariant the field's own comment asks a future maintainer not to break. One local removes the
+		// dependence on it, and on this accessor having a single caller reached only from sequential loops, which is a fact about today
+		// rather than anything enforced.
+		Integer memo = this.definitionOrdinal;
+
+		if (memo != null)
+			return memo;
+
+		FunctionDefinition definition = this.getFunctionDefinition();
+		FunctionDef thisDefinition = definition.getFunctionDef();
+		String identifier = this.getIdentifier();
+
+		FunctionExtractor functionExtractor = new FunctionExtractor();
+
+		try {
+			definition.getContainingModule().accept(functionExtractor);
+		} catch (Exception e) {
+			throw new IllegalStateException("Can't walk the module of: " + identifier + ".", e);
+		}
+
+		List<FunctionDef> sameName = functionExtractor.getDefinitions().stream().filter(d -> identifier.equals(Util.getQualifiedName(d)))
+				.sorted(Comparator.comparingInt(d -> d.beginLine)).toList();
+
+		for (int i = 0; i < sameName.size(); i++)
+			if (sameName.get(i) == thisDefinition) {
+				// Assigned only on success, so a failed walk is retried rather than cached as an answer.
+				this.definitionOrdinal = i + 1;
+				return this.definitionOrdinal;
+			}
+
+		// The walk starts at this function's own module, so its own definition is always among those found. Failing loudly beats
+		// returning a plausible 1, which would silently key two definitions the same.
+		throw new IllegalStateException("Definition of " + identifier + " not found in its own module.");
 	}
 
 	public Boolean getHasPythonSideEffects() {
@@ -2666,7 +5140,9 @@ public class Function {
 					subMonitor.worked(1);
 				}
 
-				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)) {
+				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)
+						&& !(isInvariantPrimitive(paramInx, nodes, pointerAnalysis)
+								&& this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph))) {
 					LOG.info(this + " likely has a primitive parameter.");
 					this.hasPrimitiveParameter = TRUE;
 					subMonitor.done();
@@ -2682,6 +5158,96 @@ public class Function {
 		LOG.info(this + " likely does not have a primitive parameter.");
 		this.hasPrimitiveParameter = FALSE;
 		subMonitor.done();
+	}
+
+	/**
+	 * Returns true iff the parameter at the given IR parameter index is bound to one constant at every call, and so is exempt from
+	 * {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS} and from {@link PreconditionSuccess#P3}: in every calling context, its points-to
+	 * set is exactly one {@link ConstantKey}, the same one in each. Such a value can't vary the trace key, so it induces no retracing
+	 * (#1025, #1109). A computed Python scalar points to the engine's key for its type (wala/ML#1148, wala/ML#1149), not to a constant, so
+	 * a value that changes between calls, such as a loop counter, isn't exempt. A context in which the parameter points to nothing isn't
+	 * exempt either, since its value there is unknown.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}, one per calling context.
+	 * @param pointerAnalysis The {@link PointerAnalysis} for the given nodes.
+	 * @return True iff the parameter points to the same single {@link ConstantKey} in every one of the given nodes.
+	 */
+	private static boolean isInvariantPrimitive(int irParamIndex, Set<CGNode> nodes, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		InstanceKey constant = null;
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (irParamIndex >= ir.getNumberOfParameters())
+				return false;
+
+			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, ir.getParameter(irParamIndex));
+			OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
+
+			if (pointsToSet.size() != 1)
+				return false;
+
+			InstanceKey instanceKey = pointsToSet.iterator().next();
+
+			if (!(instanceKey instanceof ConstantKey<?>) || constant != null && !constant.equals(instanceKey))
+				return false;
+
+			constant = instanceKey;
+		}
+
+		return constant != null;
+	}
+
+	/**
+	 * Returns true iff every call site of this {@link Function} binds the parameter at the given IR parameter index to an argument the
+	 * analysis aligns, so that its points-to set holds every value it receives. The supply state of the parameter, as
+	 * {@link #isSuppliedAtAnyCallSite} computes it, must be determined at each call site: a starred (unpacked) positional argument at or
+	 * before the parameter's slot, unless the call names the parameter by keyword, makes the alignment past it undetermined (wala/ML#751),
+	 * and the parameter may then receive a value its points-to set doesn't show, such as a loop index forwarded through {@code *args}. A
+	 * call site that can't be examined, a parameter that can't be mapped to a positional {@link Parameter}, and a function with no call
+	 * site are undetermined too.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}.
+	 * @param callGraph The call graph.
+	 * @return True iff the parameter's argument is aligned at every call site, and there is at least one.
+	 */
+	private boolean isArgumentAlignedAtEveryCallSite(int irParamIndex, Set<CGNode> nodes, CallGraph callGraph) {
+		int declarationIndex = irParamIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return false;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		if (parameter.isKeywordOnly() || parameter.isSelf() || parameter.getIndex() != declarationIndex)
+			return false;
+
+		int positionalSlot = parameter.getIndex() + 1;
+		boolean sawCallSite = false;
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null)
+					return false;
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							return false;
+
+						sawCallSite = true;
+
+						if (!invoke.getKeywords().contains(parameter.getName()) && hasStarredArgumentAtOrBefore(invoke, positionalSlot))
+							return false;
+					}
+			}
+
+		return sawCallSite;
 	}
 
 	/**
@@ -2832,8 +5398,8 @@ public class Function {
 	 * raising a {@code TypeError}. The omission is therefore behavior-preserving only when no call site supplies it, which is a
 	 * whole-program question rather than a syntactic one.
 	 * <p>
-	 * This is the only analysis in the plug-in that walks the call graph in the caller direction; the others ask what a function's body
-	 * reaches. Two wrinkles follow from that:
+	 * This analysis walks the call graph in the caller direction, where most others ask what a function's body reaches. Two wrinkles follow
+	 * from that:
 	 * <ul>
 	 * <li><b>Trampolines.</b> Ariadne interposes a synthesized trampoline between a caller and an instance method to bind {@code self}, so
 	 * a method's predecessors are trampolines rather than user code. The trampoline forwards the originating call's arguments verbatim, so
@@ -2967,6 +5533,143 @@ public class Function {
 	}
 
 	/**
+	 * Computes, for each non-{@code self} parameter, the kinds of argument its reachable call sites pass, storing the result for the
+	 * supplied-signature adjudication (issue 808). A dtype disagreement with a supplied signature behaves differently by argument kind: a
+	 * tensor of the wrong dtype raises, while a NumPy array is silently cast to the declared dtype. A call site whose argument cannot be
+	 * aligned with the parameter (an unpacked positional argument at or before its slot), or whose caller has no IR, contributes
+	 * {@link ArgumentKind#UNKNOWN}; a call site that omits the parameter contributes nothing. When the function has no call-graph node, the
+	 * result is left {@code null}.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}).
+	 */
+	public void computeArgumentKinds(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			LOG.warn("Can't determine the argument kinds of " + this + ".", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			LOG.info("Can't determine the argument kinds of " + this + " without a call graph node.");
+			return;
+		}
+
+		Map<Parameter, Set<ArgumentKind>> kinds = new HashMap<>();
+
+		for (Parameter parameter : this.getParameters())
+			if (!parameter.isSelf())
+				kinds.put(parameter, argumentKinds(parameter, nodes, callGraph, pointerAnalysis, tensorTypedKeys));
+
+		this.argumentKinds = kinds;
+	}
+
+	/**
+	 * The kinds of argument the reachable call sites of {@code nodes} pass for {@code parameter}. A call site whose argument cannot be
+	 * aligned with the parameter (an unpacked positional argument at or before its slot), or whose caller has no IR, contributes
+	 * {@link ArgumentKind#UNKNOWN}; a call site that omits the parameter contributes nothing.
+	 *
+	 * @param parameter The parameter, which is not {@code self}.
+	 * @param nodes The call-graph nodes of the function declaring it.
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}).
+	 * @return The kinds of argument passed for {@code parameter}.
+	 */
+	private static Set<ArgumentKind> argumentKinds(Parameter parameter, Set<CGNode> nodes, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis, Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		// The callee occupies positional slot 0 of the invoke, so the parameter at declaration index i (self at 0) is the invoke's
+		// positional argument i + 1, as in `isSuppliedAtAnyCallSite`.
+		int positionalSlot = parameter.getIndex() + 1;
+		Set<ArgumentKind> parameterKinds = EnumSet.noneOf(ArgumentKind.class);
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null) {
+					parameterKinds.add(ArgumentKind.UNKNOWN);
+					continue;
+				}
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke)
+								|| hasStarredArgumentAtOrBefore(invoke, positionalSlot)) {
+							parameterKinds.add(ArgumentKind.UNKNOWN);
+							continue;
+						}
+
+						int use;
+
+						if (invoke.getKeywords().contains(parameter.getName()))
+							use = invoke.getUse(parameter.getName());
+						else if (invoke.getNumberOfPositionalParameters() > positionalSlot)
+							use = invoke.getUse(positionalSlot);
+						else
+							continue; // This call site omits the parameter.
+
+						PointerKey argumentKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(predecessor, use);
+						parameterKinds.add(argumentKind(tensorTypedKeys.get(argumentKey)));
+					}
+			}
+
+		return parameterKinds;
+	}
+
+	/**
+	 * Computes whether this function is part of an interface the program exports (issue 808): its own object, or a {@code tf.function}
+	 * wrapping it, is exported as a function, or is stored on an object exported whole, as a method of the object's class hierarchy or as
+	 * an attribute. The function's own object has the type of its declaring-class reference.
+	 *
+	 * @param exportAnalysis The program's exports.
+	 */
+	public void computeExported(ExportAnalysis exportAnalysis) {
+		TypeReference functionType;
+
+		try {
+			functionType = this.getDeclaringClass();
+		} catch (CoreException e) {
+			LOG.warn("Can't determine whether " + this + " is exported.", e);
+			return;
+		}
+
+		this.exported = exportAnalysis.isExported(functionType);
+		LOG.info(this + (this.exported == null ? " may be" : this.exported ? " is" : " is not") + " part of an exported interface.");
+	}
+
+	/**
+	 * Classifies an argument by the producing-library origins of its tensor type, disregarding annotation origins, which name no producing
+	 * library ({@link Util#producerOrigins}). A value produced only by TensorFlow is a tensor, and one produced only by NumPy is an array.
+	 * A value the analysis does not type as a tensor, one with no origin evidence, a parameter passed through from the caller, and a value
+	 * of mixed provenance are undecided.
+	 *
+	 * @param origins The argument's origins, or {@code null} when it is not tensor-typed.
+	 * @return The argument's kind.
+	 */
+	private static ArgumentKind argumentKind(Set<TensorOrigin> origins) {
+		if (origins == null)
+			return ArgumentKind.UNKNOWN;
+
+		Set<TensorOrigin> producers = Util.producerOrigins(origins);
+
+		if (producers.equals(EnumSet.of(TensorOrigin.TENSORFLOW)))
+			return ArgumentKind.TENSOR;
+
+		if (producers.equals(EnumSet.of(TensorOrigin.NUMPY)))
+			return ArgumentKind.NUMPY;
+
+		return ArgumentKind.UNKNOWN;
+	}
+
+	/**
 	 * Infers the input signature of this function: an ordered tuple of {@link TensorType}s, one per non-{@code self} parameter the
 	 * tensor-type analysis associated with at least one tensor type. Mirrors the no-argument pattern of {@link #getHasTensorParameter}: the
 	 * values are computed during {@link #inferTensorParameters} (which caches per-parameter tensor types on each {@link Parameter}), and
@@ -2982,15 +5685,17 @@ public class Function {
 	 * recovery (annotate as {@code tf.Tensor} and wrap call sites with {@code tf.constant(...)}). The tool does not synthesize a
 	 * {@link TensorType} for the parameter because wrapping a Python primitive as a tensor changes AutoGraph's rewrite of Python control
 	 * flow over the parameter.
-	 * <li>Tensor-classified by type hint or container detection but no Phase 2 entry ({@code isTensor() && getTensorTypes().isEmpty()}):
-	 * the two ways to land here now diverge (#781). A container ({@link Parameter#isTensorContainer()} {@code == TRUE}) whose element types
-	 * were surfaced ({@link Parameter#getContainerElementTypes()}) reduces each position through {@link #inferSpec} and contributes a
+	 * <li>Tensor-classified by type hint or container detection but no conforming Phase 2 entry
+	 * ({@code isTensor() && getConformingTensorTypes().isEmpty()}, which a parameter whose every observed type came from an
+	 * expected-failure call site also reaches): the two ways to land here now diverge (#781). A container
+	 * ({@link Parameter#isTensorContainer()} {@code == TRUE}) whose element types were surfaced
+	 * ({@link Parameter#getContainerElementTypes()}) reduces each position through {@link #inferSpec} and contributes a
 	 * {@link InputSignature.Sequence} entry; a container of an unmodeled form blocks with
 	 * {@link InferenceResult.AbsenceReason#TENSOR_CONTAINER_UNSUPPORTED}, and disagreeing sequence lengths block with
 	 * {@link InferenceResult.AbsenceReason#HETEROGENEOUS_ARITY}. A type hint carries no dtype at all, and since an input signature admits
 	 * no dtype-⊤ (#494), there is nothing to synthesize; it blocks with a per-parameter INFO and no follow-up to cite.
-	 * <li>Phase-2 hit ({@code isTensor() && !getTensorTypes().isEmpty()}): reduce the cached set via {@link #inferSpec} and add the reduced
-	 * spec to the signature.
+	 * <li>Phase-2 hit ({@code isTensor() && !getConformingTensorTypes().isEmpty()}): reduce the conforming set via {@link #inferSpec} and
+	 * add the reduced spec to the signature.
 	 * </ul>
 	 * Current scope: a single tensor type per parameter, with concrete dtype and concrete shape. Multi-context (#507) and other
 	 * non-concrete cases (#494) yield an {@link InferenceResult.Absent} carrying the blocking {@link InferenceResult.AbsenceReason} pending
@@ -3038,23 +5743,41 @@ public class Function {
 	}
 
 	/**
-	 * Returns the blocking {@link InferenceResult.AbsenceReason} for each parameter that prevented input-signature inference, in parameter
+	 * Returns every blocking {@link InferenceResult.AbsenceReason} of each parameter that prevented input-signature inference, in parameter
 	 * declaration order, from the memoized result without triggering inference. Where {@link #getInferredInputSignatureAbsenceReason()}
 	 * collapses the function to its first blocking reason, this surfaces every blocking parameter so a consumer can report per-parameter
-	 * attribution (#654). Empty when inference was never run, when it produced a signature, and when it was blocked at the function level
-	 * by {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER}, since no parameter is the blocker in that case.
+	 * attribution (#654), and every reason that holds for each, as every failed precondition of a function is reported rather than only the
+	 * first. A parameter's reasons are in the order the dispatch found them, which is not the declaration order of
+	 * {@link InferenceResult.AbsenceReason}; the first is the one reported before a parameter could carry several, so the first reason of
+	 * the first parameter is the function's {@link InferenceResult.Absent} reason. Empty when inference was never run, when it produced a
+	 * signature, and when it was blocked at the function level by {@link InferenceResult.AbsenceReason#SPECULATIVE_TENSOR_PARAMETER}, since
+	 * no parameter is the blocker in that case.
 	 *
-	 * @return An unmodifiable map from each blocking {@link Parameter} to its {@link InferenceResult.AbsenceReason}, in declaration order.
+	 * @return An unmodifiable map from each blocking {@link Parameter} to its non-empty, unmodifiable, ordered set of
+	 *         {@link InferenceResult.AbsenceReason}s, in declaration order.
 	 */
-	public Map<Parameter, AbsenceReason> getBlockingParameterReasons() {
+	public Map<Parameter, Set<AbsenceReason>> getBlockingParameterReasons() {
 		return Collections.unmodifiableMap(this.blockingParameterReasons);
 	}
 
 	/**
+	 * Records {@code reason} as one of {@code param}'s blocking reasons, after any already recorded for it. A set in insertion order rather
+	 * than an {@link EnumSet}: the dispatch does not meet the reasons in {@link AbsenceReason}'s declaration order, and the first one met
+	 * is the parameter's primary reason.
+	 *
+	 * @param blocking The per-parameter blocking reasons being collected.
+	 * @param param The blocking parameter.
+	 * @param reason One reason it blocks.
+	 */
+	private static void addBlockingReason(Map<Parameter, Set<AbsenceReason>> blocking, Parameter param, AbsenceReason reason) {
+		blocking.computeIfAbsent(param, p -> new LinkedHashSet<>()).add(reason);
+	}
+
+	/**
 	 * Computes the inferred input signature. Always recomputes; {@link #inferInputSignature()} memoizes the result. Emits the recovery
-	 * INFOs as a side effect: one function-level INFO on the speculative short-circuit, otherwise one per blocking parameter. The
-	 * {@link InferenceResult.Absent} result carries the <em>first</em> blocking {@link InferenceResult.AbsenceReason} encountered, but the
-	 * loop still runs to completion so every blocking parameter surfaces its INFO in one pass.
+	 * INFOs as a side effect: one function-level INFO on the speculative short-circuit, otherwise one per reason of each blocking
+	 * parameter. The {@link InferenceResult.Absent} result carries the <em>first</em> blocking {@link InferenceResult.AbsenceReason}
+	 * encountered, but the loop still runs to completion so every blocking parameter surfaces its INFOs in one pass.
 	 *
 	 * @return The {@link InferenceResult}. See {@link #inferInputSignature()} for the contract, including the no-non-self-parameter throw.
 	 */
@@ -3067,6 +5790,32 @@ public class Function {
 		 * parameter, so the likely cause is analysis incompleteness rather than a genuinely non-tensor parameter. Report the honest reason
 		 * once instead. Verdict-neutral: the dispatch is already guaranteed to return `Absent` here (#783).
 		 */
+		/*
+		 * An `input_signature` fixes what the function accepts, so a rest-keyword slot stops absorbing anything and a caller passing a
+		 * keyword raises where it used to succeed. Keras is that caller for a layer, since it reads `call`'s declaration and passes
+		 * `training` precisely because `**kwargs` says it may. Decided here on the declaration rather than per parameter: the slot names no
+		 * parameter of its own, and the callers that make it fatal are outside the analyzed program, so no call-site evidence would settle
+		 * it. The function still converts with a bare decorator; only the specification is withheld (#902).
+		 */
+		if (this.hasVariableKeywordParameter()) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE,
+					"`" + this + "` declares a `**kwargs` parameter. An input signature fixes the arguments the function accepts, so that "
+							+ "parameter would stop absorbing keyword arguments and any caller passing one would fail; for a Keras layer "
+							+ "that caller is Keras itself, which passes `training`. Input-signature inference is dropped and the function "
+							+ "is hybridized with a bare decorator.");
+			return new InferenceResult.Absent(AbsenceReason.VARIABLE_KEYWORD_PARAMETER);
+		}
+
+		// `tf.function` traces the callable an intervening decorator returns, and the analysis types the definition's parameters, which
+		// see only what that decorator passes on. A signature read off them may reject the decorated function's own callers (#1046).
+		if (this.hasInterveningDecorator()) {
+			this.addInfo(INPUT_SIGNATURE_INFERENCE,
+					"`" + this + "` has a decorator between `@tf.function` and its definition, so `tf.function` traces the callable that "
+							+ "decorator returns, whose arguments the definition's parameters do not describe. Input-signature inference "
+							+ "is dropped.");
+			return new InferenceResult.Absent(AbsenceReason.INTERVENING_DECORATOR);
+		}
+
 		if (this.tensorParameterFromSpeculation) {
 			this.addInfo(INPUT_SIGNATURE_INFERENCE,
 					"`" + this + "` is classified as having a tensor parameter from its context rather than from any particular parameter, "
@@ -3078,13 +5827,38 @@ public class Function {
 
 		// Keyed by parameter rather than a bare list: the suffix rule below needs each spec's declaration position.
 		Map<Parameter, InputSignature.SpecEntry> specByParameter = new LinkedHashMap<>();
-		Map<Parameter, AbsenceReason> blocking = new LinkedHashMap<>();
+		Map<Parameter, Set<AbsenceReason>> blocking = new LinkedHashMap<>();
 
 		// Defaulted, non-tensor, and supplied by no call site, so omittable from the signature entirely. Provisional until the suffix rule
 		// runs: a parameter is only genuinely omittable if nothing after it needs a spec.
 		Set<Parameter> omittable = new LinkedHashSet<>();
 
+		/*
+		 * Every reason that holds for a parameter is recorded, as every failed precondition of a function is, but a check runs only while
+		 * its premise stands. Each `continue` after a block below says why the later checks are or are not reached. The two checks after
+		 * the loop (a declared failure the signature would reject, and the suffix rule) apply only to a parameter that did not block here,
+		 * one needing its spec and the other an omittable parameter, so neither adds a second reason. The first reason recorded for each
+		 * parameter is the one recorded before a parameter could carry several, so the function-level reason is unchanged.
+		 */
 		for (Parameter param : nonSelfParameters) {
+			/*
+			 * A container reaching this parameter holds an element no `TensorSpec` admits, Python `None` being the case this covers. A
+			 * specification is a universal claim over the values that arrive, so one such member defeats it regardless of how many
+			 * legitimate tensor members sit beside it, and regardless of whether the branch that would supply a tensor ever runs. Asked
+			 * before the tensor classification below, because the parameter IS a tensor container by that classification and would
+			 * otherwise reduce to a specification whose leading position cannot match the call it was derived from (wala/ML#867).
+			 */
+			if (param.holdsUnrepresentableContainerElement()) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"A container reaching parameter `" + param.getName() + "` of `" + this + "` holds an element that is not a "
+								+ "tensor, so no specification can describe what arrives; input-signature inference is dropped and the "
+								+ "function is hybridized with a bare decorator.");
+				addBlockingReason(blocking, param, AbsenceReason.WITHHELD_UNREPRESENTABLE_CONTAINER_ELEMENT);
+				// Not reached: every later check reduces the tensors that arrive to a spec, and what arrives is not only tensors, so a
+				// reason or spec they derived would describe a value that never arrives alone.
+				continue;
+			}
+
 			Boolean classified = param.isTensor();
 			if (classified == null || !classified) {
 				/*
@@ -3093,6 +5867,21 @@ public class Function {
 				 * unconditionally fatal.
 				 */
 				if (param.hasDefault()) {
+					// Keras supplies `training`/`mask` to a `call` override through `Layer.__call__` on every invocation, from
+					// outside the analyzed program, so a call-site examination cannot see the supplier: omitting the parameter cuts
+					// the hybridized function's arity below what the dispatch passes, and the first call raises (#881). The gate is
+					// local to this reduction rather than folded into `isSuppliedAtCallSite`, whose other consumer (the #795
+					// star-arg exemption) must keep treating a source-unsupplied parameter as bound to its default.
+					if (KERAS_FRAMEWORK_SUPPLIED_PARAMETER_NAMES.contains(param.getName()) && this.isKerasCallOverride()) {
+						this.addInfo(INPUT_SIGNATURE_INFERENCE,
+								"Parameter `" + param.getName() + "` of `" + this + "` is supplied by Keras itself on every "
+										+ "invocation, so it cannot be left out of an input signature, and being non-tensor it has "
+										+ "no spec; input-signature inference is dropped.");
+						addBlockingReason(blocking, param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+						// Not reached: every later check reads tensor evidence, which a non-tensor parameter does not have.
+						continue;
+					}
+
 					Boolean supplied = param.isSuppliedAtCallSite();
 
 					if (supplied != null && !supplied) {
@@ -3110,7 +5899,8 @@ public class Function {
 									+ "least one caller, so it cannot be left out of an input signature, and being non-tensor it has no "
 									+ "spec; input-signature inference is dropped. Removing the argument from those call sites, so the "
 									+ "default always applies, would let the parameter be omitted.");
-					blocking.put(param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+					addBlockingReason(blocking, param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
+					// Not reached, as for the Keras-supplied case above.
 					continue;
 				}
 
@@ -3125,64 +5915,118 @@ public class Function {
 								+ "(annotate as `" + param.getName() + ": tf.Tensor` and pass `tf.constant(...)` at call sites). "
 								+ "If the change is appropriate for this function's semantics, rerunning the refactoring will infer "
 								+ "a complete input signature including `" + param.getName() + "`.");
-				blocking.put(param, AbsenceReason.NON_TENSOR_PARAMETER);
+				addBlockingReason(blocking, param, AbsenceReason.NON_TENSOR_PARAMETER);
+				// Not reached: every later check reads tensor evidence, which a non-tensor parameter does not have.
 				continue;
 			}
 
-			Set<TensorType> contexts = param.getTensorTypes();
-			if (contexts.isEmpty()) {
+			// The reduction reads the conforming evidence, not everything observed: a call the callee is specified to reject is not
+			// evidence of what it accepts (#888). Classification above deliberately still reads every node.
+			Set<TensorType> contexts = param.getConformingTensorTypes();
+
+			// Everything observed for this parameter came from a declared expected failure, so nothing of its own is left to reduce. What
+			// the conforming callers pass may still be a container, whose element structure classification surfaced for exactly this case,
+			// so the container branch below runs first and only its failure reports the exclusion (#888).
+			// A parameter classified as a tensor from its type hint alone, in a function with no call-graph node, has no tensor types at
+			// all, so it has no evidence to exclude and falls through to the no-evidence disposition below (#984).
+			boolean expectedFailureEvidenceOnly = contexts.isEmpty() && param.getTensorTypes() != null && !param.getTensorTypes().isEmpty();
+
+			// A container's element evidence outranks the parameter's own typing, and does so however much of the latter there is. A tuple
+			// of tensors reaching a parameter is reported as the union of its elements' types, so the flat typing here is those very
+			// elements flattened: reducing it writes one specification whose disagreeing members collapse to a wildcard, and binding a
+			// pair to that specification makes the body's unpacking raise. The elements are what the callers actually pass, position by
+			// position, so the nested structure is both the more precise answer and the only executable one (#888).
+			// A container a TensorFlow library summary allocated, whose element structure the analysis does not read, such as the list
+			// `tf.unstack` or `tf.split` returns: the summary stands one element in for every piece, and the tensor analysis types the
+			// list itself as that element, so the flat typing describes one piece, not the value the function receives, and a
+			// specification of it makes the body's unpacking raise. The parameter blocks, and the function is hybridized with a bare
+			// decorator (#1012). A summary whose element structure is read, such as a Keras directory iterator's batch tuple, is an
+			// ordinary modeled container and reduces as one.
+			if (param.receivesLibraryContainer() && param.getContainerElementTypes() == null) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
+						+ "` receives a list a TensorFlow operation returns, such as "
+						+ "`tf.unstack` or `tf.split`, whose length and elements the analysis does not model; the signature is dropped.");
+				addBlockingReason(blocking, param, AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
+				// Not reached: the container reduction needs an element structure this container lacks, and the flat typing the dtype
+				// reduction would read describes one piece rather than the value received.
+				continue;
+			}
+
+			if (param.isTensorContainer() != null && param.isTensorContainer() && param.getContainerElementTypes() != null
+					&& !contexts.isEmpty()) {
+				this.reduceContainerElements(param, specByParameter, blocking);
+				// The flat reduction is not reached: the flat typing is the elements flattened, which the element reduction outranks. Every
+				// position is reduced there, and each one that bottoms contributes all of its reasons.
+				continue;
+			}
+
+			// A container whose element structure is not modeled blocks even when flat evidence is present. That flat evidence is at best
+			// the elements' types mixed with non-container arguments from other call sites, so no single specification admits the sequence,
+			// and binding the sequence to one raises on the first call (#976). Only the modeled form above has a reduction. The container
+			// must reach from a conforming call site: one passed only by a call the tests declare must fail is evidence of what the
+			// function rejects, and the flat reduction of the conforming evidence stands (#892).
+			boolean unmodeledContainer = TRUE.equals(param.isConformingTensorContainer()) && param.getContainerElementTypes() == null;
+
+			if (contexts.isEmpty() || unmodeledContainer) {
 				/*
-				 * Category (b): tensor-classified without Phase 2 (Ariadne call-site) shape/dtype evidence. The two ways to land here have
-				 * opposite evidence situations, so each names its own disposition rather than sharing one tracker (#782). Phase 3
-				 * (container) leaves `isTensorContainer()` TRUE; Phase 1 (type hint) returns before Phase 3 runs, leaving it null. Phase 3
-				 * cannot leave it FALSE here: a FALSE container check falls through to `tensor = FALSE`, i.e. category (a).
+				 * Category (b): tensor-classified without conforming Phase 2 (Ariadne call-site) shape/dtype evidence, or classified as a
+				 * container whose element structure is not modeled whatever flat evidence it carries (#976). The ways to land here have
+				 * different evidence situations, so each names its own disposition rather than sharing one tracker (#782). Phase 3
+				 * (container) leaves `isTensorContainer()` TRUE, and so does a Phase 2 hit that also asked the container question, which is
+				 * how an unmodeled container with flat evidence arrives here; Phase 1 (type hint) returns before the container question is
+				 * asked, leaving it null. FALSE reaches here only on the expected-failure route (#888), where a Phase 2 hit whose every
+				 * type was excluded asked the container question and got no for an answer; on the Phase 3 route a FALSE verdict falls
+				 * through to `tensor = FALSE`, i.e. category (a).
 				 */
 				AbsenceReason reason;
 
 				if (param.isTensorContainer() != null && param.isTensorContainer()) {
 					// The sequence reduction (#781): a list or tuple of tensors with a modeled element structure reduces each element
 					// position independently through `inferSpec`, and the parameter contributes a nested entry rather than blocking.
-					List<Set<TensorType>> elements = param.getContainerElementTypes();
-
-					if (elements != null) {
-						List<TensorType> reduced = new ArrayList<>(elements.size());
-						AbsenceReason elementReason = null;
-
-						for (int j = 0; j < elements.size() && elementReason == null; j++) {
-							Optional<TensorType> elementSpec = inferSpec(elements.get(j));
-
-							if (elementSpec.isPresent())
-								reduced.add(elementSpec.get());
-							else
-								elementReason = this.reportElementDrop(param, j, elements.get(j));
-						}
-
-						if (elementReason == null) {
-							specByParameter.put(param, new InputSignature.Sequence(reduced));
-							continue;
-						}
-
-						blocking.put(param, elementReason);
+					if (param.getContainerElementTypes() != null) {
+						this.reduceContainerElements(param, specByParameter, blocking);
+						// Not reached, as for the container route above.
 						continue;
 					}
 
-					if (param.getContainerAritiesDisagree() != null && param.getContainerAritiesDisagree()) {
-						// TensorFlow rejects a sequence of a different length than the signature declares, and no wildcard length
-						// exists, so no single signature admits call sites passing lists of disagreeing lengths.
-						this.addInfo(INPUT_SIGNATURE_INFERENCE,
-								"Parameter `" + param.getName() + "` of `" + this + "` receives lists of tensors whose lengths disagree "
-										+ "across call sites; an input signature fixes the length, so no single signature admits them "
-										+ "all and input-signature inference is dropped.");
-						reason = AbsenceReason.HETEROGENEOUS_ARITY;
-					} else {
-						// A container form the reduction does not model: a dict or set, an element structure the analysis cannot
-						// enumerate, a nested container, a position without tensor evidence, or container and non-container values
-						// mixed at the call sites. The wizard text deliberately cites no tracker (#782).
-						this.addInfo(INPUT_SIGNATURE_INFERENCE,
-								"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors of a "
-										+ "form not currently reduced to an input signature; the signature is dropped.");
-						reason = AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED;
+					// An arity disagreement and an unmodeled form are separate findings, and both are reported when both hold, in the
+					// order the extraction found them. With neither found specifically, the form is still not one the reduction models.
+					List<AbsenceReason> formReasons = param.getContainerFormReasons().isEmpty()
+							? List.of(AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED)
+							: param.getContainerFormReasons();
+
+					for (AbsenceReason formReason : formReasons) {
+						if (formReason == AbsenceReason.HETEROGENEOUS_ARITY)
+							// TensorFlow rejects a sequence of a different length than the signature declares, and no wildcard length
+							// exists, so no single signature admits call sites passing lists of disagreeing lengths.
+							this.addInfo(INPUT_SIGNATURE_INFERENCE,
+									"Parameter `" + param.getName() + "` of `" + this
+											+ "` receives lists of tensors whose lengths disagree "
+											+ "across call sites; an input signature fixes the length, so no single signature admits them "
+											+ "all and input-signature inference is dropped.");
+						else
+							// A container form the reduction does not model: a dict or set, an element structure the analysis cannot
+							// enumerate, a nested container, a position without tensor evidence, or container and non-container values
+							// mixed at the call sites. The wizard text deliberately cites no tracker (#782).
+							this.addInfo(INPUT_SIGNATURE_INFERENCE,
+									"Parameter `" + param.getName() + "` of `" + this + "` is classified as a container of tensors of a "
+											+ "form not currently reduced to an input signature; the signature is dropped.");
+
+						addBlockingReason(blocking, param, formReason);
 					}
+
+					// Not reached: the dtype reduction below has only the unmodeled container's elements flattened to read, which no
+					// single spec admits.
+					continue;
+				} else if (expectedFailureEvidenceOnly) {
+					// Tensor-typed, but only by calls the tests declare must fail, and the conforming callers passed no container either.
+					// Nothing a specification may be derived from is left, so the function is hybridized with a bare decorator.
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Every tensor type observed for parameter `" + param.getName() + "` of `" + this + "` comes from a call site "
+									+ "the tests declare must fail, so it describes an input the function rejects rather than one it "
+									+ "accepts, and the conforming call sites carry no container evidence in its place; input-signature "
+									+ "inference is dropped and the function is hybridized with a bare decorator.");
+					reason = AbsenceReason.EXPECTED_FAILURE_EVIDENCE_ONLY;
 				} else {
 					// A bare `x: tf.Tensor` annotation carries no dtype, and `tf.function(input_signature=...)` admits no dtype-⊤ (#494),
 					// so there is no valid `TensorSpec` to synthesize from this signal and no follow-up to point at.
@@ -3194,8 +6038,33 @@ public class Function {
 					reason = AbsenceReason.TYPE_HINT_WITHOUT_DTYPE;
 				}
 
-				blocking.put(param, reason);
+				addBlockingReason(blocking, param, reason);
+				// One reason: the two dispositions left are the two answers to whether every tensor type observed came from a declared
+				// failure, so exactly one holds. The dtype reduction below is not reached, since there is either no conforming evidence to
+				// reduce or only an unmodeled container's elements flattened, which no single spec admits.
 				continue;
+			}
+
+			DType pin = this.eagerEffectiveDtypePins.get(param);
+
+			if (pin != null) {
+				// The repair direction of issue 861, Case 1: the parameter's direct consumers all impose one concrete dtype that
+				// diverges from the argument evidence, so the spec pins the eager-effective dtype. The boundary cast then reproduces
+				// exactly what eager execution did at each op (runtime-verified on the pinned TF 2.9.3), where emitting the observed
+				// dtype would carry the mismatch into the trace.
+				Optional<TensorType> observed = inferSpec(contexts);
+
+				if (observed.isPresent()) {
+					TensorType pinned = new TensorType(pin, observed.get().getDims());
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Parameter `" + param.getName() + "` of `" + this + "` receives arguments observed as "
+									+ observed.get().getDType() + " but combines them with " + pin + " tensors; eager execution coerces "
+									+ "at each operation, so the spec pins the eager-effective dtype " + pin + ".");
+
+					specByParameter.put(param, new InputSignature.Single(observed.get().isSparse() ? pinned.asSparse() : pinned));
+
+					continue;
+				}
 			}
 
 			Optional<TensorType> spec = inferSpec(contexts);
@@ -3204,33 +6073,54 @@ public class Function {
 				 * `inferSpec` reduced to bottom. With the per-context reduction
 				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/480) it drops for three reasons: heterogeneous
 				 * dtype (|D| ≠ 1), dtype-⊤ (a single agreed `UNKNOWN`), or mixed sparse/dense
-				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642). Shape-⊤ and symbolic-dim no longer drop
-				 * here—it emits a coarse `TensorType(dtype, null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own
-				 * precedence order (dtype before sparseness) so the reason is exact, and emit a per-parameter INFO naming it; see
+				 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/642), plus a `None` member, which a call passing
+				 * `None` contributes (wala/ML#1040). Shape-⊤ and symbolic-dim no longer drop here—it emits a coarse `TensorType(dtype,
+				 * null)` or a `SymbolicDim` wildcard instead. Classify in `inferSpec`'s own precedence order (dtype before sparseness) so
+				 * the first reason is exact, and emit a per-parameter INFO naming each reason that holds; see
 				 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/510.
 				 */
-				boolean heterogeneousDtype = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
-				boolean unknownDtype = !heterogeneousDtype && contexts.stream().anyMatch(t -> t.getDType() == DType.UNKNOWN);
-				AbsenceReason reason;
-				if (heterogeneousDtype) {
-					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
-							+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
-					reason = AbsenceReason.HETEROGENEOUS_DTYPE;
-				} else if (unknownDtype) {
-					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
-							+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
-					reason = AbsenceReason.UNKNOWN_DTYPE;
-				} else {
-					this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
-							+ "` is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
-					reason = AbsenceReason.HETEROGENEOUS_SPARSITY;
+				String prefix = "Parameter `" + param.getName() + "` of `" + this + "` ";
+
+				for (AbsenceReason reason : classifyDtypeBottoms(contexts)) {
+					this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix + dropMessage(reason));
+					addBlockingReason(blocking, param, reason);
 				}
-				blocking.put(param, reason);
+
 				continue;
 			}
 
 			specByParameter.put(param, new InputSignature.Single(spec.get()));
 		}
+
+		// A declared failure was set aside as evidence (#888), but it still runs against the signature, which validates the argument before
+		// the body does. Where the signature would reject that argument with an exception the declaring guard does not admit, emitting it
+		// would make the test fail, so the signature is withheld (#1005).
+		for (Map.Entry<Parameter, InputSignature.SpecEntry> entry : specByParameter.entrySet()) {
+			Optional<String> rejection = this.guardedCallRejection(entry.getKey(), entry.getValue());
+
+			if (rejection.isPresent()) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + entry.getKey().getName() + "` of `" + this + "` would be specified by a signature that rejects the "
+								+ "argument a call declared to fail passes it, raising " + rejection.get() + " before the body runs, "
+								+ "which the call's guard does not admit; emitting the signature would make that test fail, so "
+								+ "input-signature inference is dropped and the function is hybridized with a bare decorator.");
+				addBlockingReason(blocking, entry.getKey(), AbsenceReason.WITHHELD_DECLARED_FAILURE_EXCEPTION);
+			}
+		}
+
+		// An unknown-rank spec where every context that resolved agrees on one rank: the unknown comes from a context the analysis did not
+		// resolve, not from the callers, and it discards a rank the body or a traced caller may need, so the signature is withheld (#1150).
+		for (Map.Entry<Parameter, InputSignature.SpecEntry> entry : specByParameter.entrySet())
+			if (entry.getValue() instanceof InputSignature.Single single && single.type().getDims() == null
+					&& isPartialRank(entry.getKey().getConformingTensorTypes())) {
+				this.addInfo(INPUT_SIGNATURE_INFERENCE,
+						"Parameter `" + entry.getKey().getName() + "` of `" + this
+								+ "` receives tensors of one rank at some call sites and "
+								+ "a tensor whose shape could not be determined at others, so its specification would have an unknown "
+								+ "rank, which an operation needing the rank rejects at trace time; input-signature inference is dropped "
+								+ "and the function is hybridized with a bare decorator.");
+				addBlockingReason(blocking, entry.getKey(), AbsenceReason.WITHHELD_PARTIAL_RANK);
+			}
 
 		/*
 		 * Suffix rule. `input_signature` covers a prefix of the parameter list positionally, so an omittable parameter can only actually be
@@ -3251,23 +6141,23 @@ public class Function {
 						"Parameter `" + param.getName() + "` of `" + this + "` has a default value and no caller passes it, but a later "
 								+ "parameter needs a spec, and an input signature covers parameters by position; leaving it out would "
 								+ "apply the later parameter's spec to it. Input-signature inference is dropped.");
-				blocking.put(param, AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC);
+				addBlockingReason(blocking, param, AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC);
 			}
 		}
 
 		// Report per-parameter reasons in declaration order. The suffix rule can block a parameter that precedes one already blocked in
 		// the first pass, so insertion order is not declaration order.
-		Map<Parameter, AbsenceReason> orderedBlocking = new LinkedHashMap<>();
+		Map<Parameter, Set<AbsenceReason>> orderedBlocking = new LinkedHashMap<>();
 		for (Parameter param : nonSelfParameters)
 			if (blocking.containsKey(param))
-				orderedBlocking.put(param, blocking.get(param));
+				orderedBlocking.put(param, Collections.unmodifiableSet(blocking.get(param)));
 
 		this.blockingParameterReasons = orderedBlocking;
 
 		// A signature must be total over the parameters: any blocking reason makes the whole result Absent, even if some parameters
-		// reduced. The reason carried is the first in declaration order.
+		// reduced. The reason carried is the first parameter's first, in declaration order.
 		if (!orderedBlocking.isEmpty())
-			return new InferenceResult.Absent(orderedBlocking.values().iterator().next());
+			return new InferenceResult.Absent(orderedBlocking.values().iterator().next().iterator().next());
 
 		// Degenerate case: nothing blocked, yet no parameter contributed a spec, so there is nothing to describe. Either the function has
 		// no non-`self` parameter at all, or every one of them was omittable, which means none is a tensor. Both are unreachable from the
@@ -3285,6 +6175,391 @@ public class Function {
 	}
 
 	/**
+	 * The exception TensorFlow raises when an input signature rejects an argument, by the specification's form and the argument's kind, as
+	 * measured on TensorFlow 2.9.3 (#1005).
+	 */
+	private enum SignatureRejection {
+		/** The argument conforms to the specification, so the signature does not intervene and the body raises as before. */
+		CONFORMS(null),
+
+		/**
+		 * A flat dense specification rejects a non-container argument that does not conform (a tensor of another shape or dtype,
+		 * {@code None}, a string, an object), and a nested one rejects a list or tuple of another structure, raising {@code ValueError}. A
+		 * Python number is not on this list, since it converts to a scalar specification.
+		 */
+		VALUE_ERROR("ValueError"),
+
+		/** A nested specification rejects a non-container argument, raising {@code TypeError}. */
+		TYPE_ERROR("TypeError"),
+
+		/**
+		 * The exception depends on more than the specification's form and the argument's kind, so it is not predicted. A flat specification
+		 * converts a container argument, which may conform or may raise {@code ValueError} or {@code InvalidArgumentError} depending on its
+		 * elements. A nested one indexes a dict or set, raising {@code KeyError} or {@code TypeError}. A sparse or ragged specification
+		 * raises {@code TypeError} for {@code None} or a dense tensor but {@code ValueError} for a wrong dtype.
+		 */
+		UNPREDICTED(null);
+
+		/** The simple name of the exception raised, or {@code null} when none is raised or it is not predicted. */
+		private final String exception;
+
+		SignatureRejection(String exception) {
+			this.exception = exception;
+		}
+
+		/** True iff {@code guard} admits what this rejection raises. */
+		boolean admittedBy(ExpectedFailureContextAnalysis.Guard guard) {
+			return this.exception == null ? guard.admitsAny() : guard.admits(this.exception);
+		}
+
+		@Override
+		public String toString() {
+			return this.exception == null ? "an exception that depends on the argument's elements" : "`" + this.exception + "`";
+		}
+	}
+
+	/**
+	 * Whether {@code entry}, the specification inferred for {@code param}, rejects the argument some declared failure passes it with an
+	 * exception that failure's guard does not admit, so emitting it would make the test fail (#1005). A guard naming a {@code tf.errors}
+	 * class is judged like any other: a data-dependent op error, such as an out-of-range {@code tf.gather}, survives a bare decorator, and
+	 * only the signature's earlier rejection changes it.
+	 *
+	 * @param param A parameter that reduced to a specification.
+	 * @param entry The specification it reduced to.
+	 * @return The exception that would escape, rendered for the status message, or empty when no declared failure is affected.
+	 */
+	private Optional<String> guardedCallRejection(Parameter param, InputSignature.SpecEntry entry) {
+		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.callGuards.entrySet()) {
+			// A node whose evidence was kept is one the specification was derived from, so it is not judged as a rejected call.
+			if (!this.expectedFailureNodes.contains(node.getKey()))
+				continue;
+
+			SignatureRejection rejection = this.signatureRejection(param, entry, node.getKey());
+
+			if (rejection == SignatureRejection.CONFORMS)
+				continue;
+
+			for (List<ExpectedFailureContextAnalysis.Guard> guards : node.getValue()) {
+				// Only a declared failure is judged; an `except` clause around it declares nothing (#1014).
+				if (guards.stream().filter(guard -> !guard.handler()).anyMatch(rejection::admittedBy))
+					continue;
+
+				return Optional.of(rejection.toString());
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * What {@code entry} does with the argument the declared failure reaching {@code node} passes {@code param}.
+	 *
+	 * @param param The parameter.
+	 * @param entry The specification inferred for it.
+	 * @param node An expected-failure node of this {@link Function}.
+	 * @return Whether the argument conforms, or the exception the rejection raises.
+	 */
+	private SignatureRejection signatureRejection(Parameter param, InputSignature.SpecEntry entry, CGNode node) {
+		GuardedArgument kind = this.guardedArgumentKinds.getOrDefault(node, Map.of()).getOrDefault(param.getIndex(), GuardedArgument.OTHER);
+
+		if (entry instanceof InputSignature.Sequence)
+			return switch (kind) {
+			case SEQUENCE -> SignatureRejection.VALUE_ERROR;
+			case NON_SEQUENCE_CONTAINER -> SignatureRejection.UNPREDICTED;
+			case TENSORS, OTHER -> SignatureRejection.TYPE_ERROR;
+			};
+
+		if (kind == GuardedArgument.SEQUENCE || kind == GuardedArgument.NON_SEQUENCE_CONTAINER)
+			return SignatureRejection.UNPREDICTED;
+
+		TensorType spec = ((InputSignature.Single) entry).type();
+		Set<TensorType> passed = param.getTensorTypes(node);
+
+		// Only an argument that holds nothing but tensors may conform; one that may also be `None` is rejected whenever it is.
+		if (kind == GuardedArgument.TENSORS && !passed.isEmpty() && passed.stream().allMatch(t -> conforms(t, spec)))
+			return SignatureRejection.CONFORMS;
+
+		boolean ragged = spec.getDims() != null && spec.getDims().stream().anyMatch(RaggedDim.class::isInstance);
+
+		return spec.isSparse() || ragged ? SignatureRejection.UNPREDICTED : SignatureRejection.VALUE_ERROR;
+	}
+
+	/**
+	 * True iff a tensor of type {@code type} is known to satisfy the specification {@code spec}: the same concrete dtype and sparseness,
+	 * and a shape matching it axis by axis, a fixed axis of the specification requiring the same fixed extent.
+	 *
+	 * @param type The type of an argument.
+	 * @param spec The specification.
+	 * @return Whether the argument conforms; false when that is not known.
+	 */
+	private static boolean conforms(TensorType type, TensorType spec) {
+		if (type.getDType() == DType.UNKNOWN || type.getDType() != spec.getDType() || type.isSparse() != spec.isSparse())
+			return false;
+
+		List<Dimension<?>> wanted = spec.getDims();
+
+		if (wanted == null)
+			return true;
+
+		List<Dimension<?>> actual = type.getDims();
+
+		if (actual == null || actual.size() != wanted.size())
+			return false;
+
+		for (int i = 0; i < wanted.size(); i++)
+			if (wanted.get(i) instanceof NumericDim && !wanted.get(i).equals(actual.get(i)))
+				return false;
+
+		return true;
+	}
+
+	/** The exception tracing raises for an operation whose static shape check fails, as measured on TensorFlow 2.9.3 (#1014). */
+	private static final String TRACE_TIME_SHAPE_EXCEPTION = "ValueError";
+
+	/** The exception tracing raises for an operation whose operands' dtypes disagree, as measured on TensorFlow 2.9.3 (#1014). */
+	private static final String TRACE_TIME_DTYPE_EXCEPTION = "TypeError";
+
+	/**
+	 * Whether a bare {@code tf.function} may change how a guard around a call to this function dispatches on the exception the call raises,
+	 * so that converting it would change the program's behavior (#1014). A kernel raises a {@code tf.errors} class as it runs, but a bare
+	 * decorator traces the function with the argument's own shape and dtype, and where a static check fails on them, tracing raises in
+	 * place of the kernel: {@code ValueError} for a shape and {@code TypeError} for a dtype. A data-dependent error, such as an
+	 * out-of-range {@code tf.gather} or a failed {@code tf.debugging.assert_positive}, is still raised by the kernel. The two cannot be
+	 * told apart from the body, but a call outside every guard that passes the same type traced without a static error, so such an argument
+	 * is no hazard. Any other argument is: one of another shape or dtype, one whose type is not fully known, and a container, a
+	 * {@code None}, or anything else that is not only tensors.
+	 * <p>
+	 * A guard distinguishes the two exceptions where it treats them differently. An expected-failure guard declares that the call raises
+	 * what it admits, so it distinguishes only when it may admit a {@code tf.errors} class and does not admit what tracing raises: one
+	 * admitting no {@code tf.errors} class declares an exception that is not a kernel's, which tracing raises where the body does. A
+	 * {@code try} statement declares nothing about whether the call raises, so its {@code except} clauses distinguish when the first to
+	 * catch what tracing raises is not the first to catch a kernel's error, in either direction: {@code except InvalidArgumentError}
+	 * catches the eager error and lets the traced one escape, and {@code except ValueError} the reverse.
+	 *
+	 * @return The exceptions tracing may raise that some guard treats differently, rendered for the status message, or empty when no
+	 *         guarded call is affected.
+	 */
+	private Optional<String> tracingChangesGuardedException() {
+		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.callGuards.entrySet()) {
+			Set<String> raised = this.traceTimeExceptions(node.getKey());
+
+			if (raised.isEmpty())
+				continue;
+
+			for (List<ExpectedFailureContextAnalysis.Guard> guards : node.getValue()) {
+				List<ExpectedFailureContextAnalysis.Guard> declared = guards.stream().filter(guard -> !guard.handler()).toList();
+				List<ExpectedFailureContextAnalysis.Guard> handlers = guards.stream().filter(ExpectedFailureContextAnalysis.Guard::handler)
+						.toList();
+
+				Set<String> distinguished = raised.stream()
+						.filter(exception -> declaredDistinguishes(declared, exception) || handlersDistinguish(handlers, exception))
+						.collect(Collectors.toCollection(TreeSet::new));
+
+				if (!distinguished.isEmpty())
+					return Optional.of(distinguished.stream().map(e -> "`" + e + "`").collect(Collectors.joining(" or ")));
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * True iff the expected-failure guards {@code declared} around a call may admit the error a failed static check is raised as eagerly
+	 * but not {@code exception}, which tracing may raise in its place (#1014).
+	 *
+	 * @param declared The expected-failure guards around the call.
+	 * @param exception The simple name of an exception tracing may raise.
+	 * @return Whether the guards distinguish the two.
+	 */
+	private static boolean declaredDistinguishes(List<ExpectedFailureContextAnalysis.Guard> declared, String exception) {
+		return declared.stream().anyMatch(ExpectedFailureContextAnalysis.Guard::mayAdmitStaticOpError)
+				&& declared.stream().noneMatch(guard -> guard.admits(exception));
+	}
+
+	/**
+	 * True iff the first of the {@code except} clauses {@code handlers} to catch {@code exception}, which tracing may raise, is not the
+	 * first to catch the error a failed static check is raised as eagerly (#1014). A clause catching what is unknown may be either. A
+	 * clause naming only another {@code tf.errors} class, as {@code except tf.errors.OutOfRangeError} around a loop does, catches neither.
+	 *
+	 * @param handlers The {@code except} clauses around the call, in the order Python tries them.
+	 * @param exception The simple name of an exception tracing may raise.
+	 * @return Whether the clauses distinguish the two.
+	 */
+	private static boolean handlersDistinguish(List<ExpectedFailureContextAnalysis.Guard> handlers, String exception) {
+		for (ExpectedFailureContextAnalysis.Guard handler : handlers) {
+			if (!handler.resolved())
+				return true;
+
+			boolean traced = handler.admits(exception);
+
+			if (traced != handler.admitsStaticOpError())
+				return true;
+
+			if (traced)
+				return false;
+		}
+
+		return false;
+	}
+
+	/**
+	 * What a {@code try} statement in {@code nodes}' own code dispatches on, around a call that may run a TensorFlow operation, that
+	 * converting the function changes (#1014). Converting the function makes that code a trace, so the operation no longer runs inside the
+	 * {@code try}: an error its kernel raises is raised when the graph runs, outside the statement, so any clause that may catch a kernel's
+	 * error is bypassed, whatever else it catches. A failed static check is raised at trace time instead, as {@code ValueError} or
+	 * {@code TypeError}, so a clause catching one of those but no kernel's error now catches what it let escape. What the call is passed
+	 * cannot be told from any call outside the {@code try}, so the clauses alone decide.
+	 *
+	 * @param nodes The call-graph nodes of this {@link Function}.
+	 * @param analysis The guard analysis, for the {@code except} clauses around each call.
+	 * @param callGraph The call graph, for each call's targets.
+	 * @return What the clauses dispatch on, rendered for the status message, or empty when there is no such call.
+	 */
+	private static Optional<String> bodyHandlerChange(Set<CGNode> nodes, ExpectedFailureContextAnalysis analysis, CallGraph callGraph) {
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (ir == null)
+				continue;
+
+			for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
+				if (!(instruction instanceof SSAAbstractInvokeInstruction invoke))
+					continue;
+
+				List<ExpectedFailureContextAnalysis.Guard> handlers = analysis.handlersAround(node, invoke);
+
+				if (handlers.isEmpty())
+					continue;
+
+				if (!mayRunTensorFlow(callGraph, node, invoke.getCallSite()))
+					continue;
+
+				// A clause that cannot be read is caught below, since it distinguishes what tracing raises as well.
+				if (handlers.stream().anyMatch(ExpectedFailureContextAnalysis.Guard::admitsOpError))
+					return Optional.of("a TensorFlow error, which a traced function raises when its graph runs, outside the try statement");
+
+				Set<String> distinguished = Set.of(TRACE_TIME_SHAPE_EXCEPTION, TRACE_TIME_DTYPE_EXCEPTION).stream()
+						.filter(exception -> handlersDistinguish(handlers, exception)).collect(Collectors.toCollection(TreeSet::new));
+
+				if (!distinguished.isEmpty())
+					return Optional.of(distinguished.stream().map(e -> "`" + e + "`").collect(Collectors.joining(" or "))
+							+ ", which tracing raises in place of a TensorFlow error");
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * True iff the call at {@code site} in {@code node} may run a TensorFlow operation, and so raise a kernel's error: some target is
+	 * TensorFlow's or the program's own code, directly or through a synthesized trampoline (#1014). A builtin or another library cannot.
+	 *
+	 * @param callGraph The call graph.
+	 * @param node The node making the call.
+	 * @param site The call.
+	 * @return Whether the call may run a TensorFlow operation.
+	 */
+	private static boolean mayRunTensorFlow(CallGraph callGraph, CGNode node, CallSiteReference site) {
+		for (CGNode target : callGraph.getPossibleTargets(node, site)) {
+			if (runsTensorFlow(target))
+				return true;
+
+			if (!(target.getMethod() instanceof AstMethod))
+				for (CGNode forwarded : Iterator2Iterable.make(callGraph.getSuccNodes(target)))
+					if (runsTensorFlow(forwarded))
+						return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code node} is the program's own code or a TensorFlow API.
+	 *
+	 * @param node A call-graph node.
+	 * @return Whether the node may run a TensorFlow operation itself.
+	 */
+	private static boolean runsTensorFlow(CGNode node) {
+		String name = node.getMethod().getDeclaringClass().getName().toString();
+		return node.getMethod() instanceof AstMethod || name.startsWith(TENSORFLOW_TYPE_NAME_PREFIX)
+				|| name.startsWith(SYNTHETIC_TENSORFLOW_TYPE_NAME_PREFIX);
+	}
+
+	/** The type-name prefix of a TensorFlow API that the front end synthesizes, as in {@code L$tensorflow/keras/layers/}. */
+	private static final String SYNTHETIC_TENSORFLOW_TYPE_NAME_PREFIX = "L$tensorflow/";
+
+	/**
+	 * The exceptions tracing may raise, in place of the body's, for what the guarded call reaching {@code node} passes this function's
+	 * tensor parameters, judged against what every call-graph node not reached only from guarded calls passes them (#1014).
+	 *
+	 * @param node A node of this {@link Function} reached only from guarded call sites.
+	 * @return The simple names of the exceptions; empty when every argument has a type some other call passes.
+	 */
+	private Set<String> traceTimeExceptions(CGNode node) {
+		Set<String> ret = new HashSet<>();
+		Map<Integer, GuardedArgument> kinds = this.guardedArgumentKinds.getOrDefault(node, Map.of());
+
+		for (Parameter param : this.getParameters()) {
+			if (param.isSelf() || !TRUE.equals(param.isTensor()))
+				continue;
+
+			Set<TensorType> passed = param.getTensorTypes(node);
+
+			if (kinds.getOrDefault(param.getIndex(), GuardedArgument.OTHER) != GuardedArgument.TENSORS || passed.isEmpty()) {
+				ret.add(TRACE_TIME_SHAPE_EXCEPTION);
+				ret.add(TRACE_TIME_DTYPE_EXCEPTION);
+				continue;
+			}
+
+			Set<TensorType> others = param.getTensorTypesOutside(this.callGuards.keySet()).stream().filter(Function::isFullyKnown)
+					.collect(Collectors.toSet());
+
+			for (TensorType type : passed)
+				ret.addAll(traceTimeExceptions(type, others));
+		}
+
+		return ret;
+	}
+
+	/**
+	 * The exceptions tracing may raise for an argument of type {@code type}, given the fully known types {@code others} that the calls
+	 * outside every guard pass the same parameter (#1014). A type among them traced without a static error. Otherwise a shape no other call
+	 * passes, beside a dtype one does, may fail a static shape check; a dtype no other call passes, beside a shape one does, may fail a
+	 * static dtype check; and anything else may fail either. Since {@code others} are fully known, a shape or dtype of {@code type} that is
+	 * not is passed by no other call.
+	 *
+	 * @param type The type of the guarded call's argument.
+	 * @param others The fully known types the unguarded calls pass.
+	 * @return The simple names of the exceptions; empty when {@code type} is among {@code others}.
+	 */
+	private static Set<String> traceTimeExceptions(TensorType type, Set<TensorType> others) {
+		if (others.contains(type))
+			return Set.of();
+
+		boolean dtypeSeen = others.stream().anyMatch(other -> other.getDType() == type.getDType());
+		boolean shapeSeen = others.stream().anyMatch(other -> other.getDims().equals(type.getDims()));
+
+		if (dtypeSeen && !shapeSeen)
+			return Set.of(TRACE_TIME_SHAPE_EXCEPTION);
+
+		if (shapeSeen && !dtypeSeen)
+			return Set.of(TRACE_TIME_DTYPE_EXCEPTION);
+
+		return Set.of(TRACE_TIME_SHAPE_EXCEPTION, TRACE_TIME_DTYPE_EXCEPTION);
+	}
+
+	/**
+	 * True iff {@code type} has a concrete dtype and a shape every axis of which is a concrete extent, so that it determines the trace a
+	 * bare decorator makes for it.
+	 *
+	 * @param type A tensor type.
+	 * @return Whether the type is fully known.
+	 */
+	private static boolean isFullyKnown(TensorType type) {
+		return type.getDType() != DType.UNKNOWN && type.getDims() != null && type.getDims().stream().allMatch(NumericDim.class::isInstance);
+	}
+
+	/**
 	 * Classifies and reports one element position of a sequence-container parameter whose {@link #inferSpec} reduced to bottom, mirroring
 	 * the flat parameter's drop classification (dtype disagreement, dtype-⊤, then mixed sparseness, in {@link #inferSpec}'s own precedence
 	 * order) with the element position named in the diagnostic (#781).
@@ -3292,27 +6567,103 @@ public class Function {
 	 * @param param The sequence-container parameter.
 	 * @param element The zero-based element position that did not reduce.
 	 * @param contexts The element position's {@link TensorType}s across call contexts.
-	 * @return The blocking {@link AbsenceReason} for the parameter.
+	 * @return Every blocking {@link AbsenceReason} of the position, from {@link #classifyDtypeBottoms(Set)}, each reported in its own INFO.
 	 */
-	private AbsenceReason reportElementDrop(Parameter param, int element, Set<TensorType> contexts) {
-		boolean heterogeneousDtype = contexts.stream().map(TensorType::getDType).distinct().count() > 1;
-		boolean unknownDtype = !heterogeneousDtype && contexts.stream().anyMatch(t -> t.getDType() == DType.UNKNOWN);
+	private Set<AbsenceReason> reportElementDrop(Parameter param, int element, Set<TensorType> contexts) {
+		Set<AbsenceReason> reasons = classifyDtypeBottoms(contexts);
+		String prefix = "Element " + element + " of parameter `" + param.getName() + "` of `" + this + "` ";
 
-		if (heterogeneousDtype) {
-			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
-					+ "` receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.");
-			return AbsenceReason.HETEROGENEOUS_DTYPE;
-		}
+		for (AbsenceReason reason : reasons)
+			this.addInfo(INPUT_SIGNATURE_INFERENCE, prefix + dropMessage(reason));
 
-		if (unknownDtype) {
-			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
-					+ "` receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.");
-			return AbsenceReason.UNKNOWN_DTYPE;
-		}
+		return reasons;
+	}
 
-		this.addInfo(INPUT_SIGNATURE_INFERENCE, "Element " + element + " of parameter `" + param.getName() + "` of `" + this
-				+ "` is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.");
-		return AbsenceReason.HETEROGENEOUS_SPARSITY;
+	/**
+	 * The sentence naming why {@link #inferSpec} reduced to bottom, for one {@link AbsenceReason}. Appended to a prefix that identifies the
+	 * parameter or the element position, so the flat and container paths share one wording per reason and cannot drift apart.
+	 * <p>
+	 * Kept as data keyed by the reason rather than as a branch beside each emission. The two emission sites previously each carried their
+	 * own copy of the same four-way choice, which is the shape that let one defect live at both of them
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969).
+	 *
+	 * @param reason A classified reason, from {@link #classifyDtypeBottoms(Set)}.
+	 * @return The sentence for that reason, without the identifying prefix.
+	 */
+	public static String dropMessage(AbsenceReason reason) {
+		return switch (reason) {
+		case HETEROGENEOUS_DTYPE -> "receives tensors with conflicting dtypes across call sites, so a single input signature cannot be inferred; it is dropped.";
+		case PARTIAL_DTYPE -> "receives tensors of one dtype at some call sites and a tensor whose dtype could not be determined at others, so a single input signature cannot be inferred; it is dropped. The call sites do not disagree; one could not be resolved.";
+		case UNKNOWN_DTYPE -> "receives a tensor whose dtype cannot be determined, so a single input signature cannot be inferred; it is dropped.";
+		case RECEIVES_NONE -> "receives None at some call sites and a tensor at others, and a tensor specification rejects None, so a single input signature cannot be inferred; it is dropped.";
+		default -> "is sparse at some call sites and dense at others, so a single input signature cannot be inferred; it is dropped.";
+		};
+	}
+
+	/**
+	 * Classifies why {@link #inferSpec} reduced to bottom for one parameter or container element position: the first of
+	 * {@link #classifyDtypeBottoms(Set)}, the reason reported when only one is.
+	 *
+	 * @param contexts The {@link TensorType}s observed for the parameter or element position across call contexts.
+	 * @return The first reason {@link #classifyDtypeBottoms(Set)} reports.
+	 */
+	public static AbsenceReason classifyDtypeBottom(Set<TensorType> contexts) {
+		return classifyDtypeBottoms(contexts).iterator().next();
+	}
+
+	/**
+	 * Classifies every reason {@link #inferSpec} reduced to bottom for one parameter or container element position. The axes are
+	 * independent of one another, so a parameter can bottom on several at once, such as a call passing {@code None} beside two that
+	 * disagree about the dtype, and each is reported, as every failed precondition of a function is. The order is the precedence the
+	 * reasons had when only one was reported, so the first is that reason: {@code None}, then the dtype axis, then the sparseness axis.
+	 * <p>
+	 * {@code None}'s dtype and layout are meaningless (wala/ML#1040), so a {@code None} member is left out of both of the other axes: read
+	 * as {@code UNKNOWN} it would report an unresolved context, and read as dense it would report a mixed layout beside a sparse tensor.
+	 * <p>
+	 * {@code UNKNOWN} is excluded from the concrete dtype set before the set is sized. Counting it as a member made
+	 * {@code {INT32, UNKNOWN}} report a conflict among the callers, when in fact the callers agree and one context did not resolve. The two
+	 * call for different work: a genuine conflict is a fact about the program that no engine improvement removes, while an unresolved
+	 * context is a precision gap whose repair collapses the set to one dtype and makes the parameter specifiable. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/969. The three dtype reasons are mutually exclusive, so at most
+	 * one of them is reported.
+	 * <p>
+	 * Shared by the flat-parameter and container-element paths. They previously carried the predicate separately and so carried the same
+	 * defect twice, which is the reason it lives here rather than at either call site.
+	 *
+	 * @param contexts The {@link TensorType}s observed for the parameter or element position across call contexts.
+	 * @return A non-empty, ordered set holding {@link AbsenceReason#RECEIVES_NONE} when a context is {@code None}; one of
+	 *         {@link AbsenceReason#HETEROGENEOUS_DTYPE} when two or more concrete dtypes conflict, {@link AbsenceReason#PARTIAL_DTYPE} when
+	 *         exactly one concrete dtype appears alongside {@code UNKNOWN}, and {@link AbsenceReason#UNKNOWN_DTYPE} when contexts are
+	 *         present and none resolved; and {@link AbsenceReason#HETEROGENEOUS_SPARSITY} when sparse and dense tensors are mixed. When
+	 *         none of these holds, the set is {@link AbsenceReason#HETEROGENEOUS_SPARSITY} alone, the remaining reason {@code inferSpec}
+	 *         bottoms for.
+	 */
+	public static Set<AbsenceReason> classifyDtypeBottoms(Set<TensorType> contexts) {
+		Set<AbsenceReason> reasons = new LinkedHashSet<>();
+
+		if (contexts.stream().anyMatch(TensorType::isNone))
+			reasons.add(AbsenceReason.RECEIVES_NONE);
+
+		List<TensorType> tensors = contexts.stream().filter(t -> !t.isNone()).toList();
+
+		Set<DType> dtypes = tensors.stream().map(TensorType::getDType).collect(Collectors.toSet());
+		boolean anyUnknown = dtypes.contains(DType.UNKNOWN);
+		long concrete = dtypes.stream().filter(d -> d != DType.UNKNOWN).count();
+
+		if (concrete > 1)
+			reasons.add(AbsenceReason.HETEROGENEOUS_DTYPE);
+		else if (concrete == 1 && anyUnknown)
+			reasons.add(AbsenceReason.PARTIAL_DTYPE);
+		else if (concrete == 0 && anyUnknown)
+			reasons.add(AbsenceReason.UNKNOWN_DTYPE);
+
+		boolean anySparse = tensors.stream().anyMatch(TensorType::isSparse);
+		boolean allSparse = tensors.stream().allMatch(TensorType::isSparse);
+
+		if ((anySparse && !allSparse) || reasons.isEmpty())
+			reasons.add(AbsenceReason.HETEROGENEOUS_SPARSITY);
+
+		return Collections.unmodifiableSet(reasons);
 	}
 
 	/**
@@ -3418,6 +6769,20 @@ public class Function {
 	}
 
 	/**
+	 * True iff {@code contexts} hold a tensor of unknown shape beside tensors that all have one known rank: the unknown-rank reduction
+	 * {@link #inferSpec} makes of them is due to the unresolved contexts alone (#1150). {@code None} members are left out, since they have
+	 * no shape and block the parameter on their own.
+	 *
+	 * @param contexts The {@link TensorType}s observed for a parameter across call contexts.
+	 * @return True iff some context has unknown dimensions and the others agree on a single rank, of which there is at least one.
+	 */
+	public static boolean isPartialRank(Set<TensorType> contexts) {
+		List<TensorType> tensors = contexts.stream().filter(t -> !t.isNone()).toList();
+		Set<Integer> ranks = tensors.stream().map(TensorType::getDims).filter(Objects::nonNull).map(List::size).collect(Collectors.toSet());
+		return ranks.size() == 1 && tensors.stream().anyMatch(t -> t.getDims() == null);
+	}
+
+	/**
 	 * Returns the sparse view of the given {@link TensorType} when {@code sparse} is true, otherwise the type unchanged. Used by
 	 * {@link #inferSpec} to carry a sparse-layout consensus onto the reduced type so {@link InputSignature#toTensorSpecList} emits a
 	 * {@code SparseTensorSpec} (#533).
@@ -3452,6 +6817,29 @@ public class Function {
 		return matches;
 	}
 
+	/**
+	 * Names of the parameters Keras itself supplies to a {@code call} override through {@code Layer.__call__} on every invocation
+	 * ({@code training}, {@code mask}): the framework contract on {@code Layer.call}. No source-visible call site passes them, so call-site
+	 * examination cannot establish they are supplied (#881).
+	 */
+	private static final Set<String> KERAS_FRAMEWORK_SUPPLIED_PARAMETER_NAMES = Set.of("training", "mask");
+
+	/**
+	 * True iff this function is a {@code call} override of a Keras model or layer subclass: a method named {@code call} whose enclosing
+	 * class the engine's class hierarchy resolves to a subclass of Keras's {@code Layer} or {@code Model}
+	 * ({@link #computeExtendsKerasCallableClass(CallGraph)}, issue 1099). The engine's hierarchy is the only source: a base is not matched
+	 * by its name, so a program-defined class named {@code Layer} or {@code Model} is not a Keras base
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1107).
+	 *
+	 * @return True iff this function is a {@code call} override of a Keras model or layer subclass.
+	 */
+	private boolean isKerasCallOverride() {
+		if (!"call".equals(this.getSimpleName()) || !(this.getFunctionDefinition().getFunctionDef().parent instanceof ClassDef))
+			return false;
+
+		return this.extendsKerasCallableClass;
+	}
+
 	private Set<String> getAllClassParentNames(boolean onlyLastSegment) {
 		Set<String> ret = new HashSet<>();
 		SimpleNode node = this.getFunctionDefinition().getFunctionDef().parent;
@@ -3469,7 +6857,17 @@ public class Function {
 			if (selection != null) {
 				RefactoringRequest request = new RefactoringRequest(getContainingFile(), selection, getNature());
 				IPyRefactoring2 refactoring = (Refactorer) AbstractPyRefactoring.getPyRefactoring();
-				HierarchyNodeModel hierarchyNode = refactoring.findClassHierarchy(request, true);
+				HierarchyNodeModel hierarchyNode;
+
+				synchronized (Util.PYDEV_LOCK) {
+					// As in `Util.getDeclaringModuleName()`: the count is per thread, and the lookup runs on this one (issue 1121).
+					long lostAnswers = AbstractShell.getLostAnswerCount();
+					hierarchyNode = refactoring.findClassHierarchy(request, true);
+
+					if (AbstractShell.getLostAnswerCount() != lostAnswers)
+						throw new LostPyDevAnswerError("class hierarchy", NodeUtils.getRepresentationString(def),
+								this.getContainingModuleName(), this.getContainingFile(), this.getProject());
+				}
 
 				if (hierarchyNode != null)
 					return getAllParentNames(hierarchyNode, onlyLastSegment);
@@ -3529,6 +6927,54 @@ public class Function {
 		return this.getTransformations().contains(CONVERT_TO_EAGER);
 	}
 
+	/**
+	 * Returns true iff the given transformation is applied to this function by the refactoring: it is selected, and the function fails no
+	 * precondition, which is what puts it among the processor's optimizable functions.
+	 *
+	 * @param transformation The transformation in question.
+	 * @return True iff the refactoring applies the given transformation to this function.
+	 */
+	private boolean appliesTransformation(Transformation transformation) {
+		// Mirrors HybridizeFunctionRefactoringProcessor.getOptimizableFunctions, which transforms the functions with no error status.
+		return this.getTransformations().contains(transformation) && !this.getStatus().hasError();
+	}
+
+	/**
+	 * Returns true iff this function is left decorated with {@code @tf.function} after the refactoring, and so could carry an
+	 * {@code input_signature}: it is converted to hybrid, or it is already hybrid and stays hybrid, whether it is reconfigured or kept as
+	 * it is because a precondition fails. A function converted to eager and an eager function left eager are not (#1167). A function whose
+	 * hybridity is unknown ({@link #isHybrid()} is {@code null}) is not a candidate either, which is conservative: it is counted only once
+	 * it is known to be decorated.
+	 *
+	 * @return True iff this function is decorated with {@code @tf.function} after the refactoring.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1167">Issue 1167</a>
+	 */
+	public boolean isSignatureCandidate() {
+		if (this.appliesTransformation(CONVERT_TO_HYBRID))
+			return true;
+
+		return TRUE.equals(this.isHybrid()) && !this.appliesTransformation(CONVERT_TO_EAGER);
+	}
+
+	/**
+	 * Returns true iff the refactoring converts this function to hybrid and the decorator it writes carries an inferred
+	 * {@code input_signature} (#1167). Decided by the same emission check {@link #convertToHybrid()} writes the keyword through
+	 * ({@link #inputSignatureKeyword(Optional, ImportContext)} under the file's emission import context), so a signature that was inferred
+	 * but is out of scope under the file's import shape, or that was withheld, does not count. The check runs over the memoized signature
+	 * ({@link #getInferredInputSignature()}) and never triggers inference, so this leaves the function's status untouched; a function
+	 * converted to hybrid with inference on computed that signature while its preconditions were checked.
+	 *
+	 * @return True iff the decorator added to this function carries an {@code input_signature}.
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1167">Issue 1167</a>
+	 */
+	public boolean isHybridizedWithInputSignature() {
+		if (!this.appliesTransformation(CONVERT_TO_HYBRID) || !this.getInferInputSignatures())
+			return false;
+
+		Optional<InputSignature> signature = this.getInferredInputSignature();
+		return inputSignatureKeyword(signature, this.emissionImportContext(() -> signature)).isPresent();
+	}
+
 	public List<TextEdit> transform() throws BadLocationException, MalformedTreeException, NoTextSelectionException,
 			AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		List<TextEdit> ret = new ArrayList<>();
@@ -3555,7 +7001,7 @@ public class Function {
 
 	private List<TextEdit> convertToEager()
 			throws NoTextSelectionException, BadLocationException, AmbiguousDeclaringModuleException, NoDeclaringModuleException {
-		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already eager.";
+		assert this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Already eager.";
 
 		// there can be more than one.
 		List<TextEdit> ret = new ArrayList<>();
@@ -3616,8 +7062,216 @@ public class Function {
 		return ret;
 	}
 
+	/**
+	 * Returns this function's outermost {@code @tf.custom_gradient} decorator, if any.
+	 *
+	 * @return The outermost decorator resolving to {@code tf.custom_gradient}, or empty when there is none or none resolves.
+	 */
+	private Optional<decoratorsType> getCustomGradientDecorator() {
+		decoratorsType[] decs = this.getFunctionDefinition().getFunctionDef().decs;
+
+		if (decs != null)
+			for (decoratorsType decorator : decs)
+				try {
+					if (TF_CUSTOM_GRADIENT_FQN.equals(this.getFQN(decorator, null)))
+						return Optional.of(decorator);
+				} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException
+						| NoTextSelectionException e) {
+					// Best effort, as in `getDecoratorNames()`. The processor runs `computeHybridization()` first, which resolves the
+					// same decorator, but a lookup can fail here alone (e.g., when this is reached without it, or the lookup isn't
+					// repeatable), so record it too; the decorator is recorded once either way (#1121).
+					LOG.warn("Can't get name of decorator: " + decorator, e);
+					this.addUnresolvedDecorator(decorator, e);
+				}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * Returns true iff a decorator other than {@code tf.custom_gradient} sits between this function's {@code @tf.function} and its
+	 * definition (#1046). For a hybrid function, those are the decorators beneath its {@code @tf.function}. For an eager one, the added
+	 * decorator goes on the definition, unless the function carries {@code tf.custom_gradient}, in which case it goes above the outermost
+	 * one (#996), and the decorators beneath that one count. A decorator whose name can't be resolved counts, since nothing then shows it
+	 * passes its arguments through.
+	 *
+	 * @return True iff a decorator intervenes between the hybridization decorator and the definition.
+	 */
+	public boolean hasInterveningDecorator() {
+		decoratorsType[] decs = this.getFunctionDefinition().getFunctionDef().decs;
+
+		if (decs == null)
+			return false;
+
+		decoratorsType outer = this.hybridDecorator != null ? this.hybridDecorator : this.getCustomGradientDecorator().orElse(null);
+
+		if (outer == null)
+			return false;
+
+		for (int i = Arrays.asList(decs).indexOf(outer) + 1; i < decs.length; i++)
+			try {
+				if (!TF_CUSTOM_GRADIENT_FQN.equals(this.getFQN(decs[i], null)))
+					return true;
+			} catch (BadLocationException | AmbiguousDeclaringModuleException | NoDeclaringModuleException | NoTextSelectionException e) {
+				LOG.warn("Can't get name of decorator: " + decs[i] + "; counting it as intervening.", e);
+				this.addUnresolvedDecorator(decs[i], e); // As in `getCustomGradientDecorator()`.
+				return true;
+			}
+
+		return false;
+	}
+
+	/**
+	 * Returns true iff this function is a method whose first argument is bound, an instance method or a {@code classmethod}, and is
+	 * decorated with {@code tf.custom_gradient}. Such a method fails under {@code tf.function} in either decorator order (#1000). The
+	 * predicate is structural (defined directly in a class body and not a {@code staticmethod}), so it holds whether or not the analysis
+	 * reaches the method; the eager decline is still reported only for a method the analysis reaches.
+	 * <p>
+	 * Being structural, it misreads a few spellings. It declines, conservatively, a method that would work hybridized above
+	 * {@code tf.custom_gradient}: one made static by a later {@code m = staticmethod(m)}, by an alias ({@code sm = staticmethod; @sm}), or
+	 * by {@code @builtins.staticmethod}, since it compares the decorator's spelling with {@code staticmethod}. It misses a module-level
+	 * {@code tf.custom_gradient} function bound to a class afterwards ({@code C.m = f}), which is then hybridized although {@code C().m(x)}
+	 * raises.
+	 *
+	 * @return True iff this is a bound {@code tf.custom_gradient} method.
+	 */
+	public boolean isBoundCustomGradientMethod() {
+		FunctionDef def = this.getFunctionDefinition().getFunctionDef();
+
+		if (!(def.parent instanceof ClassDef) || this.getCustomGradientDecorator().isEmpty())
+			return false;
+
+		if (def.decs != null)
+			for (decoratorsType decorator : def.decs)
+				if ("staticmethod".equals(NodeUtils.getRepresentationString(decorator.func)))
+					return false;
+
+		return true;
+	}
+
+	/**
+	 * The bare TensorFlow names an auto-injected {@code from tensorflow import ...} line brings into scope for this function's file:
+	 * {@code function}, always, and, when input-signature emission applies, the spec-type constructors and dtype constants of every
+	 * signature the file's transformed functions need. This function's own signature is always included; the others come from
+	 * {@link #planAutoInjectedImports}, when it ran (#588). The names are ordered deterministically, {@code function} first.
+	 *
+	 * @return The names the injected line imports.
+	 */
+	private Set<String> namesToInject() {
+		return this.namesToInject(() -> this.inferInputSignature().signature());
+	}
+
+	/**
+	 * The names {@link #namesToInject()} returns, with this function's own signature read from the given supplier, which is consulted only
+	 * when input-signature emission applies.
+	 *
+	 * @param ownSignature Supplies this function's own signature.
+	 * @return The names the injected line imports.
+	 */
+	private Set<String> namesToInject(Supplier<Optional<InputSignature>> ownSignature) {
+		// `function` is always needed for a fresh decorator and is kept for a reconfigured one too, so the per-file record serves either.
+		// When input-signature emission applies, also bring the signature's spec-type constructors (`TensorSpec`, and `RaggedTensorSpec`
+		// for a ragged parameter) and dtype constants into scope so the emission proceeds unqualified rather than being skipped.
+		Set<String> names = new LinkedHashSet<>();
+		names.add("function");
+
+		if (this.getInferInputSignatures()) {
+			/*
+			 * Union this function's spec-type and dtype names with those of every other transformed function in the file (pre-computed by
+			 * `planAutoInjectedImports`), so the single injected import line brings every function's names into scope rather than only the
+			 * first-processed function's (#588). The spec-type names are the signature's own `requiredSpecTypeNames` rather than a
+			 * hardcoded `TensorSpec`, so a ragged parameter brings `RaggedTensorSpec` into scope and its signature emits unqualified rather
+			 * than being gated off (#524). Falls back to this function's own names when no plan was computed (e.g. a direct `transform()`
+			 * without the processor's pre-pass).
+			 */
+			File file = this.getContainingFile();
+			SortedSet<String> specTypeNames = new TreeSet<>();
+			SortedSet<String> dtypeNames = new TreeSet<>();
+			ownSignature.get().ifPresent(sig -> {
+				specTypeNames.addAll(sig.requiredSpecTypeNames());
+				dtypeNames.addAll(sig.requiredDTypeNames());
+			});
+
+			Set<String> plannedSpecTypeNames = fileInferredSpecTypeNames.get(file);
+			if (plannedSpecTypeNames != null)
+				specTypeNames.addAll(plannedSpecTypeNames);
+
+			Set<String> plannedDTypeNames = fileInferredDTypeNames.get(file);
+			if (plannedDTypeNames != null)
+				dtypeNames.addAll(plannedDTypeNames);
+
+			if (!dtypeNames.isEmpty()) {
+				names.addAll(specTypeNames);
+				names.addAll(dtypeNames);
+			}
+		}
+
+		return names;
+	}
+
+	/**
+	 * Auto-injects a {@code from tensorflow import ...} line into a file that reaches TensorFlow through no import of its own, as when
+	 * {@code tf} arrives by a star import from another module, and returns the import context the line establishes. The first function
+	 * transformed in the file fixes the injected line and records which names it brings into scope; later functions in the same file reuse
+	 * that record rather than injecting again (#574). The fresh-decorator path ({@link #convertToHybrid()}) and the reconfiguration path
+	 * ({@link #reconfigure()}) share it (issue 1018), so a file mixing both injects once.
+	 * <p>
+	 * Emission is reachable iff the function's required names are among those the injected line brought into scope. The
+	 * {@link #computeInputSignatureKeyword(ImportContext)} gate enforces that, so a later function needing a dtype the first did not inject
+	 * is skipped rather than given a decorator that raises {@code NameError}.
+	 *
+	 * @param doc The containing document.
+	 * @param edits The edits to add the injected line to, when this call injects it.
+	 * @return The unqualified import context the injected (or previously injected) line establishes.
+	 * @throws BadLocationException If the insertion line cannot be resolved.
+	 */
+	private ImportContext injectImport(IDocument doc, List<TextEdit> edits) throws BadLocationException {
+		File file = this.getContainingFile();
+		Set<String> injectedNames = autoInjectedImportNames.get(file);
+
+		if (injectedNames == null) {
+			Set<String> names = this.namesToInject();
+			int line = getLineToInsertImport(doc);
+			int lineOffset = doc.getLineOffset(line);
+
+			MultiTextEdit mte = new MultiTextEdit();
+			mte.addChild(new InsertEdit(lineOffset, "from tensorflow import " + String.join(", ", names) + "\n"));
+			edits.add(mte);
+			autoInjectedImportNames.put(file, names);
+			injectedNames = names;
+		}
+
+		return new ImportContext("", false, injectedNames);
+	}
+
+	/**
+	 * The import context under which this function's emitted names would be written: the file's own TensorFlow import shape or, when the
+	 * file has none, the one {@link #injectImport(IDocument, List)} establishes, from the line already injected into the file or the line
+	 * it would inject.
+	 *
+	 * @return The import context for emission.
+	 */
+	private ImportContext emissionImportContext() {
+		return this.emissionImportContext(() -> this.inferInputSignature().signature());
+	}
+
+	/**
+	 * The import context {@link #emissionImportContext()} returns, with this function's own signature read from the given supplier.
+	 *
+	 * @param ownSignature Supplies this function's own signature, for the names an injected line would bring into scope.
+	 * @return The import context for emission.
+	 */
+	private ImportContext emissionImportContext(Supplier<Optional<InputSignature>> ownSignature) {
+		ImportContext ctx = getImportContext(this.getContainingDocument());
+
+		if (ctx != null)
+			return ctx;
+
+		Set<String> injectedNames = autoInjectedImportNames.get(this.getContainingFile());
+		return new ImportContext("", false, injectedNames != null ? injectedNames : this.namesToInject(ownSignature));
+	}
+
 	private List<TextEdit> convertToHybrid() throws BadLocationException {
-		assert !this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Already hybrid.";
+		assert !this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Already hybrid.";
 
 		List<TextEdit> ret = new ArrayList<>();
 
@@ -3625,73 +7279,21 @@ public class Function {
 		FunctionDef functionDef = functionDefinition.getFunctionDef();
 
 		IDocument doc = this.getContainingDocument();
-		int offset = getOffset(doc, functionDef);
-		int lineBeginOffset = offset - functionDef.beginColumn + 1;
 
-		String precedingText = doc.get(lineBeginOffset, functionDef.beginColumn - 1);
+		// The decorator goes on the line of the `def`, innermost, except above the outermost `@tf.custom_gradient`: beneath it, a Keras
+		// layer calling the function can no longer infer its output shape, while above it the shape, the call and the gradient all work
+		// (#996). Decorators above that one, such as `@staticmethod`, stay above.
+		SimpleNode anchor = this.getCustomGradientDecorator().<SimpleNode>map(d -> d).orElse(functionDef);
+		int offset = getOffset(doc, anchor);
+		int lineBeginOffset = doc.getLineOffset(doc.getLineOfOffset(offset));
+
+		String precedingText = doc.get(lineBeginOffset, offset - lineBeginOffset);
 
 		ImportContext ctx = getImportContext(doc);
 
-		if (ctx == null) {
-			// No TensorFlow import in scope: auto-inject one. The first hybridizable function in the file fixes the injected line and
-			// records which names it brings into scope; later functions in the same file reuse that record (#574).
-			File file = this.getContainingFile();
-			Set<String> injectedNames = autoInjectedImportNames.get(file);
-
-			if (injectedNames == null) {
-				// `function` is always needed for the decorator. When input-signature emission applies, also bring the signature's
-				// spec-type
-				// constructors (`TensorSpec`, and `RaggedTensorSpec` for a ragged parameter) and dtype constants into scope so the emission
-				// proceeds unqualified rather than being skipped. The names are sorted for deterministic emission; `function` leads.
-				Set<String> names = new LinkedHashSet<>();
-				names.add("function");
-
-				if (this.getInferInputSignatures()) {
-					/*
-					 * Union this function's spec-type and dtype names with those of every other to-be-hybridized function in the file
-					 * (pre-computed by `planAutoInjectedImports`), so the single injected import line brings every function's names into
-					 * scope rather than only the first-processed function's (#588). The spec-type names are the signature's own
-					 * `requiredSpecTypeNames` rather than a hardcoded `TensorSpec`, so a ragged parameter brings `RaggedTensorSpec` into
-					 * scope and its signature emits unqualified rather than being gated off (#524). Falls back to this function's own names
-					 * when no plan was computed (e.g. a direct `transform()` without the processor's pre-pass).
-					 */
-					SortedSet<String> specTypeNames = new TreeSet<>();
-					SortedSet<String> dtypeNames = new TreeSet<>();
-					this.inferInputSignature().signature().ifPresent(sig -> {
-						specTypeNames.addAll(sig.requiredSpecTypeNames());
-						dtypeNames.addAll(sig.requiredDTypeNames());
-					});
-
-					Set<String> plannedSpecTypeNames = fileInferredSpecTypeNames.get(file);
-					if (plannedSpecTypeNames != null)
-						specTypeNames.addAll(plannedSpecTypeNames);
-
-					Set<String> plannedDTypeNames = fileInferredDTypeNames.get(file);
-					if (plannedDTypeNames != null)
-						dtypeNames.addAll(plannedDTypeNames);
-
-					if (!dtypeNames.isEmpty()) {
-						names.addAll(specTypeNames);
-						names.addAll(dtypeNames);
-					}
-				}
-
-				int line = getLineToInsertImport(doc);
-				int lineOffset = doc.getLineOffset(line);
-
-				TextEdit edit = new InsertEdit(lineOffset, "from tensorflow import " + String.join(", ", names) + "\n");
-				MultiTextEdit mte = new MultiTextEdit();
-				mte.addChild(edit);
-				ret.add(mte);
-				autoInjectedImportNames.put(file, names);
-				injectedNames = names;
-			}
-
-			// Emission is reachable iff this function's required names are among those the injected line brought into scope; the
-			// `computeInputSignatureKeyword` gate enforces that, so a later function needing a dtype the first did not inject is
-			// safely skipped rather than emitting a `NameError`-raising decorator.
-			ctx = new ImportContext("", false, injectedNames);
-		}
+		if (ctx == null)
+			// No TensorFlow import in scope: auto-inject one (#574).
+			ctx = this.injectImport(doc, ret);
 
 		// Compose the whole decorator into one InsertEdit rather than three same-offset ones, so correctness doesn't depend on Eclipse
 		// sequencing zero-length same-offset edits by add-order (#575). Wrap it in a MultiTextEdit (a container) so every element of
@@ -3707,31 +7309,52 @@ public class Function {
 
 	/**
 	 * Reconfigures this already-hybrid function's {@code @tf.function} decorator to carry the inferred {@code input_signature} (the
-	 * {@code RECONFIGURE} transformation). Only the add path exists: {@link #check()} selects {@code RECONFIGURE} solely for a decorator
-	 * with no {@code input_signature}; an existing signature is adjudicated report-only and never rewritten, since the rewrite would repair
-	 * a nonconforming observed call rather than preserve behavior (issue 808; the sanctioned rewrite is a future find-and-fix
-	 * transformation, not this refactoring). Reuses the existing import-shape resolution ({@link #getImportContext(IDocument)}) and
-	 * emission gate ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}); a hybrid function
-	 * necessarily imports TensorFlow (the decorator references it), so {@code getImportContext} is expected to resolve; the {@code null}
-	 * check below is defensive and yields no edits rather than failing. When the signature's names are not reachable under the file's
-	 * import shape (e.g. {@code from tensorflow import function} without {@code TensorSpec}), the gate yields no keyword and no edit is
-	 * produced, matching {@link #convertToHybrid()}'s silent skip.
+	 * {@code RECONFIGURE} transformation). {@link #check()} selects {@code RECONFIGURE} for a decorator with no {@code input_signature},
+	 * which gains the inferred one, and for one whose literal signature is strictly broader than the inferred one and whose narrowing no
+	 * precondition declines ({@link PreconditionSuccess#P5}), whose literal is replaced by the inferred one (issue 808). A tighter or
+	 * incomparable signature is never rewritten, since the rewrite would repair a nonconforming call rather than preserve behavior. Reuses
+	 * the existing import-shape resolution ({@link #getImportContext(IDocument)}) and emission gate
+	 * ({@link #computeInputSignatureKeyword(ImportContext)} / {@link #addInputSignature(ImportContext)}). A decorator can reference
+	 * TensorFlow through a name the file doesn't import itself, such as a {@code tf} arriving by a star import, in which case
+	 * {@code getImportContext} finds nothing and a {@code from tensorflow import ...} line is injected, as for a fresh decorator (issue
+	 * 1018). When the signature's names are not reachable under the file's import shape (e.g. {@code from tensorflow import function}
+	 * without {@code TensorSpec}), the gate yields no keyword and the decorator is left unchanged, matching {@link #convertToHybrid()}'s
+	 * silent skip. The injected import is added to the returned edits before that gate runs, so when the gate declines in a file that has
+	 * no TensorFlow import of its own (a narrowing whose literal span can't be resolved, or a direct {@code transform()} without
+	 * {@link #planAutoInjectedImports}'s pre-pass), the edits inject the import with no decorator change. {@link #check()} selects
+	 * {@code RECONFIGURE} only when the gate passes, so through the processor this arises only for an unresolvable literal span.
 	 *
-	 * @return The edits adding {@code input_signature=[...]} to the decorator, or an empty list when emission is gated out.
+	 * @return The edits adding {@code input_signature=[...]} to the decorator or replacing its broader literal, preceded by the injected
+	 *         import when the file has none; an empty list when the file has its own import and emission is gated out.
 	 * @throws BadLocationException If a document offset cannot be resolved.
 	 */
 	private List<TextEdit> reconfigure() throws BadLocationException {
-		assert this.getDecoratorNames(null).contains(TF_FUNCTION_FQN) : "Not hybrid.";
-		assert this.getHybridizationParameters() == null || !this.getHybridizationParameters()
-				.hasInputSignatureParam() : "RECONFIGURE is selected only for a decorator without an input_signature (issue 808).";
+		assert this.getDecoratorNames(null, false).contains(TF_FUNCTION_FQN) : "Not hybrid.";
 
 		List<TextEdit> ret = new ArrayList<>();
 
 		IDocument doc = this.getContainingDocument();
-		ImportContext ctx = getImportContext(doc);
+		ImportContext fileContext = getImportContext(doc);
 
-		if (ctx == null)
+		// A decorator that reaches TensorFlow only through another module, such as by a star import, leaves the file with no import of its
+		// own to qualify the emitted names with; inject one, as a fresh decorator does (issue 1018).
+		final ImportContext ctx = fileContext != null ? fileContext : this.injectImport(doc, ret);
+
+		if (this.getHybridizationParameters() != null && this.getHybridizationParameters().hasInputSignatureParam()) {
+			// Narrowing path (P5, issue 808): replace the supplied literal signature in place with the inferred one. Only a literal is
+			// narrowed (a named signature declines in `check`), so the node is the list or tuple itself.
+			exprType suppliedNode = this.getHybridizationParameters().getSuppliedInputSignatureNode();
+			assert suppliedNode instanceof org.python.pydev.parser.jython.ast.List
+					|| suppliedNode instanceof Tuple : "Only a literal input signature is narrowed (issue 808).";
+
+			Optional<String> replacement = this.inferInputSignature().signature().map(sig -> sig.toTensorSpecList(ctx.prefix()));
+			int[] span = literalSpan(doc, suppliedNode);
+
+			if (replacement.isPresent() && span != null)
+				ret.add(new ReplaceEdit(span[0], span[1] - span[0], replacement.get()));
+
 			return ret;
+		}
 
 		decoratorsType decorator = this.hybridDecorator;
 
@@ -3748,6 +7371,12 @@ public class Function {
 			// parenthesis. A trailing keyword argument is always valid Python, whereas front-insertion would place the keyword before any
 			// existing positional argument (e.g. `@tf.function(None)`), producing a syntax error. Handles the empty-parentheses
 			// (`@tf.function()`) and non-empty (`@tf.function(reduce_retracing=True)`) forms uniformly.
+			//
+			// An existing `reduce_retracing` (or its deprecated alias `experimental_relax_shapes`) is kept on purpose. Under a signature
+			// it has no effect: in TensorFlow 2.9.3, the flag's only use is the cache-key generalization at `function.py:2707` (in
+			// `tensorflow/python/eager`), guarded by `self._reduce_retracing and self.input_signature is None`. So removing it would be
+			// an edit that changes nothing, while keeping it preserves the developer's retracing behavior should the signature later be
+			// dropped. That reading covers 2.9.3 only.
 			Call call = (Call) decorator.func;
 
 			// Find the open parenthesis, tolerating any whitespace between the callee and `(`.
@@ -3787,6 +7416,42 @@ public class Function {
 			ret.add(mte);
 
 		return ret;
+	}
+
+	/**
+	 * The text span of a list or tuple literal in the document: from its opening bracket through its matching closing bracket. PyDev
+	 * positions both a list and a parenthesized tuple at their opening bracket. Bracket nesting is tracked without regard to string
+	 * literals, so a bracket inside a string can end the span early; the narrowing declines any literal containing a quote for that reason
+	 * ({@link #narrowingWouldDropSpecText}).
+	 *
+	 * @param doc The document.
+	 * @param node The list or tuple literal.
+	 * @return The start and end offsets (end exclusive), or {@code null} if the node does not start at a bracket or no balanced pair is
+	 *         found.
+	 * @throws BadLocationException If an offset cannot be resolved.
+	 */
+	private static int[] literalSpan(IDocument doc, exprType node) throws BadLocationException {
+		int start = getOffset(doc, node);
+
+		if (start < 0 || start >= doc.getLength() || doc.getChar(start) != '[' && doc.getChar(start) != '(')
+			return null;
+
+		int depth = 0;
+
+		for (int offset = start; offset < doc.getLength(); offset++) {
+			char c = doc.getChar(offset);
+
+			if (c == '(' || c == '[' || c == '{')
+				++depth;
+			else if (c == ')' || c == ']' || c == '}') {
+				--depth;
+
+				if (depth == 0)
+					return new int[] { start, offset + 1 };
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -3843,7 +7508,19 @@ public class Function {
 		 * upfront `TensorSpec`-reachable gate would be redundant for a dense signature and would wrongly block a ragged-only signature when
 		 * `RaggedTensorSpec` is imported but `TensorSpec` is not.
 		 */
-		return this.inferInputSignature().signature().filter(sig -> sig.requiredSpecTypeNames().stream().allMatch(ctx::nameReachable))
+		return inputSignatureKeyword(this.inferInputSignature().signature(), ctx);
+	}
+
+	/**
+	 * Returns the {@code input_signature=...} keyword argument for the given signature when all its names are reachable under the given
+	 * import context, and {@link Optional#empty} otherwise; the emission check of {@link #computeInputSignatureKeyword(ImportContext)}.
+	 *
+	 * @param signature The signature to emit, if any.
+	 * @param ctx The import context for the containing file.
+	 * @return The {@code input_signature=...} keyword argument, or empty.
+	 */
+	private static Optional<String> inputSignatureKeyword(Optional<InputSignature> signature, ImportContext ctx) {
+		return signature.filter(sig -> sig.requiredSpecTypeNames().stream().allMatch(ctx::nameReachable))
 				.filter(sig -> sig.requiredDTypeNames().stream().allMatch(ctx::nameReachable))
 				.map(sig -> "input_signature=" + sig.toTensorSpecList(ctx.prefix()));
 	}
@@ -3851,16 +7528,16 @@ public class Function {
 	/**
 	 * Whether an inferred input signature can actually be emitted into this function's decorator under the containing file's import shape.
 	 * Gates {@code RECONFIGURE} selection in {@link #check()} so a passing precondition is never reported for a no-op transformation: a
-	 * hybrid function always imports TensorFlow (its decorator references it), but the named-import shape ({@code from tensorflow import
-	 * function}) can leave {@code TensorSpec} or a dtype constant out of scope, in which case
-	 * {@link #computeInputSignatureKeyword(ImportContext)} yields nothing and {@link #reconfigure()} would produce no edit. True implies
-	 * both that a signature was inferred and that all its names are reachable, so a selected reconfiguration always rewrites the decorator.
+	 * file with no TensorFlow import of its own is resolved against the line {@link #injectImport(IDocument, List)} injects (issue 1018),
+	 * but the named-import shape ({@code from tensorflow import function}) can leave {@code TensorSpec} or a dtype constant out of scope,
+	 * in which case {@link #computeInputSignatureKeyword(ImportContext)} yields nothing and {@link #reconfigure()} would produce no edit.
+	 * True implies both that a signature was inferred and that all its names are reachable, so a selected reconfiguration always rewrites
+	 * the decorator.
 	 *
 	 * @return True iff the inferred input signature is emittable under this file's import shape.
 	 */
 	private boolean canEmitInferredInputSignature() {
-		ImportContext ctx = getImportContext(this.getContainingDocument());
-		return ctx != null && this.computeInputSignatureKeyword(ctx).isPresent();
+		return this.computeInputSignatureKeyword(this.emissionImportContext()).isPresent();
 	}
 
 	/**

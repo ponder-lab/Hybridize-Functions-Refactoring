@@ -1,6 +1,6 @@
-# Modify path (#596), incomparable case. The decorator pins a float32 dtype, but the call site passes an int32 tensor, so the
-# supplied and inferred dtypes are incomparable. The supplied signature is overwritten with a warning (it changes the inputs accepted
-# at runtime). The supplied signature intentionally disagrees with the call site, so this fixture is analyzed statically.
+# Adjudication path (#596, #808), incomparable case. The decorator pins a float32 dtype, but the call site passes an int32 tensor, so
+# the supplied and inferred dtypes are incomparable. The call raises at runtime, so the supplied signature is left unchanged and the
+# disagreement is reported. The supplied signature intentionally disagrees with the call site, so this fixture is analyzed statically.
 import tensorflow as tf
 
 

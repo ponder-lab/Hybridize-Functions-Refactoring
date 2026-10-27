@@ -3,3 +3,13 @@
 /spam.txt
 cachedir/
 image_at_epoch_*.png
+
+# PyDev interpreter and AST caches a test run writes into this module, at its root as well as
+# beside the fixtures. They record absolute paths from the machine that ran them. The rules below
+# apply from this directory down, so they cover the module root, which `resources/.gitignore`
+# does not reach and which is where a wildcard add picks these up. All three are listed even
+# though `resources` already ignores two of them for its own tree: naming only the ones that have
+# been committed so far leaves the next one to be caught the same way, by someone reading a diff.
+*.pydevinfo
+v1_astmanager/
+v2_indexcache/

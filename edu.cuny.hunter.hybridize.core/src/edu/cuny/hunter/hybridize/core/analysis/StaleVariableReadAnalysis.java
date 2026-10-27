@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,7 @@ import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.ipa.callgraph.CGNode;
+import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ssa.DefUse;
@@ -36,16 +38,27 @@ import com.ibm.wala.ssa.SSAInstruction;
  * built before the first trace is runtime state the scan cannot see, so a stale-ordered read is declined regardless, the safety polarity
  * (the prebuilt shape is a knowing, rare over-approximation).
  * <p>
- * The scan is per-body: receiver identity is matched by the attribute chain's root token (a global, lexical, or local anchor), ordering by
- * IR instruction position (a loop's back edge only makes the first iteration stale, which is the iteration that traces), and the snapshot's
- * consumption by a forward def-use closure from the read to an {@code apply_gradients}, {@code minimize}, or {@code gradient} member call.
+ * Receiver identity is matched by the attribute chain's root token (a global, lexical, or local anchor), ordering by IR instruction
+ * position (a loop's back edge only makes the first iteration stale, which is the iteration that traces), and the snapshot's consumption by
+ * a forward def-use closure from the read to an {@code apply_gradients}, {@code minimize}, or {@code gradient} member call. The read and
+ * the consumer flow are body-local, but the receiver-invocation scan follows call-graph edges: a call site counts as an invocation of every
+ * stably-anchored root (global or lexical, never a node-relative local anchor) that its transitive callees invoke, since a forward pass one
+ * call down still builds inside the same trace ({@code run_optimization} reaches its model only through {@code backprop};
+ * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861).
  */
 class StaleVariableReadAnalysis {
+
+	/** The call graph, used to resolve call sites for the transitive receiver-invocation scan. */
+	private final CallGraph callGraph;
 
 	/** The pointer analysis, used to resolve attribute member names. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
-	StaleVariableReadAnalysis(PointerAnalysis<InstanceKey> pointerAnalysis) {
+	/** Per-node memo of the stably-anchored receiver roots the node's own body invokes. */
+	private final Map<CGNode, Set<String>> locallyInvokedRootsByNode = new HashMap<>();
+
+	StaleVariableReadAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		this.callGraph = callGraph;
 		this.pointerAnalysis = pointerAnalysis;
 	}
 
@@ -99,6 +112,12 @@ class StaleVariableReadAnalysis {
 
 				if (root != null)
 					invocationPositionsByRoot.computeIfAbsent(root, r -> new ArrayList<>()).add(i);
+
+				// The callee may build the receiver even when this site is no direct invocation of it (a forward pass one call
+				// down builds inside the same trace), so the site also counts as an invocation of every stably-anchored root its
+				// transitive callees invoke.
+				for (String calleeRoot : this.transitivelyInvokedRoots(node, invoke))
+					invocationPositionsByRoot.computeIfAbsent(calleeRoot, r -> new ArrayList<>()).add(i);
 			} else if (instruction instanceof PythonPropertyRead read) {
 				String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
 
@@ -161,6 +180,59 @@ class StaleVariableReadAnalysis {
 		}
 
 		return false;
+	}
+
+	/**
+	 * The stably-anchored receiver roots invoked anywhere in the call-graph closure of {@code invoke}'s possible targets. Reachability over
+	 * successor nodes with a visited set, so recursion terminates; each node's own body is scanned once and memoized
+	 * ({@link #locallyInvokedRootsByNode}). Node-relative local anchors are excluded: a callee's {@code l:} root names the callee's own
+	 * value numbers and carries no identity in this node.
+	 */
+	private Set<String> transitivelyInvokedRoots(CGNode node, PythonInvokeInstruction invoke) {
+		Set<String> roots = new HashSet<>();
+		Set<CGNode> visited = new HashSet<>();
+		Deque<CGNode> worklist = new ArrayDeque<>();
+
+		for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite()))
+			if (visited.add(target))
+				worklist.add(target);
+
+		while (!worklist.isEmpty()) {
+			CGNode next = worklist.pop();
+			roots.addAll(this.locallyInvokedRoots(next));
+
+			for (Iterator<CGNode> successors = this.callGraph.getSuccNodes(next); successors.hasNext();) {
+				CGNode successor = successors.next();
+
+				if (visited.add(successor))
+					worklist.add(successor);
+			}
+		}
+
+		return roots;
+	}
+
+	/** The stably-anchored (global or lexical) receiver roots {@code node}'s own body invokes; see {@link #receiverInvocationRoot}. */
+	private Set<String> locallyInvokedRoots(CGNode node) {
+		return this.locallyInvokedRootsByNode.computeIfAbsent(node, n -> {
+			IR ir = n.getIR();
+
+			if (ir == null)
+				return Set.of();
+
+			DefUse defUse = n.getDU();
+			Set<String> roots = new HashSet<>();
+
+			for (SSAInstruction instruction : ir.getInstructions())
+				if (instruction instanceof PythonInvokeInstruction invoke) {
+					String root = this.receiverInvocationRoot(n, invoke, defUse);
+
+					if (root != null && !root.startsWith("l:"))
+						roots.add(root);
+				}
+
+			return roots;
+		});
 	}
 
 	/**

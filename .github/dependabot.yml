@@ -41,6 +41,21 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+      # `junit-vintage-engine` comes from Central through a Maven target
+      # location with `includeDependencyDepth="none"`, so only the engine
+      # jar enters the target platform; `org.junit.platform.commons` is
+      # supplied by the Eclipse side, where 4.39's JDT test bundles ship
+      # the 6.0.x line. Every 6.1.x engine imports
+      # `org.junit.platform.commons.logging [6.1,7)`, which 4.39 cannot
+      # satisfy, so a minor bump is unresolvable at target-platform
+      # resolution rather than merely untested (#873). Supplying 6.1.x
+      # ourselves would put a second `org.junit.platform.commons` beside
+      # the JDT test bundles' and drag in the launcher that the engine's
+      # `Require-Capability` pins, for an engine whose only job is letting
+      # the `junit6` provider discover JUnit 4 tests (#749). Lift this when
+      # the target platform ships junit-platform 6.1.
+      - dependency-name: "org.junit.vintage:junit-vintage-engine"
+        update-types: ["version-update:semver-minor"]
 
   # Python tooling for the test/format requirements. `patterns:` lists the
   # tooling deps actually present in `/requirements.txt` today; extend it

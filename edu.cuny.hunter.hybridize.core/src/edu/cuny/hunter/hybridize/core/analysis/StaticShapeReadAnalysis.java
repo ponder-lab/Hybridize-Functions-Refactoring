@@ -14,6 +14,10 @@ import java.util.TreeSet;
 
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
+import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
+import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
@@ -26,11 +30,13 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSABinaryOpInstruction;
+import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.types.MethodReference;
+import com.ibm.wala.util.collections.Pair;
 
 /**
  * The statically-read-axis analysis behind the unresolved-axis precondition
@@ -49,9 +55,11 @@ import com.ibm.wala.types.MethodReference;
  * <p>
  * Sinks are the enumerated consumption sites observed in the corpus (extensible by adding a constant and a membership entry; a new sink is
  * not a new {@link PreconditionFailure}): a weight shape passed to {@code add_weight} in a layer's {@code build}, a
- * {@code tf.reshape}/{@code tf.range} target, integer arithmetic over a dimension, and a slice bound (where a wildcard's {@code None}
- * silently means "to the end" rather than raising). Element-through-container flow into a reshape target list is followed by coloring the
- * written container ({@link PythonPropertyWrite}).
+ * {@code tf.reshape}/{@code tf.range} target, {@code tf.image.resize}'s {@code size}, any NumPy call's argument (issues 882 and 1062),
+ * integer arithmetic over a dimension, and a slice bound (where a wildcard's {@code None} silently means "to the end" rather than raising).
+ * Element-through-container flow into a reshape target list is followed by coloring the written container ({@link PythonPropertyWrite}).
+ * Iterating the shape vector itself is a rank-only surface like {@code len} (issue 882): it raises on an unknown rank and tolerates a known
+ * one.
  * <p>
  * Keras lazy-{@code build} reachability: a layer's own {@code build} is a call-graph <em>sibling</em> of {@code call} (both hang off the
  * {@code __call__} trampoline), so it is seeded by name-based sibling lookup with its {@code input_shape} parameter anchored to the
@@ -66,12 +74,16 @@ class StaticShapeReadAnalysis {
 	/** The pointer analysis, used to resolve attribute names, module roots, and interprocedural integer constants. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
+	/** The call-graph builder, through which the engine names the TensorFlow APIs a call invokes ({@link TensorFlowApis}). */
+	private final PythonSSAPropagationCallGraphBuilder builder;
+
 	/** The scan memo, shared across the checked function's call-graph nodes. */
 	private final Map<String, ScanResult> memo = new HashMap<>();
 
-	StaticShapeReadAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis) {
+	StaticShapeReadAnalysis(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
 		this.callGraph = callGraph;
-		this.pointerAnalysis = pointerAnalysis;
+		this.pointerAnalysis = builder.getPointerAnalysis();
+		this.builder = builder;
 	}
 
 	/** The {@code shape} attribute, whose read is a static shape access. */
@@ -93,23 +105,133 @@ class StaticShapeReadAnalysis {
 	private static final String BUILD_METHOD_NAME_SUFFIX = "/build";
 
 	/**
+	 * Type-name prefixes of the summarized Keras endpoints a built-in layer application dispatches to (the summary class and its method
+	 * trampoline). A target under either marks the callee as a built-in layer, whose {@code build} reads a static axis off the input shape
+	 * (issue 883); the {@code /class/} namespace segment is excluded below, since it holds constructors, and passing a parameter-derived
+	 * value to a layer constructor is not an input-shape flow.
+	 */
+	private static final Set<String> KERAS_ENDPOINT_TYPE_NAME_PREFIXES = Set.of("Ltensorflow/keras/", "L$tensorflow/keras/");
+
+	/** The namespace segment holding class objects (constructors), excluded from the built-in-layer predicate. */
+	private static final String CLASS_NAMESPACE_SEGMENT = "/class/";
+
+	/**
+	 * True iff {@code invoke} resolves to a summarized Keras endpoint: a call-graph target declared under the Keras namespace (or its
+	 * {@code $}-prefixed trampoline), excluding {@code /class/} constructor nodes.
+	 *
+	 * @param node The node containing {@code invoke}.
+	 * @param invoke The invoke instruction to test.
+	 * @return True iff {@code invoke} applies a built-in Keras layer.
+	 */
+	private boolean invokesBuiltInKerasLayer(CGNode node, PythonInvokeInstruction invoke) {
+		for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+			String name = target.getMethod().getReference().getDeclaringClass().getName().toString();
+
+			if (KERAS_ENDPOINT_TYPE_NAME_PREFIXES.stream().anyMatch(name::startsWith) && !name.contains(CLASS_NAMESPACE_SEGMENT))
+				return true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * Fully-qualified names of the TensorFlow dynamic shape ops, whose results are tensors and therefore valid under a wildcard axis: their
 	 * reads are laundered, the central static/dynamic distinction of the precondition.
 	 */
-	private static final Set<String> DYNAMIC_SHAPE_OP_FQNS = Set.of("tensorflow.shape", "tensorflow.size", "tensorflow.rank");
+	static final Set<String> DYNAMIC_SHAPE_OP_FQNS = Set.of("tensorflow.shape", "tensorflow.size", "tensorflow.rank");
 
 	/**
 	 * Fully-qualified names of the ops whose arguments require Python integers for a shape target: a statically-read dimension flowing into
-	 * them is a sink ({@code tf.reshape}'s target list; {@code tf.range}'s bounds, the {@code _qe_masking} consumption).
+	 * them is a sink ({@code tf.reshape}'s target list; {@code tf.range}'s bounds, the {@code _qe_masking} consumption;
+	 * {@code tf.image.resize}'s {@code size}, the {@code _upsample_add} consumption of issue 882).
 	 */
-	private static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range");
+	static final Set<String> SHAPE_TARGET_OP_FQNS = Set.of("tensorflow.reshape", "tensorflow.range", "tensorflow.image.resize");
+
+	/**
+	 * The arguments of an op that a statically-read dimension breaks: positional indices, from 0 for the first argument after the callee,
+	 * and keyword names.
+	 *
+	 * @param positions The positional indices.
+	 * @param keywords The keyword names.
+	 */
+	record ShapeArguments(Set<Integer> positions, Set<String> keywords) {
+	}
+
+	/**
+	 * The TensorFlow ops that take a shape, a count or a fill value, keyed by fully-qualified name, with every argument a dimension can
+	 * fill except {@code dtype} and {@code name} (TensorFlow 2.9.3). A {@code None} dimension in one of them either raises at trace time
+	 * (issue 1058) or is accepted and changes what the op computes
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1066): {@code tf.random.uniform}'s float {@code maxval} means
+	 * 1, {@code tf.eye}'s {@code num_columns} means square, {@code tf.one_hot}'s {@code on_value} and {@code off_value} fall back to 1 and
+	 * 0 and its {@code axis} to -1, a random op's {@code seed} leaves it unseeded, and {@code tf.sequence_mask}'s {@code maxlen} means the
+	 * longest length. A changed meaning makes the signature as unwritable as a raise. {@code tf.split}'s {@code num} is unused beside an
+	 * integer {@code num_or_size_splits} but is counted too, as the simpler rule.
+	 */
+	static final Map<String, ShapeArguments> SHAPE_ARGUMENT_OPS = Map.ofEntries(
+			Map.entry("tensorflow.ones", new ShapeArguments(Set.of(0), Set.of("shape"))),
+			Map.entry("tensorflow.zeros", new ShapeArguments(Set.of(0), Set.of("shape"))),
+			Map.entry("tensorflow.fill", new ShapeArguments(Set.of(0, 1), Set.of("dims", "value"))),
+			Map.entry("tensorflow.eye", new ShapeArguments(Set.of(0, 1, 2), Set.of("num_rows", "num_columns", "batch_shape"))),
+			Map.entry("tensorflow.random.normal", new ShapeArguments(Set.of(0, 1, 2, 4), Set.of("shape", "mean", "stddev", "seed"))),
+			Map.entry("tensorflow.random.truncated_normal",
+					new ShapeArguments(Set.of(0, 1, 2, 4), Set.of("shape", "mean", "stddev", "seed"))),
+			Map.entry("tensorflow.random.uniform", new ShapeArguments(Set.of(0, 1, 2, 4), Set.of("shape", "minval", "maxval", "seed"))),
+			Map.entry("tensorflow.broadcast_to", new ShapeArguments(Set.of(0, 1), Set.of("input", "shape"))),
+			Map.entry("tensorflow.tile", new ShapeArguments(Set.of(0, 1), Set.of("input", "multiples"))),
+			Map.entry("tensorflow.one_hot",
+					new ShapeArguments(Set.of(0, 1, 2, 3, 4), Set.of("indices", "depth", "on_value", "off_value", "axis"))),
+			Map.entry("tensorflow.split", new ShapeArguments(Set.of(0, 1, 2, 3), Set.of("value", "num_or_size_splits", "axis", "num"))),
+			Map.entry("tensorflow.sequence_mask", new ShapeArguments(Set.of(0, 1), Set.of("lengths", "maxlen"))));
+
+	/**
+	 * The TensorFlow ops that require the static rank of a tensor argument, keyed by fully-qualified name as the engine names them
+	 * ({@link TensorFlowApis}), with that argument's position and keyword. Each raises at trace time on an unknown-rank argument and
+	 * accepts a known rank with wildcard axes (TensorFlow 2.9.3): {@code tf.image.resize} raises {@code 'images' contains no shape}, and
+	 * {@code tf.image.central_crop} that {@code image} should have rank 3 or 4. A parameter-derived value reaching one is a rank-only
+	 * requirement, like a built-in Keras layer's input (issue 883), so it withholds an unknown-rank signature and leaves a known-rank one
+	 * writable (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1150).
+	 */
+	private static final Map<String, ShapeArguments> RANK_REQUIRING_OPS = Map.of("tensorflow.image.resize",
+			new ShapeArguments(Set.of(0), Set.of("images")), "tensorflow.image.central_crop",
+			new ShapeArguments(Set.of(0), Set.of("image")));
+
+	/**
+	 * Names of the Python builtins that require an integer argument: a statically-read dimension reaching either is {@code None} under a
+	 * wildcard axis, and {@code range(None)} and {@code int(None)} raise {@code TypeError} (issue 1058).
+	 */
+	private static final Set<String> INTEGER_BUILTIN_NAMES = Set.of("range", "int");
 
 	/**
 	 * Names of the binary operators constituting integer arithmetic over a dimension, matched by {@code toString()} since the operator
-	 * enums live in non-exported WALA packages. Comparisons are excluded: {@code x.shape[1] == 4} is {@code False} under a wildcard, not a
-	 * raise.
+	 * enums live in non-exported WALA packages. Comparisons are not arithmetic and are handled separately, by
+	 * {@link #COMPARISON_OPERATOR_NAMES}, because they break differently.
 	 */
 	private static final Set<String> ARITHMETIC_OPERATOR_NAMES = Set.of("add", "sub", "mul", "div", "rem", "mod", "floordiv", "pow");
+
+	/**
+	 * Names of the comparison operators, matched like {@link #ARITHMETIC_OPERATOR_NAMES}.
+	 * <p>
+	 * These were once excluded outright, on the reasoning that {@code x.shape[1] == 4} is {@code False} under a wildcard rather than a
+	 * raise. That is true of the comparison and false of the program. The comparison does not raise; its RESULT changes, and a changed
+	 * result that decides a branch can raise whatever the branch guards. A Keras attention layer in the wild does exactly that:
+	 *
+	 * <pre>
+	 * if self.hidden_size != encoder_output.shape[-1]:
+	 *     raise ValueError("Dim of {} and {} must equal".format(...))
+	 * </pre>
+	 *
+	 * Under a wildcard the read is {@code None}, {@code 100 != None} is {@code True}, and the guard raises on every call, while the same
+	 * function runs correctly with a bare decorator, where per-shape tracing makes the read concrete.
+	 * <p>
+	 * The general point the old rationale missed is that "requires a Python integer" and "is broken by {@code None}" are different
+	 * predicates, and the second is the one this precondition needs. Arithmetic, reshape targets and buffer shapes satisfy both; a
+	 * comparison satisfies only the second, accepting {@code None} and yielding the wrong answer, which is the quieter failure.
+	 * <p>
+	 * The sink is a dimension operand of a comparison BRANCH, not a comparison instruction: `if a != b` lowers to a conditional branch
+	 * carrying the operator, so no comparison instruction is produced. A comparison whose value is merely returned or stored does produce
+	 * one, and it decides no branch, so it stays unflagged; flagging it would decline functions that are fine.
+	 */
+	static final Set<String> COMPARISON_OPERATOR_NAMES = Set.of("eq", "ne", "lt", "le", "gt", "ge");
 
 	/** The unary-negation operator name (see {@link NumpyParameterFlowAnalysis}'s rationale for name matching). */
 	private static final String NEGATION_OPERATOR_NAME = "neg";
@@ -196,7 +318,7 @@ class StaticShapeReadAnalysis {
 		Set<AxisRead> rankReads = new HashSet<>();
 
 		if (!valueSeed.isEmpty()) {
-			ScanResult result = this.scan(node, valueSeed, Map.of());
+			ScanResult result = this.scan(node, valueSeed, Map.of(), Map.of(), Map.of());
 			reads.addAll(result.reads());
 			rankReads.addAll(result.rankReads());
 		}
@@ -273,7 +395,8 @@ class StaticShapeReadAnalysis {
 		if (parameters.length <= 2)
 			return;
 
-		ScanResult result = this.scan(buildNode, Map.of(), Map.of(parameters[2], new AxisRead(parameterOrdinals, null)));
+		ScanResult result = this.scan(buildNode, Map.of(), Map.of(parameters[2], new AxisRead(parameterOrdinals, null)), Map.of(),
+				Map.of());
 		reads.addAll(result.reads());
 		rankReads.addAll(result.rankReads());
 	}
@@ -294,9 +417,22 @@ class StaticShapeReadAnalysis {
 	 * {@code dtype} reads launder; constant subscripts and slices narrow a descriptor's covered axes; container writes propagate shape
 	 * taint onto the written container (a reshape target list); sinks record the consumed descriptor. Memoized per (node, seeds) with an
 	 * optimistic cycle guard, following {@link NumpyParameterFlowAnalysis}.
+	 * <p>
+	 * Taint crosses into nested functions through their closures as it does in {@link NumpyParameterFlowAnalysis}
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1061): a tainted value written lexically taints the variable,
+	 * identified by its name and defining scope, its lexical reads inherit the taint, and every function nested in its defining scope that
+	 * this node calls is also scanned with the lexical taint, its returned taint coloring the call's result.
+	 *
+	 * @param node The node to scan.
+	 * @param valueSeed The value-tainted value numbers, each with its source-parameter ordinals.
+	 * @param shapeSeed The shape-tainted value numbers, each with its {@link AxisRead} descriptor.
+	 * @param lexicalValueSeed The value-tainted lexical variables, as (name, defining scope), each with its source-parameter ordinals.
+	 * @param lexicalShapeSeed The shape-tainted lexical variables, each with its {@link AxisRead} descriptor.
+	 * @return The scan's result.
 	 */
-	private ScanResult scan(CGNode node, Map<Integer, Set<Integer>> valueSeed, Map<Integer, AxisRead> shapeSeed) {
-		String key = this.renderMemoKey(node, valueSeed, shapeSeed);
+	private ScanResult scan(CGNode node, Map<Integer, Set<Integer>> valueSeed, Map<Integer, AxisRead> shapeSeed,
+			Map<Pair<String, String>, Set<Integer>> lexicalValueSeed, Map<Pair<String, String>, AxisRead> lexicalShapeSeed) {
+		String key = this.renderMemoKey(node, valueSeed, shapeSeed, lexicalValueSeed, lexicalShapeSeed);
 		ScanResult cached = this.memo.get(key);
 
 		if (cached != null)
@@ -321,13 +457,101 @@ class StaticShapeReadAnalysis {
 		boolean valueEscapes = false;
 		AxisRead returnDescriptor = null;
 		Set<Integer> returnProvenance = null;
+		// The tainted lexical variables: those inherited from the caller, and those this node writes from a tainted value (issue 1061).
+		Map<Pair<String, String>, Set<Integer>> lexicalValues = new HashMap<>(lexicalValueSeed);
+		Map<Pair<String, String>, AxisRead> lexicalShapes = new HashMap<>(lexicalShapeSeed);
 
-		while (!worklist.isEmpty()) {
+		lexicalValues
+				.forEach((name, provenance) -> colorLexicalReads(ir, name, provenance, null, valueProvenance, shapeDescriptors, worklist));
+		lexicalShapes
+				.forEach((name, descriptor) -> colorLexicalReads(ir, name, null, descriptor, valueProvenance, shapeDescriptors, worklist));
+
+		while (true) {
+			// A nested function reading a tainted variable through its closure need receive no tainted argument, so the walk may never
+			// reach its call. Once the walk settles, scan each function this node calls that is nested in a tainted variable's defining
+			// scope, with the lexical taint alone; its returned taint colors the call's result, which resumes the walk (issue 1061).
+			if (worklist.isEmpty()) {
+				if (!lexicalValues.isEmpty() || !lexicalShapes.isEmpty())
+					for (SSAInstruction instruction : ir.getInstructions()) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							continue;
+
+						for (CGNode target : this.callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+							if (Util.isTensorFlowNode(target) || target.getIR() == null
+									|| !NumpyParameterFlowAnalysis.isNestedInAny(target, lexicalValues.keySet())
+											&& !NumpyParameterFlowAnalysis.isNestedInAny(target, lexicalShapes.keySet()))
+								continue;
+
+							ScanResult nested = this.scan(target, Map.of(), Map.of(),
+									NumpyParameterFlowAnalysis.enclosingNames(target, lexicalValues),
+									NumpyParameterFlowAnalysis.enclosingNames(target, lexicalShapes));
+							reads.addAll(nested.reads());
+							rankReads.addAll(nested.rankReads());
+
+							if (nested.valueEscapes())
+								valueEscapes = true;
+
+							for (int d = 0; d < invoke.getNumberOfDefs(); d++)
+								if (nested.returnProvenance() != null)
+									colorValue(invoke.getDef(d), nested.returnProvenance(), valueProvenance, shapeDescriptors, worklist);
+								else if (nested.returnDescriptor() != null)
+									colorShape(invoke.getDef(d), nested.returnDescriptor(), valueProvenance, shapeDescriptors, worklist);
+						}
+					}
+
+				// A nested function this node does not call itself, such as a lambda a helper calls or `tf.map_fn` runs, still runs
+				// within the function's trace, so its reads count too; with no call site here, its result colors nothing.
+				for (CGNode candidate : NumpyParameterFlowAnalysis.nestedNodes(this.callGraph, node, lexicalValues.keySet(),
+						lexicalShapes.keySet())) {
+					ScanResult nested = this.scan(candidate, Map.of(), Map.of(),
+							NumpyParameterFlowAnalysis.enclosingNames(candidate, lexicalValues),
+							NumpyParameterFlowAnalysis.enclosingNames(candidate, lexicalShapes));
+					reads.addAll(nested.reads());
+					rankReads.addAll(nested.rankReads());
+				}
+
+				if (worklist.isEmpty())
+					break;
+			}
+
 			int valueNumber = worklist.pop();
 			boolean valueColored = valueProvenance.containsKey(valueNumber);
 
 			for (Iterator<SSAInstruction> uses = defUse.getUses(valueNumber); uses.hasNext();) {
 				SSAInstruction use = uses.next();
+
+				// A lexical write publishes the value to the nested functions that read the variable (issue 1061), so the variable
+				// takes the value's color, and its reads in this node inherit it.
+				if (use instanceof AstLexicalWrite write) {
+					for (Access access : write.getAccesses())
+						if (access.valueNumber() == valueNumber) {
+							Pair<String, String> name = access.getName();
+
+							if (valueColored) {
+								Set<Integer> existing = lexicalValues.get(name);
+								Set<Integer> merged = new TreeSet<>(valueProvenance.get(valueNumber));
+
+								if (existing != null)
+									merged.addAll(existing);
+
+								if (!merged.equals(existing)) {
+									lexicalValues.put(name, merged);
+									lexicalShapes.remove(name);
+									colorLexicalReads(ir, name, merged, null, valueProvenance, shapeDescriptors, worklist);
+								}
+							} else if (shapeDescriptors.containsKey(valueNumber) && !lexicalValues.containsKey(name)) {
+								AxisRead existing = lexicalShapes.get(name);
+								AxisRead joined = AxisRead.join(existing, shapeDescriptors.get(valueNumber));
+
+								if (!joined.equals(existing)) {
+									lexicalShapes.put(name, joined);
+									colorLexicalReads(ir, name, null, joined, valueProvenance, shapeDescriptors, worklist);
+								}
+							}
+						}
+
+					continue;
+				}
 
 				if (use instanceof PythonPropertyRead read && read.getObjectRef() == valueNumber) {
 					String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
@@ -393,6 +617,22 @@ class StaticShapeReadAnalysis {
 					continue;
 				}
 
+				// Iterating a shape vector (a `for` over `x.shape`) raises on an unknown rank and yields the dimensions otherwise: a
+				// rank-only requirement, like `len` (#809), whose products are the dimensions themselves and keep the taint at lost
+				// coverage for per-axis consumption downstream (issue 882). Tuple-unpacking is not this surface: it lowers to
+				// constant-index property reads in this IR, reaching the sinks through the subscript narrowing above.
+				if (use instanceof EachElementGetInstruction each && !valueColored && shapeDescriptors.containsKey(valueNumber)
+						&& each.getUse(0) == valueNumber) {
+					AxisRead base = shapeDescriptors.get(valueNumber);
+					AxisRead widened = new AxisRead(base.parameterOrdinals(), null);
+					rankReads.add(widened);
+
+					for (int d = 0; d < each.getNumberOfDefs(); d++)
+						colorShape(each.getDef(d), widened, valueProvenance, shapeDescriptors, worklist);
+
+					continue;
+				}
+
 				if (use instanceof PythonInvokeInstruction invoke) {
 					if (this.handleInvoke(node, invoke, defUse, valueNumber, valueColored, valueProvenance, shapeDescriptors, worklist,
 							reads, rankReads))
@@ -400,7 +640,7 @@ class StaticShapeReadAnalysis {
 
 					// Cross into user-defined callees, carrying each tainted argument's color to the corresponding parameter slot.
 					InterproceduralOutcome outcome = this.crossIntoCallees(node, invoke, valueProvenance, shapeDescriptors, reads,
-							rankReads);
+							rankReads, lexicalValues, lexicalShapes);
 
 					if (outcome.valueEscaped())
 						valueEscapes = true;
@@ -444,6 +684,28 @@ class StaticShapeReadAnalysis {
 					continue;
 				}
 
+				// A statically-read dimension decides a branch: a sink. The comparison itself does not raise under a wildcard, which
+				// is why comparisons were once excluded; it yields the wrong answer, and the branch it decides then does whatever it
+				// does, up to and including raising. See COMPARISON_OPERATOR_NAMES.
+				//
+				// The test is on the BRANCH rather than on a comparison instruction because `if a != b` lowers to a conditional
+				// branch carrying the operator, so the dimension is an operand of the branch and no comparison instruction is
+				// produced at all. Testing a comparison instruction instead finds nothing, which is what a first attempt here did.
+				// A comparison whose value is merely returned does produce one, and it decides no branch, so it stays unflagged.
+				// Restricted to a descriptor naming specific axes. Iterating a shape vector lowers to a conditional branch on the
+				// loop cursor, which carries the vector's taint with coverage lost (`axes` null, meaning any axis). That surface is
+				// rank-sensitive and extent-insensitive: it raises on an unknown rank and tolerates a known one with dynamic axes,
+				// which is why `ranked_iter` resolves. Branching on a whole shape vector is not branching on a dimension.
+				//
+				// The cost is a lost-coverage descriptor reaching a branch, which this does not flag. That direction is deliberate
+				// here even though the surrounding analysis widens toward declining elsewhere: a rank-only read is common and safe,
+				// so flagging it would decline working functions for a hazard they do not have.
+				if (use instanceof SSAConditionalBranchInstruction branch && isComparisonOperator(branch) && !valueColored
+						&& shapeDescriptors.containsKey(valueNumber) && shapeDescriptors.get(valueNumber).axes() != null) {
+					reads.add(shapeDescriptors.get(valueNumber));
+					continue;
+				}
+
 				// Any other instruction: a value-tainted operand escapes onward and the definitions inherit its color; a shape-tainted
 				// operand propagates its descriptor.
 				if (valueColored) {
@@ -466,6 +728,22 @@ class StaticShapeReadAnalysis {
 	}
 
 	/**
+	 * Colors the definitions of this IR's lexical reads of {@code name} (issue 1061): with value taint carrying {@code provenance} when it
+	 * is non-null, and otherwise with shape taint carrying {@code descriptor}.
+	 */
+	private static void colorLexicalReads(IR ir, Pair<String, String> name, Set<Integer> provenance, AxisRead descriptor,
+			Map<Integer, Set<Integer>> valueProvenance, Map<Integer, AxisRead> shapeDescriptors, Deque<Integer> worklist) {
+		for (SSAInstruction instruction : ir.getInstructions())
+			if (instruction instanceof AstLexicalRead read)
+				for (Access access : read.getAccesses())
+					if (access.getName().equals(name))
+						if (provenance != null)
+							colorValue(access.valueNumber(), provenance, valueProvenance, shapeDescriptors, worklist);
+						else
+							colorShape(access.valueNumber(), descriptor, valueProvenance, shapeDescriptors, worklist);
+	}
+
+	/**
 	 * Handles the invoke-instruction cases that need no callee descent: laundering ({@code tf.shape}/{@code size}/{@code rank}), slice
 	 * narrowing, static {@code K.int_shape}, the sink tests ({@code tf.reshape}/{@code tf.range} targets; {@code add_weight}), the
 	 * {@code as_list()} call-result forwarding, and the rank-sensitive {@code len} sink (#809). Returns true iff the invoke was fully
@@ -474,6 +752,24 @@ class StaticShapeReadAnalysis {
 	private boolean handleInvoke(CGNode node, PythonInvokeInstruction invoke, DefUse defUse, int valueNumber, boolean valueColored,
 			Map<Integer, Set<Integer>> valueProvenance, Map<Integer, AxisRead> shapeDescriptors, Deque<Integer> worklist,
 			Set<AxisRead> reads, Set<AxisRead> rankReads) {
+		// A parameter-derived value applied to a built-in Keras layer is a rank-only requirement
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/883): the layer's build reads a static axis off the
+		// input shape (Conv2D the channel axis, Dense the last dimension), so an unknown-rank spec raises before the body runs,
+		// while a known rank with wildcard axes is exactly what the layers admit. Ordinary modeled ops (tf.abs, tf.reshape) resolve
+		// to function endpoints rather than keras-class ones and stay outside the predicate. Recording falls through so the value's
+		// escape and result coloring stay as before.
+		if (valueColored && this.invokesBuiltInKerasLayer(node, invoke))
+			for (int j = 1; j < invoke.getNumberOfUses(); j++)
+				if (invoke.getUse(j) == valueNumber) {
+					rankReads.add(new AxisRead(valueProvenance.get(valueNumber), null));
+					break;
+				}
+
+		// A parameter-derived value passed where a TensorFlow op requires its static rank is a rank-only requirement too (issue 1150),
+		// recorded like the layer's above and falling through, since the op's other arguments may still be sinks below.
+		if (valueColored && this.passesToRankRequiringArgument(node, invoke, valueNumber))
+			rankReads.add(new AxisRead(valueProvenance.get(valueNumber), null));
+
 		String fqn = Util.resolveCalleeFullyQualifiedName(node, invoke.getUse(0), defUse, this.pointerAnalysis);
 
 		// A dynamic shape read returns a tensor, valid under a wildcard: launder entirely.
@@ -504,6 +800,33 @@ class StaticShapeReadAnalysis {
 
 		// A shape-target op consuming a statically-read dimension (directly or through its target list) is a sink.
 		if (fqn != null && SHAPE_TARGET_OP_FQNS.contains(fqn)) {
+			recordShapeArguments(invoke, shapeDescriptors, reads);
+			return true;
+		}
+
+		// An op taking a shape, a count or a fill value consuming a statically-read dimension in any argument a dimension can fill is a
+		// sink, whether the None raises or changes the op's meaning (issue 1058 and
+		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1066).
+		ShapeArguments shapeArguments = fqn == null ? null : SHAPE_ARGUMENT_OPS.get(fqn);
+
+		if (shapeArguments != null) {
+			recordShapeArguments(invoke, shapeArguments, shapeDescriptors, reads);
+			return true;
+		}
+
+		// A Python builtin requiring an integer consuming a statically-read dimension is a sink (issue 1058).
+		if (INTEGER_BUILTIN_NAMES.stream().anyMatch(name -> invokesBuiltin(invoke, defUse, name))) {
+			recordShapeArguments(invoke, shapeDescriptors, reads);
+			return true;
+		}
+
+		// A NumPy call consuming a statically-read dimension (directly or through its shape tuple) is a sink: under a wildcard the
+		// dimension is None at trace time, which NumPy rejects as a size (issue 882, the position-encoding consumption) or as a count
+		// (`np.arange`, `np.linspace`'s `num`, `np.eye`, `np.tile`), or silently reads as absent (`np.random.uniform(size=None)` returns a
+		// scalar). Any NumPy call counts rather than an enumerated set, since NumPy computes on Python values and has no use for a None
+		// extent; a dimension only reaches the sink when it is read statically, and the precondition withholds the signature only when the
+		// signature leaves that axis unresolved (issue 1062).
+		if (this.isNumpyCall(node, invoke.getUse(0), defUse)) {
 			recordShapeArguments(invoke, shapeDescriptors, reads);
 			return true;
 		}
@@ -553,6 +876,62 @@ class StaticShapeReadAnalysis {
 		return false;
 	}
 
+	/**
+	 * True iff {@code invoke} may invoke a TensorFlow op of {@link #RANK_REQUIRING_OPS}, as the engine names the APIs it invokes, and
+	 * passes {@code value} as that op's rank-requiring argument, by position or by keyword. Behind a starred argument the positions are not
+	 * aligned, so a value passed there may be the argument and is taken to be.
+	 *
+	 * @param node The call-graph node whose IR contains the call.
+	 * @param invoke The call.
+	 * @param value The value number of the argument.
+	 * @return True iff {@code value} is a rank-requiring argument of an op {@code invoke} may invoke.
+	 */
+	private boolean passesToRankRequiringArgument(CGNode node, PythonInvokeInstruction invoke, int value) {
+		for (String api : TensorFlowApis.of(this.builder, node, invoke)) {
+			ShapeArguments arguments = RANK_REQUIRING_OPS.get(api);
+
+			if (arguments == null)
+				continue;
+
+			// The callee is the invoke's first use, so the argument at index i is use i + 1. A starred argument at or before that use
+			// spreads an unknown number of values, so the use there need not be the argument the op receives in that position. The slot is
+			// not compared then: the value is taken to reach it if it is passed at or after the first starred argument, the direction
+			// that withholds rather than emits.
+			int starred = invoke.firstStarredPosition();
+
+			for (int position : arguments.positions())
+				if (starred != -1 && starred <= position + 1) {
+					for (int use = starred; use < invoke.getNumberOfPositionalParameters(); use++)
+						if (invoke.getUse(use) == value)
+							return true;
+				} else if (position + 1 < invoke.getNumberOfPositionalParameters() && invoke.getUse(position + 1) == value)
+					return true;
+
+			for (String keyword : arguments.keywords())
+				if (invoke.getKeywords().contains(keyword) && invoke.getUse(keyword) == value)
+					return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code callee} is a member of the numpy module, reached through an attribute chain rooted at it ({@code np.arange},
+	 * {@code np.random.uniform}).
+	 *
+	 * @param node The call-graph node whose IR contains the call.
+	 * @param callee The value number of the called function.
+	 * @param defUse The def-use chains of {@code node}'s IR.
+	 * @return True iff {@code callee} is a numpy member.
+	 */
+	private boolean isNumpyCall(CGNode node, int callee, DefUse defUse) {
+		if (!(defUse.getDef(callee) instanceof PythonPropertyRead read))
+			return false;
+
+		return Util.isNumpyModule(node, read.getObjectRef(), defUse, this.pointerAnalysis)
+				|| this.isNumpyCall(node, read.getObjectRef(), defUse);
+	}
+
 	/** Records every shape-tainted argument of {@code invoke} as a consumed {@link AxisRead}. */
 	private static void recordShapeArguments(PythonInvokeInstruction invoke, Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads) {
 		for (int j = 1; j < invoke.getNumberOfUses(); j++) {
@@ -563,6 +942,34 @@ class StaticShapeReadAnalysis {
 		}
 	}
 
+	/**
+	 * Records the statically-read dimensions {@code invoke} passes in {@code arguments}.
+	 *
+	 * @param invoke The call.
+	 * @param arguments The positional indices and keyword names to read.
+	 * @param shapeDescriptors The statically-read dimensions by value number.
+	 * @param reads The reads, to which each one found is added.
+	 */
+	private static void recordShapeArguments(PythonInvokeInstruction invoke, ShapeArguments arguments,
+			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads) {
+		// The callee is the invoke's first use, so the argument at index i is use i + 1.
+		for (int position : arguments.positions())
+			if (position + 1 < invoke.getNumberOfPositionalParameters()) {
+				AxisRead descriptor = shapeDescriptors.get(invoke.getUse(position + 1));
+
+				if (descriptor != null)
+					reads.add(descriptor);
+			}
+
+		for (String keyword : arguments.keywords())
+			if (invoke.getKeywords().contains(keyword)) {
+				AxisRead descriptor = shapeDescriptors.get(invoke.getUse(keyword));
+
+				if (descriptor != null)
+					reads.add(descriptor);
+			}
+	}
+
 	/** The outcome of descending into an invoke's user-defined callees. */
 	private record InterproceduralOutcome(boolean valueEscaped, Set<Integer> resultProvenance, AxisRead resultDescriptor) {
 	}
@@ -570,10 +977,11 @@ class StaticShapeReadAnalysis {
 	/**
 	 * Crosses into {@code invoke}'s user-defined callees, seeding tainted argument slots, accumulating their sinks into {@code reads}, and
 	 * deriving the call-site result's color: value provenance when a value-tainted argument reached a non-shape use (or the callee is a
-	 * library summary), else the callees' returned shape descriptor.
+	 * library summary), else the callees' returned shape descriptor. The callees inherit the caller's lexical taint (issue 1061).
 	 */
 	private InterproceduralOutcome crossIntoCallees(CGNode node, PythonInvokeInstruction invoke, Map<Integer, Set<Integer>> valueProvenance,
-			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads, Set<AxisRead> rankReads) {
+			Map<Integer, AxisRead> shapeDescriptors, Set<AxisRead> reads, Set<AxisRead> rankReads,
+			Map<Pair<String, String>, Set<Integer>> lexicalValues, Map<Pair<String, String>, AxisRead> lexicalShapes) {
 		Map<Integer, Set<Integer>> valueSlots = new TreeMap<>();
 		Map<Integer, AxisRead> shapeSlots = new TreeMap<>();
 
@@ -622,7 +1030,9 @@ class StaticShapeReadAnalysis {
 
 			analyzedCallee = true;
 
-			ScanResult result = this.scan(target, targetValueSeed, targetShapeSeed);
+			ScanResult result = this.scan(target, targetValueSeed, targetShapeSeed,
+					NumpyParameterFlowAnalysis.enclosingNames(target, lexicalValues),
+					NumpyParameterFlowAnalysis.enclosingNames(target, lexicalShapes));
 
 			reads.addAll(result.reads());
 			rankReads.addAll(result.rankReads());
@@ -690,6 +1100,11 @@ class StaticShapeReadAnalysis {
 			shapeDescriptors.put(value, joined);
 			worklist.push(value);
 		}
+	}
+
+	/** True iff {@code branch} tests a comparison (see {@link #COMPARISON_OPERATOR_NAMES}). */
+	private static boolean isComparisonOperator(SSAConditionalBranchInstruction branch) {
+		return COMPARISON_OPERATOR_NAMES.contains(String.valueOf(branch.getOperator()).toLowerCase());
 	}
 
 	/** True iff {@code binary}'s operator is integer arithmetic (see {@link #ARITHMETIC_OPERATOR_NAMES}). */
@@ -814,13 +1229,18 @@ class StaticShapeReadAnalysis {
 		return resolved;
 	}
 
-	/** A stable memo key over the node and both seed maps. */
-	private String renderMemoKey(CGNode node, Map<Integer, Set<Integer>> valueSeed, Map<Integer, AxisRead> shapeSeed) {
+	/** A stable memo key over the node and the seed maps. */
+	private String renderMemoKey(CGNode node, Map<Integer, Set<Integer>> valueSeed, Map<Integer, AxisRead> shapeSeed,
+			Map<Pair<String, String>, Set<Integer>> lexicalValueSeed, Map<Pair<String, String>, AxisRead> lexicalShapeSeed) {
 		Map<Integer, String> values = new TreeMap<>();
 		valueSeed.forEach((value, provenance) -> values.put(value, String.valueOf(new TreeSet<>(provenance))));
 		Map<Integer, String> shapes = new TreeMap<>();
 		shapeSeed.forEach((value, descriptor) -> shapes.put(value, renderDescriptor(descriptor)));
-		return this.callGraph.getNumber(node) + ":" + values + ":" + shapes;
+		Map<String, String> lexicalValues = new TreeMap<>();
+		lexicalValueSeed.forEach((name, provenance) -> lexicalValues.put(name.toString(), String.valueOf(new TreeSet<>(provenance))));
+		Map<String, String> lexicalShapes = new TreeMap<>();
+		lexicalShapeSeed.forEach((name, descriptor) -> lexicalShapes.put(name.toString(), renderDescriptor(descriptor)));
+		return this.callGraph.getNumber(node) + ":" + values + ":" + shapes + ":" + lexicalValues + ":" + lexicalShapes;
 	}
 
 	/** A stable rendering of {@code descriptor} for the memo key ({@code *} = unknown). */

@@ -18,8 +18,10 @@ public sealed interface InferenceResult {
 
 	/**
 	 * The reason an input signature could not be inferred. {@link #SPECULATIVE_TENSOR_PARAMETER} blocks the whole function up front; the
-	 * remaining constants each correspond to one blocking branch of the per-parameter dispatch in {@link Function#inferInputSignature}, in
-	 * the order that dispatch encounters them.
+	 * remaining constants each correspond to one blocking branch of the per-parameter dispatch in {@link Function#inferInputSignature}.
+	 * Declaration order is not the order that dispatch encounters them: {@link #WITHHELD_UNREPRESENTABLE_CONTAINER_ELEMENT} is asked first,
+	 * and {@link #RECEIVES_NONE} precedes the dtype reasons. A parameter may carry several, in dispatch order, in
+	 * {@link Function#getBlockingParameterReasons()}.
 	 */
 	enum AbsenceReason {
 
@@ -30,6 +32,30 @@ public sealed interface InferenceResult {
 		 * in {@link Function#getBlockingParameterReasons()} (#783).
 		 */
 		SPECULATIVE_TENSOR_PARAMETER,
+
+		/**
+		 * The function declares a rest-keyword ({@code **kwargs}) parameter. An {@code input_signature} fixes the arguments the function
+		 * accepts, so the slot stops absorbing anything and any caller passing a keyword raises {@code TypeError} where it previously
+		 * succeeded. For a Keras layer the caller is the framework: Keras inspects {@code call}'s declaration, sees that {@code **kwargs}
+		 * can take {@code training}, and passes it, so the layer breaks with no keyword written by the developer anywhere. Declining is
+		 * therefore about behavior preservation rather than about coverage, and it is decided on the declaration alone, since the callers
+		 * that matter are outside the analyzed program. Blocks the function before the per-parameter dispatch, so no parameter is named.
+		 * The rest-positional ({@code *args}) slot is deliberately not covered: Keras passes {@code training} by keyword only, so it does
+		 * not reach a function that cannot accept one, and the exposure there needs a caller passing extra positional arguments (#902).
+		 */
+		VARIABLE_KEYWORD_PARAMETER,
+
+		/**
+		 * A decorator other than {@code tf.custom_gradient} sits between {@code @tf.function} and the definition. {@code tf.function}
+		 * traces the callable that decorator returns, so a signature constrains that callable's arguments, while the definition's
+		 * parameters, which are what the analysis types, see only what the decorator passes on. The two can't be related in general: the
+		 * decorator may cast, reorder, or forward through {@code *args}. A signature read off the definition may therefore reject the
+		 * decorated function's own callers. Decided on the declaration, before the per-parameter dispatch, so no parameter is named.
+		 * {@code tf.custom_gradient} is exempt, since it passes its arguments through unchanged.
+		 *
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1046">Issue 1046</a>
+		 */
+		INTERVENING_DECORATOR,
 
 		/**
 		 * A parameter is not classified as tensor-typed by any phase and declares no default, so it is a <em>required</em> argument for
@@ -59,9 +85,11 @@ public sealed interface InferenceResult {
 		 * A parameter is a container of tensors (classified by {@link Parameter#hasTensorContainer}) of a form the sequence reduction does
 		 * not model (#781 models a list or tuple of tensors with a constant element structure): a dict or set, a container whose element
 		 * structure is not a contiguous run of constant indices (e.g. built by an append loop the analysis cannot enumerate), an element
-		 * that is itself a container, an element position with no tensor evidence, or a parameter whose call sites mix container and
-		 * non-container values. Distinct from {@link #TYPE_HINT_WITHOUT_DTYPE} in what is recoverable: the analysis may hold more about the
-		 * elements than the reduction consumes, so this can narrow further as more forms are modeled.
+		 * that is itself a container, an element position with no tensor evidence, a parameter whose call sites mix container and
+		 * non-container values, or a container a TensorFlow library summary allocated, such as the list {@code tf.unstack} or
+		 * {@code tf.split} returns, whose element structure stands in for the operation's pieces (#1012). Distinct from
+		 * {@link #TYPE_HINT_WITHOUT_DTYPE} in what is recoverable: the analysis may hold more about the elements than the reduction
+		 * consumes, so this can narrow further as more forms are modeled.
 		 */
 		TENSOR_CONTAINER_UNSUPPORTED,
 
@@ -74,6 +102,18 @@ public sealed interface InferenceResult {
 		HETEROGENEOUS_ARITY,
 
 		/**
+		 * Every {@code TensorType} observed for a parameter comes from a call site the developer has declared must fail: a call inside
+		 * {@code with self.assertRaises(...)} or {@code pytest.raises(...)}, which {@code unittest} and pytest enforce by failing the test
+		 * if the call succeeds. Such a site is an executable assertion that the callee rejects that argument, so a specification derived
+		 * from it would admit exactly the input the body refuses while rejecting every conforming caller. Reported only once the container
+		 * route has come up empty as well: the conforming callers typically pass a container rather than a tensor, and where they do, the
+		 * nested spec they support is emitted instead of nothing (#888), so this constant now names the residue where they pass no
+		 * container either. The function still converts with a bare decorator; only the specification is withheld. See
+		 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/888.
+		 */
+		EXPECTED_FAILURE_EVIDENCE_ONLY,
+
+		/**
 		 * A parameter is classified as tensor-typed by its type hint alone (Phase 1), with no call-site evidence. A bare
 		 * {@code x: tf.Tensor} annotation carries no dtype, and {@code tf.function(input_signature=...)} admits no dtype-⊤ (#494), so no
 		 * valid spec exists to synthesize from this signal. Unlike {@link #TENSOR_CONTAINER_UNSUPPORTED} the evidence is genuinely absent
@@ -83,22 +123,114 @@ public sealed interface InferenceResult {
 		TYPE_HINT_WITHOUT_DTYPE,
 
 		/**
-		 * A parameter receives tensors with conflicting dtypes across call sites, so its dtype set has size {@code > 1} ({@code |D| ≠ 1}).
+		 * A parameter receives tensors with conflicting <em>concrete</em> dtypes across call sites, so its dtype set has more than one
+		 * member once {@code UNKNOWN} is excluded. The exclusion is the point: {@code UNKNOWN} is not a dtype the callers chose, so
+		 * counting it as one reported a conflict where a context merely failed to resolve. That case is {@link #PARTIAL_DTYPE} (#969).
 		 */
 		HETEROGENEOUS_DTYPE,
 
 		/**
+		 * A parameter is observed with exactly one concrete dtype, and with {@code UNKNOWN} at one or more other contexts. The reduction
+		 * still bottoms, because {@code UNKNOWN} is not a valid runtime dtype for {@code tf.function(input_signature=...)} (#494), but the
+		 * cause is a limit of the analysis rather than a property of the program: the callers do not disagree, one context simply did not
+		 * resolve. Distinct from {@link #HETEROGENEOUS_DTYPE}, where two concrete dtypes genuinely conflict and no engine improvement
+		 * removes the drop, and from {@link #UNKNOWN_DTYPE}, where no context resolved at all. Resolving the unresolved context collapses
+		 * the set to the single concrete dtype and the parameter becomes specifiable, so this names addressable work (#969).
+		 */
+		PARTIAL_DTYPE,
+
+		/**
 		 * A parameter receives a tensor whose dtype cannot be determined (dtype-⊤: a single agreed {@code UNKNOWN}), which is not a valid
-		 * runtime dtype for {@code tf.function(input_signature=...)} (#494).
+		 * runtime dtype for {@code tf.function(input_signature=...)} (#494). Every context is {@code UNKNOWN}; a mix of one concrete dtype
+		 * and {@code UNKNOWN} is {@link #PARTIAL_DTYPE}.
 		 */
 		UNKNOWN_DTYPE,
+
+		/**
+		 * A call passes {@code None} to a parameter that other calls pass a tensor. A {@code TensorSpec} rejects {@code None}, so no single
+		 * spec accepts every call, whether the {@code None} is passed, forwarded, or the parameter's default. The analysis reports it as a
+		 * {@code None} member of the parameter's types (wala/ML#1040).
+		 */
+		RECEIVES_NONE,
 
 		/**
 		 * A parameter is sparse at some call sites and dense at others. A {@code SparseTensorSpec} admits only sparse tensors and a dense
 		 * {@code TensorSpec} admits only dense tensors, so no single spec accepts both layouts; emitting either would reject traffic the
 		 * function accepts, so the reduction is bottom (#642). Checked after the dtype axis, mirroring {@link Function#inferSpec}.
 		 */
-		HETEROGENEOUS_SPARSITY
+		HETEROGENEOUS_SPARSITY,
+
+		/**
+		 * A call the developer has declared must fail ({@code with self.assertRaises(...)} or {@code pytest.raises(...)}) was set aside as
+		 * evidence (#888), but it still runs against the signature, which validates the argument before the body does. The signature would
+		 * reject the argument that call passes and raise an exception the guard does not admit, so emitting it would turn the passing test
+		 * into a failing one: with {@code assertRaises(TypeError)} around {@code f(None)}, the body raises {@code TypeError} eagerly and
+		 * under a bare decorator, but a {@code TensorSpec} rejects {@code None} with {@code ValueError} first (TensorFlow 2.9.3). Like
+		 * {@link #WITHHELD_STATICALLY_READ_AXES}, the absence is a choice: a complete signature was inferred and is withheld.
+		 * <p>
+		 * The exception is predicted from the specification's form and the argument's kind, read from the parameter's points-to set in the
+		 * declared failure's node. A flat dense specification rejects any non-container argument that is not known to be a conforming
+		 * tensor with {@code ValueError}, including one that may be a tensor or {@code None}. A nested specification rejects a
+		 * non-container with {@code TypeError} and a list or tuple of another structure with {@code ValueError}. The rest is not predicted:
+		 * a flat specification converting a container, a nested one indexing a dict or set, and a sparse or ragged one, whose exception
+		 * depends on the argument. A guard admits the exception by naming that class, {@code Exception}, or {@code BaseException}; an
+		 * unpredicted one is admitted only by the last two. A {@code tf.errors} guard is judged like any other, since a data-dependent op
+		 * error survives a bare decorator. The function still converts with a bare decorator, unless that decorator may change the
+		 * exception too, in which case the conversion is refused ({@link PreconditionFailure#TRACING_CHANGES_GUARDED_EXCEPTION}).
+		 *
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1005">Issue 1005</a>
+		 */
+		WITHHELD_DECLARED_FAILURE_EXCEPTION,
+
+		/**
+		 * A parameter is observed with an unknown shape at one or more contexts and with one known rank at every other, so the reduction
+		 * yields an unknown-rank specification, {@code shape=None}, though every context that resolved agrees on the rank. Like
+		 * {@link #PARTIAL_DTYPE}, the callers do not disagree; one context simply did not resolve. Unlike a dtype, an unknown rank is a
+		 * valid specification, but it is not a harmless one: under it the parameter has no static rank at trace time, so an op in the body
+		 * that requires one raises, and so does one in a traced caller that the parameter reaches through the return, as with
+		 * {@code tf.map_fn} over an empty batch. The bare decorator traces each call at its argument's actual rank and has neither problem,
+		 * so the signature is withheld and the function is hybridized with a bare decorator. A parameter whose known ranks themselves
+		 * disagree is not this case: there {@code shape=None} is what the callers require, and it is still emitted.
+		 *
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1150">Issue 1150</a>
+		 */
+		WITHHELD_PARTIAL_RANK,
+
+		/**
+		 * A complete signature was inferred, but it leaves unresolved (wildcard) an axis the function's body reads statically (#811), so
+		 * emitting it would break the function at trace time. The signature's absence is a choice rather than an inference failure, as it
+		 * also is for {@link #WITHHELD_DECLARED_FAILURE_EXCEPTION}: the conversion proceeds with a bare decorator, which is exactly what
+		 * the tool ships with inference off, and the withholding is this third disposition, distinct from both "hybridized with a
+		 * signature" and "not hybridized" (#864). The reconfiguration path is unaffected: there an existing signature's replacement is the
+		 * only action on the table, and it still declines with {@link PreconditionFailure#HAS_UNRESOLVED_STATICALLY_READ_AXES}.
+		 */
+		WITHHELD_STATICALLY_READ_AXES,
+
+		/**
+		 * The function is reached through {@code tf.distribute.Strategy.run}, which does not preserve the declared argument structure: a
+		 * single structured parameter arrives as separate positional arguments, so a signature written for the declaration describes a
+		 * calling convention the function will not be called by. The specification is accurate for a direct call and still breaks the
+		 * program, so it is withheld and the conversion is kept, the bare decorator being what runs on that path.
+		 *
+		 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/928">Issue 928</a>
+		 */
+		WITHHELD_REPLICA_INVOKED,
+
+		/**
+		 * A container reaching the parameter holds an element that cannot be represented as a tensor. Python {@code None} is the case this
+		 * was written for: no {@code TensorSpec} admits it, and a specification is a universal claim over the values that arrive, so a
+		 * single unrepresentable member defeats it however many legitimate tensor members sit beside it.
+		 * <p>
+		 * The whole function is blocked rather than the position narrowed or dropped. A specification covering fewer positions than the
+		 * call supplies is rejected on arity, and one naming a tensor where {@code None} arrives is rejected on type, so either would be a
+		 * different unsatisfiable artifact rather than a repair.
+		 * <p>
+		 * Branch liveness does not enter into it. The element carries the null because a variable is initialized to {@code None} and only
+		 * conditionally reassigned, so the null is in the field's points-to set whether or not the reassigning branch ever runs.
+		 *
+		 * @see <a href="https://github.com/wala/ML/issues/867">wala/ML issue 867</a>
+		 */
+		WITHHELD_UNREPRESENTABLE_CONTAINER_ELEMENT
 	}
 
 	/**
@@ -112,7 +244,7 @@ public sealed interface InferenceResult {
 	/**
 	 * Inference was blocked, either at the function level ({@link AbsenceReason#SPECULATIVE_TENSOR_PARAMETER}, which emits a single
 	 * function-level diagnostic INFO) or by one or more parameters, in which case this carries the first {@link AbsenceReason} encountered
-	 * while dispatching over them in declaration order and every blocking parameter emits its own diagnostic INFO.
+	 * while dispatching over them in declaration order and every blocking parameter emits a diagnostic INFO for each of its reasons.
 	 *
 	 * @param reason The first blocking reason; never {@code null}.
 	 */

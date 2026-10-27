@@ -96,3 +96,6 @@ results
 
 # Per-developer Claude Code settings
 .claude/
+
+# Python bytecode (the strip-and-re-infer harness's tests run in place)
+__pycache__/
