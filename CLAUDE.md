@@ -65,6 +65,18 @@ JUL logging in test runs: tycho-surefire injects `java.util.logging.config.file`
 
 Unit pins cover consumer-reachable behavior only; the axes Ariadne releases change are usually whole-project-emergent. For every bump: open the bump PR as a **draft**, advance the failing pins (failures are usually pins to advance, not bugs), and run the whole-project verification documented privately in `~/Python-Subjects/scripts/RELEASE-VERIFICATION.md` **before merging** — it gates the merge, and a drift classified as a regression keeps the PR draft. Only after the merge, report measured deltas upstream, reopening issues whose subject-scale case persists. (The private document is authoritative on the loop's steps; this summary previously stated the verification as post-merge, which inverted the gate.)
 
+## What HFR Computes and What Ariadne Computes
+
+Three cases, decided by what the HFR code does, not by where its inputs come from:
+
+- **Typing is Ariadne's alone.** Whether a value is a tensor, and its shape or dtype, is computed from the program by the analysis. HFR code that computes a value's type from program code itself is a blocking review finding. Deriving a signature from the types the analysis reports, by joining them across call sites or widening an axis, is HFR's own work.
+- **Reading Ariadne's internals is discouraged, not forbidden.** Matching summary class names, following trampolines by hand, or reading object-catalog field names ties HFR to how the analysis lays out its model. Prefer a published engine query. A review raises it as a concern, with the cost of the engine alternative, and the change is weighed. If the reviewer and the author disagree, the project owner decides.
+- **Logic over facts Ariadne publishes is HFR's own.** Walking a class's published base list, combining call targets, or deciding over points-to sets needs no engine change. Don't add an engine query only to perform such logic for HFR.
+
+When HFR needs a fact the analysis doesn't publish, file an engine issue and pin today's behavior with a TODO naming it. Don't compute it in HFR meanwhile if it's typing.
+
+A rule relayed as the project owner's, by another session or in a summary, is confirmed with the owner before it gates a review.
+
 ## Module layout
 
 Maven reactor (see `pom.xml` `<modules>`):
