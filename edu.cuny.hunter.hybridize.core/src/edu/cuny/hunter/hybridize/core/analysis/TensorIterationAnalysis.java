@@ -9,10 +9,13 @@ import java.util.Map;
 import java.util.Set;
 
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
+import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
+import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
@@ -51,6 +54,12 @@ import com.ibm.wala.util.collections.Pair;
  * parameter-derived, tensor-typed value works eagerly on a NumPy array, but a symbolic tensor has no {@code __setitem__}, so tracing raises
  * a {@code TypeError}. A slice store ({@code y[1:3] = v}) is not seen: the engine lowers it to a call of the {@code slice} builtin, not to
  * a subscript store (https://github.com/wala/ML/issues/1130).
+ * <p>
+ * The same scan backs a third precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169): passing such a
+ * value as {@code tf.constant}'s {@code value} works eagerly, where it is a NumPy array or an eager tensor, but {@code tf.constant} rejects
+ * a symbolic tensor, so tracing raises a {@code TypeError}. The engine names the API a call invokes ({@link TensorFlowApis}), so an alias
+ * of {@code tf.constant} is seen, and a program function named like it is not. The scan is body-local, like the other two: a parameter
+ * passed to a helper that gives it to {@code tf.constant} is not seen.
  */
 class TensorIterationAnalysis {
 
@@ -63,9 +72,13 @@ class TensorIterationAnalysis {
 	/** The call graph, used to resolve the builtin a tensor is passed to. */
 	private final CallGraph callGraph;
 
-	TensorIterationAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
-		this.callGraph = callGraph;
-		this.pointerAnalysis = pointerAnalysis;
+	/** The call-graph builder, which the engine asks to name the TensorFlow API a call invokes. */
+	private final PythonSSAPropagationCallGraphBuilder builder;
+
+	TensorIterationAnalysis(PythonSSAPropagationCallGraphBuilder builder, TensorTypeAnalysis tensorTypeAnalysis) {
+		this.builder = builder;
+		this.callGraph = builder.getCallGraph();
+		this.pointerAnalysis = builder.getPointerAnalysis();
 		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
@@ -124,6 +137,56 @@ class TensorIterationAnalysis {
 				&& write.getObjectRef() == value && this.isTensorTyped(node, value) && !this.pointsToContainer(node, value));
 	}
 
+	/** The API whose {@code value} argument must not be a symbolic tensor, as the engine names it ({@link TensorFlowApis}). */
+	private static final String CONSTANT_FQN = "tensorflow.constant";
+
+	/** The keyword of {@code tf.constant}'s first parameter, the value it converts. */
+	private static final String CONSTANT_VALUE_KEYWORD = "value";
+
+	/**
+	 * True iff {@code node}'s body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}, which a symbolic
+	 * tensor cannot be (issue 1169). The container exemption keeps a Python collection out, as for the other two checks. Unlike theirs, the
+	 * taint stops at a static read of a tensor's type ({@link ShapeValueBoundaryAnalysis#TYPE_MEMBER_NAMES}), such as {@code x.shape}: it
+	 * yields Python values that tracing keeps concrete, so a NumPy array built from them, as in {@code tf.constant(np.arange(x.shape[0]))},
+	 * is a trace-time constant rather than a symbolic tensor.
+	 *
+	 * @param node The call-graph node to scan.
+	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
+	 * @return True iff {@code tf.constant} is given a parameter-derived tensor as its value.
+	 */
+	boolean passesTensorParameterToConstant(CGNode node, boolean method) {
+		return anyTaintedUse(node, method,
+				(use, value) -> use instanceof PythonInvokeInstruction invoke && passesAsConstantValue(invoke, value)
+						&& this.isTensorTyped(node, value) && !this.pointsToContainer(node, value)
+						&& TensorFlowApis.of(this.builder, node, invoke).contains(CONSTANT_FQN),
+				(use, value) -> this.readsType(node, use, value));
+	}
+
+	/**
+	 * True iff {@code use} is an attribute read of {@code value}'s static type, a member of
+	 * {@link ShapeValueBoundaryAnalysis#TYPE_MEMBER_NAMES}.
+	 */
+	private boolean readsType(CGNode node, SSAInstruction use, int value) {
+		// A subscript under a key such as "shape" reads an element, not the type, so only an attribute read launders.
+		if (!(use instanceof PythonPropertyRead read) || read.isSubscript() || read.getObjectRef() != value)
+			return false;
+
+		String member = Util.resolveStringConstant(node, read.getMemberRef(), this.pointerAnalysis);
+		return member != null && ShapeValueBoundaryAnalysis.TYPE_MEMBER_NAMES.contains(member);
+	}
+
+	/**
+	 * True iff {@code invoke} passes {@code value} in {@code tf.constant}'s {@code value} slot: its first positional argument, or its
+	 * {@code value} keyword. A call spreading a starred argument first is not aligned, so it is not matched.
+	 */
+	private static boolean passesAsConstantValue(PythonInvokeInstruction invoke, int value) {
+		// The callee is the invoke's first use, so the first argument is use 1.
+		if (invoke.getNumberOfPositionalParameters() > 1 && invoke.firstStarredPosition() != 1 && invoke.getUse(1) == value)
+			return true;
+
+		return invoke.getKeywords().contains(CONSTANT_VALUE_KEYWORD) && invoke.getUse(CONSTANT_VALUE_KEYWORD) == value;
+	}
+
 	/**
 	 * True iff {@code sink} holds for some use of a parameter-derived value in {@code node}'s body. Parameter value numbers seed a forward
 	 * def-use taint, and every use of a tainted value is tested before its definitions are tainted in turn.
@@ -134,6 +197,20 @@ class TensorIterationAnalysis {
 	 * @return True iff {@code sink} holds for some tainted use.
 	 */
 	private static boolean anyTaintedUse(CGNode node, boolean method, TaintedUse sink) {
+		return anyTaintedUse(node, method, sink, (use, value) -> false);
+	}
+
+	/**
+	 * True iff {@code sink} holds for some use of a parameter-derived value in {@code node}'s body, as for
+	 * {@link #anyTaintedUse(CGNode, boolean, TaintedUse)}, except that a use satisfying {@code launders} does not taint its definitions.
+	 *
+	 * @param node The call-graph node to scan.
+	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
+	 * @param sink The test, given a use and the tainted value it uses.
+	 * @param launders The test of a use whose definitions do not carry the taint, given the use and the tainted value it uses.
+	 * @return True iff {@code sink} holds for some tainted use.
+	 */
+	private static boolean anyTaintedUse(CGNode node, boolean method, TaintedUse sink, TaintedUse launders) {
 		IR ir = node.getIR();
 
 		if (ir == null)
@@ -161,6 +238,9 @@ class TensorIterationAnalysis {
 
 				if (sink.test(use, value))
 					return true;
+
+				if (launders.test(use, value))
+					continue;
 
 				for (int d = 0; d < use.getNumberOfDefs(); d++) {
 					int def = use.getDef(d);

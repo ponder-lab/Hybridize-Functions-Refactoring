@@ -330,16 +330,20 @@ public enum PreconditionFailure {
 	HAS_TENSOR_PARAMETER_ITEM_ASSIGNMENT(37),
 
 	/**
-	 * The function's body, or code it calls, reads a field of an object whose value the tensor-type analysis types as a tensor, and another
-	 * function rebinds that field, as the same object and field per the pointer analysis, outside the methods that set the object up once:
-	 * the {@code __init__} of its class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved
-	 * through the engine's class hierarchy, invoked on the object itself. Eagerly every call reads the field's current tensor; under
-	 * {@code tf.function} the first trace captures the tensor the field held then, and later calls reuse it after the field is rebound, so
-	 * the converted function returns the first call's state. A field set only there, and a {@code tf.Variable} updated in place with
-	 * {@code assign}, are read live and left alone. Rebinding a field to a value that is not a tensor, such as a Python {@code int}, is
-	 * stale under tracing too, but is not covered here, and neither are the elements of a list, tuple, dictionary, or set, which
-	 * {@code tf.function} passes in afresh when the container is an argument. Objects are told apart by allocation site, so a getter of an
-	 * object created afresh on each call is refused although no instance it reads is rebound between two of its reads.
+	 * The function's body, or code it calls, reads a field of an object whose value the tensor-type analysis types as a tensor, or whose
+	 * value may be a Python scalar ({@code int}, {@code float}, {@code bool} or {@code str}), and another function rebinds that field, as
+	 * the same object and field per the pointer analysis, outside the methods that set the object up once: the {@code __init__} of its
+	 * class or a base, and the {@code build} of a Keras {@code Layer} or {@code Model} subclass, resolved through the engine's class
+	 * hierarchy, invoked on the object itself. Eagerly every call reads the field's current value; under {@code tf.function} the first
+	 * trace captures the value the field held then, and later calls reuse it after the field is rebound, so the converted function returns
+	 * the first call's state. A field set only there, and a {@code tf.Variable} updated in place with {@code assign}, are read live and
+	 * left alone. A rebound Python scalar is read stale the same way. Its read counts since
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048, under which a primitive field of an object keyed by its
+	 * identity no longer makes a primitive parameter, since it never causes a retrace. A field only ever holding one constant, such as a
+	 * class-body constant, is read live, since a scalar read counts only when its field may hold more than one value. The elements of a
+	 * list, tuple, dictionary, or set aren't covered, though, which {@code tf.function} passes in afresh when the container is an argument.
+	 * Objects are told apart by allocation site, so a getter of an object created afresh on each call is refused although no instance it
+	 * reads is rebound between two of its reads.
 	 * <p>
 	 * The guide documents this: a trace is keyed on the arguments, so changing a Python global or free variable, a field of {@code self}
 	 * among them, does not retrace, and the value read when the function was traced persists.
@@ -375,7 +379,42 @@ public enum PreconditionFailure {
 	 * the boundary breaks the caller, with a bare decorator or an inferred signature alike. The check refuses on either direction without
 	 * proving that a static read exists downstream, a conservative over-refusal. See {@link ShapeValueBoundaryAnalysis}.
 	 */
-	PASSES_SHAPE_VALUE_ACROSS_BOUNDARY(41);
+	PASSES_SHAPE_VALUE_ACROSS_BOUNDARY(41),
+
+	/**
+	 * The function's body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}. Eagerly the value is a
+	 * NumPy array or an eager tensor, which {@code tf.constant} accepts; under {@code tf.function} tracing it is a symbolic tensor, which
+	 * {@code tf.constant} rejects, so tracing raises a {@code TypeError} whatever the caller passes. A Python collection does not fire.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169">Issue 1169</a>
+	 */
+	HAS_TENSOR_PARAMETER_CONSTANT(42),
+
+	/**
+	 * A call site passes a parameter a NumPy array, and the body combines an element of it, read by a subscript, with a value of another
+	 * dtype at an operation that converts its operands, such as a comparison or an arithmetic operator. Eagerly the element is a NumPy
+	 * scalar, which the operation converts to the other operand's dtype; under {@code tf.function} the array crosses the boundary as a
+	 * tensor of its own dtype, and the operation rejects the element with a {@code TypeError}. No input signature repairs this, since one
+	 * casting the array to the imposed dtype changes every other read of it. Whether the argument is an array is Ariadne's fact, the NumPy
+	 * producing-library origin of the value the call site passes, so an element of a tensor's {@code numpy()} result counts. An element
+	 * read by unpacking, such as {@code h, w = shape}, is not covered: the engine doesn't yet tell a destructuring read from an attribute
+	 * read (https://github.com/wala/ML/issues/1117).
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111">Issue 1111</a>
+	 */
+	HAS_NUMPY_ELEMENT_DTYPE_COERCIONS(43),
+
+	/**
+	 * The function, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0, such as {@code tf.reshape(t, -1)}.
+	 * Eagerly, TensorFlow's {@code Reshape} kernel accepts a scalar shape; in a graph, its shape inference requires a rank-1 shape operand,
+	 * so the converted function raises {@code ValueError: Shape must be rank 1 but is rank 0} on its first trace. The engine gives the
+	 * operand's rank, and only an operand that may be rank 0 refuses, so one that is a scalar on some path and a vector on another is
+	 * refused too. An operand of unknown rank, such as one behind a starred argument, is not refused. See
+	 * {@link ScalarShapeReshapeAnalysis}.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170">Issue 1170</a>
+	 */
+	RESHAPES_WITH_SCALAR_SHAPE(44);
 
 	static {
 		// check that the codes are unique.
