@@ -14390,10 +14390,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		this.setInferInputSignatures(true);
 
 		Function call = findFunction(this.getFunctions(), "BatchNormalization.call");
-		// FIXME: A false refusal. The engine's summary of the built-in `call` reaches the layer's build, which Keras runs in `__call__`
-		// instead: https://github.com/wala/ML/issues/1166.
-		assertMayBuildLayers(call, true, false, true);
-		assertNull("`BatchNormalization.call` is refused for building the layer.", call.getPassingPrecondition());
+		// Keras builds the layer in `__call__`, before the built-in `call` runs (https://github.com/wala/ML/issues/1166).
+		assertMayBuildLayers(call, false, false, false);
+		assertEquals("`BatchNormalization.call` hybridizes bare (P1).", P1, call.getPassingPrecondition());
+		assertTrue("`BatchNormalization.call` is converted.", call.getTransformations().contains(CONVERT_TO_HYBRID));
 
 		assertTrue("No input signature is emitted; Keras supplies `training`, and a Python bool has no spec.",
 				call.getInferredInputSignature().isEmpty());
@@ -17364,7 +17364,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Reduced from NLPGNN's {@code MaskCategoricalCrossentropy.__call__} and {@code MaskAccuracy.__call__}, as GAT's training script calls
 	 * them. The predictions come from an unsorted segment reduction whose {@code num_segments} is {@code tf.shape(x)[0]}, and the mask from
-	 * an {@code np.zeros} of an ndarray's {@code .shape[0]}. The labels come from an array loaded with {@code pickle}, whose shape is
+	 * an {@code np.zeros} of an ndarray's {@code .shape[0]}. The labels come from an array loaded with {@code pickle}, whose row count is
 	 * unknown. {@code masked_mean} receives an {@code np.zeros} of a {@code len()}.
 	 */
 	@Test
@@ -17374,15 +17374,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		// A segment reduction whose `num_segments` isn't a static constant keeps its rank, with the segment axis unknown
-		// (https://github.com/wala/ML/issues/1160), so the predictions are `(None, 4)`.
-		// TODO: The mask has no shape because `np.zeros(labels.shape[0])` has no rank (https://github.com/wala/ML/issues/1159). It
-		// should be rank 1 here, `(None,)`.
+		// (https://github.com/wala/ML/issues/1160), so the predictions are `(None, 4)`. The labels are `(None, 4)`, and the mask, an
+		// `np.zeros` of the labels' `.shape[0]`, is `(None,)` (https://github.com/wala/ML/issues/1159).
 		for (String name : List.of("MaskCategoricalCrossentropy.__call__", "MaskAccuracy.__call__")) {
 			Function function = findFunction(functions, name);
 			assertTrue("`" + name + "` is hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
-			assertEquals("`" + name + "`'s predictions are rank 2; today, its mask has no shape.",
-					"[tf.TensorSpec(shape=None, dtype=tf.float64), tf.TensorSpec(shape=(None, 4), dtype=tf.float32), "
-							+ "tf.TensorSpec(shape=None, dtype=tf.bool)]",
+			assertEquals("`" + name + "`'s labels and predictions are rank 2, and its mask is rank 1.",
+					"[tf.TensorSpec(shape=(None, 4), dtype=tf.float64), tf.TensorSpec(shape=(None, 4), dtype=tf.float32), "
+							+ "tf.TensorSpec(shape=(None,), dtype=tf.bool)]",
 					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		}
 
@@ -17626,9 +17625,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testMayBuildLayersEmbeddingSubclass() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "TFEmbedding.call", false, false, false);
-		// TODO: `Net.call` builds the embedding on its first call, but the engine dispatches `self.emb(x)` straight to the override and
-		// misses Keras's build: https://github.com/wala/ML/issues/1166.
-		assertMayBuildLayers(functions, "Net.call", false, true, false);
+		assertMayBuildLayers(functions, "Net.call", true, true, false);
 	}
 
 	/**
@@ -17640,9 +17637,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testMayBuildLayersBatchNormalizationSubclass() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		// FIXME: A false refusal. The engine's summary of the built-in `call` reaches the layer's build, which Keras runs in `__call__`
-		// instead: https://github.com/wala/ML/issues/1166.
-		assertMayBuildLayers(functions, "BatchNormalization.call", true, false, true);
+		assertMayBuildLayers(functions, "BatchNormalization.call", false, false, false);
 		assertMayBuildLayers(functions, "Block.call", true, false, true);
 		assertMayBuildLayers(functions, "Net.call", true, true, false);
 	}
