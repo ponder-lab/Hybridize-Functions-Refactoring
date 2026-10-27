@@ -1330,6 +1330,12 @@ public class Function {
 	private Boolean hasUsedResults;
 
 	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0
+	 * ({@link ScalarShapeReshapeAnalysis}); null if undetermined, in which case the precondition does not block.
+	 */
+	private Boolean reshapesWithScalarShape;
+
+	/**
 	 * True iff a shape known only as a tensor value crosses this {@link Function}'s boundary, inbound or outbound
 	 * ({@link ShapeValueBoundaryAnalysis}); null if undetermined, in which case the precondition does not block.
 	 */
@@ -1716,6 +1722,13 @@ public class Function {
 								this.addFailure(PreconditionFailure.IS_BOUND_CUSTOM_GRADIENT_METHOD,
 										"Can't hybridize a tf.custom_gradient method with a bound self or cls argument; tf.function "
 												+ "fails with it in either decorator order.");
+							else if (TRUE.equals(this.getReshapesWithScalarShape()))
+								// Reshapes with a shape operand that may be rank 0, which the eager kernel accepts and
+								// graph shape inference rejects (issue 1170). A safety failure; it precedes the benefit
+								// signal.
+								this.addFailure(PreconditionFailure.RESHAPES_WITH_SCALAR_SHAPE,
+										"Can't hybridize a function that calls tf.reshape with a scalar shape, such as -1; tracing requires "
+												+ "a rank-1 shape.");
 							else if (this.tracingChangesGuardedException().isPresent() || this.bodyHandlerChange.isPresent())
 								// A guard around a call dispatches on its exception, but the argument may fail a static check, which a
 								// bare decorator raises at trace time as another exception than the kernel's (issue 1014). The decorator
@@ -3586,6 +3599,50 @@ public class Function {
 	 */
 	public Boolean getHasUsedResults() {
 		return this.hasUsedResults;
+	}
+
+	/**
+	 * Computes whether this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0
+	 * ({@link ScalarShapeReshapeAnalysis}), storing the result for {@link #getReshapesWithScalarShape()}. When the function has no
+	 * call-graph node, the result is left undetermined, mirroring {@link #computeEagerOnlyCalls(CallGraph, PointerAnalysis, Map)}.
+	 *
+	 * @param callGraph The call graph, holding the function's nodes.
+	 * @param builder The call-graph builder, which the engine asks for the APIs a call invokes and for a shape operand's values.
+	 * @param tensorTypeAnalysis The solved tensor-type analysis, which gives a tensor shape operand's rank.
+	 */
+	public void computeReshapesWithScalarShape(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			TensorTypeAnalysis tensorTypeAnalysis) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " reshapes with a scalar shape.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " reshapes with a scalar shape without a call graph node.");
+			return;
+		}
+
+		// A function may have several call-graph nodes; it reshapes with a scalar shape if any of them does.
+		ScalarShapeReshapeAnalysis analysis = new ScalarShapeReshapeAnalysis(callGraph, builder, tensorTypeAnalysis);
+		this.reshapesWithScalarShape = nodes.stream().anyMatch(analysis::reshapesWithScalarShape);
+
+		LOG.info(this + (this.reshapesWithScalarShape ? " reshapes with a scalar shape." : " reshapes with no scalar shape."));
+	}
+
+	/**
+	 * True iff this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0,
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff a reshape by a shape that may be a scalar is reachable from this function; null if undetermined.
+	 */
+	public Boolean getReshapesWithScalarShape() {
+		return this.reshapesWithScalarShape;
 	}
 
 	/**

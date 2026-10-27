@@ -16966,25 +16966,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170: a reshape by a rank-0 shape. Measured on TensorFlow
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1170: a reshape by a rank-0 shape. Measured on TensorFlow
 	 * 2.9.3, each of {@code pool}, {@code flatten_by_keyword} and {@code flatten_by_scalar_tensor} runs eagerly and raises
 	 * {@code ValueError: Shape must be rank 1 but is rank 0} under {@code tf.function}: {@code pool} through the helper it calls, as
 	 * tf_geometric's {@code DiffPool.call} does, with a Python int, {@code flatten_by_keyword} with one passed by keyword, and
-	 * {@code flatten_by_scalar_tensor} with a rank-0 tensor. {@code flatten_by_vector} reshapes by {@code [-1]} and converts.
+	 * {@code flatten_by_scalar_tensor} with a rank-0 tensor. So does {@code flatten_by_len}, with the result of {@code len}, an int of
+	 * unknown value, and {@code flatten_by_computed_int}, with the product of two dimensions
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1181). The engine reports each shape operand as possibly rank
+	 * 0, so each is refused. {@code flatten_by_vector} reshapes by {@code [-1]} and converts.
+	 * <p>
+	 * {@code flatten_by_starred} raises the same way, but the engine reports the rank of its shape operand as unknown, and an unknown rank
+	 * is not refused, so it still converts.
 	 */
 	@Test
 	public void testReshapeWithScalarShape() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		// TODO: Refuse these once the engine reports the rank of a reshape's shape operand (https://github.com/wala/ML/issues/1147).
-		// Each one breaks when converted, but nothing refuses it today.
-		for (String identifier : List.of("coarsen", "pool", "flatten_by_keyword", "flatten_by_scalar_tensor")) {
+		for (String identifier : List.of("coarsen", "pool", "flatten_by_keyword", "flatten_by_scalar_tensor", "flatten_by_len",
+				"flatten_by_computed_int")) {
 			Function function = findFunction(functions, identifier);
-			assertEquals("Today, `" + identifier + "` hybridizes (P1).", P1, function.getPassingPrecondition());
-			assertTrue("Today, `" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertTrue("`" + identifier + "` reshapes with a scalar shape.", function.getReshapesWithScalarShape());
+			assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with RESHAPES_WITH_SCALAR_SHAPE.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RESHAPES_WITH_SCALAR_SHAPE.getCode()));
+			assertFalse("`" + identifier + "` is not converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
 		}
 
+		// This breaks when converted, but behind a starred argument, the shape operand is not aligned with any argument, so its rank is
+		// unknown by design, and an unknown rank converts.
+		assertConvertedWithUnknownShapeRank(findFunction(functions, "flatten_by_starred"));
+
 		Function vector = findFunction(functions, "flatten_by_vector");
+		assertFalse("`flatten_by_vector` reshapes with no scalar shape.", vector.getReshapesWithScalarShape());
 		assertEquals("`flatten_by_vector` hybridizes (P1).", P1, vector.getPassingPrecondition());
 		assertTrue("`flatten_by_vector` is converted.", vector.getTransformations().contains(CONVERT_TO_HYBRID));
 	}
@@ -17100,5 +17113,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The embedding keeps its rank, with its last axis unresolved.",
 				"[tf.TensorSpec(shape=(None, None, None), dtype=tf.float32)]",
 				call.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Asserts that {@code function}, whose {@code tf.reshape} shape operand the engine reports as of unknown rank, is not refused for
+	 * reshaping with a scalar shape, and so is converted.
+	 *
+	 * @param function The function to check.
+	 */
+	private static void assertConvertedWithUnknownShapeRank(Function function) {
+		String identifier = function.getIdentifier();
+		assertFalse("Today, `" + identifier + "`'s shape operand is of unknown rank.", function.getReshapesWithScalarShape());
+		assertEquals("Today, `" + identifier + "` hybridizes (P1).", P1, function.getPassingPrecondition());
+		assertTrue("Today, `" + identifier + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
 	}
 }
