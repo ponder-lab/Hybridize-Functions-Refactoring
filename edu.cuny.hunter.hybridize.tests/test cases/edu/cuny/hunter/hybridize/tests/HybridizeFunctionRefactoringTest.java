@@ -13290,6 +13290,97 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the rank-requiring-op rule of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1150, reduced from
+	 * TensorFlow-Examples' {@code resize_image}: a {@code .numpy()} array reaches the parameter with its shape unresolved, so its spec is
+	 * {@code shape=None}, and {@code tf.image.resize} raises at trace time without the rank of its {@code images}. Like a built-in Keras
+	 * layer's input (#883), the argument is a rank-only requirement, so the signature is withheld and the function hybridizes with a bare
+	 * decorator. {@code crop_image} passes its parameter to {@code tf.image.central_crop} by keyword, and {@code resize_spread} and
+	 * {@code resize_spread_twice} behind one and two empty starred arguments, whose positions are not aligned with the op's.
+	 * {@code cast_only} reaches no such op and keeps its unknown-rank signature, and {@code resize_ranked}'s known rank satisfies the op.
+	 */
+	@Test
+	public void testUnknownRankIntoRankRequiringOp() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// `resize_spread` and `resize_spread_twice` pass their parameter behind starred arguments, where the positions are not aligned: an
+		// empty spread puts it in `images`, so it is taken to reach the slot.
+		for (String name : List.of("resize_image", "crop_image", "resize_spread", "resize_spread_twice")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "`'s parameter arrives with an unknown shape.",
+					function.getParameters().get(0).getTensorTypes().stream().anyMatch(t -> t.getDims() == null));
+			assertTrue("`" + name + "` passes its unknown-rank parameter where an op requires its rank.",
+					function.getHasUnresolvedStaticallyReadAxes());
+
+			// TODO: `resize_spread` should hybridize bare (P1). The shape-value boundary check counts the starred argument as one position,
+			// so the parameter lands in `size`'s slot and the function is refused:
+			// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1190.
+			if (name.equals("resize_spread")) {
+				assertNull("Today, `resize_spread` passes no precondition.", function.getPassingPrecondition());
+				assertNotNull("Today, `resize_spread` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+				assertFalse("Today, `resize_spread` is not converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+				continue;
+			}
+
+			assertEquals("`" + name + "` hybridizes bare (P1); only the signature was unwritable.", P1, function.getPassingPrecondition());
+			assertTrue("`" + name + "` is converted.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		Function castOnly = findFunction(functions, "cast_only");
+		assertFalse("`cast_only` reaches no op requiring its rank.", castOnly.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`cast_only` hybridizes (P1).", P1, castOnly.getPassingPrecondition());
+		assertEquals("`cast_only` keeps its unknown-rank signature.", "[tf.TensorSpec(shape=None, dtype=tf.uint8)]",
+				castOnly.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function resizeRanked = findFunction(functions, "resize_ranked");
+		assertFalse("`resize_ranked`'s known rank satisfies the op.", resizeRanked.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`resize_ranked` hybridizes (P1).", P1, resizeRanked.getPassingPrecondition());
+		assertEquals("`resize_ranked` keeps its signature.", "[tf.TensorSpec(shape=(8, 8, 3), dtype=tf.uint8)]",
+				resizeRanked.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Pins the partial-rank withholding of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1150, reduced from
+	 * tf-image's {@code _clip_random_with_bboxes}: one call passes a {@code .numpy()} array whose shape is unresolved and the others pass
+	 * rank-2 boxes, so the reduced spec is {@code shape=None}, though every call that resolved agrees on the rank. The signature is
+	 * withheld ({@code WITHHELD_PARTIAL_RANK}) and {@code clip_boxes} hybridizes with a bare decorator. {@code known_only} keeps its rank,
+	 * {@code unknown_only} has no rank to lose, and {@code ranks_disagree}'s callers themselves require {@code shape=None}, so all three
+	 * keep their signatures.
+	 */
+	@Test
+	public void testUnknownRankBesideKnownRank() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function clipBoxes = findFunction(functions, "clip_boxes");
+		assertTrue("One call passes `bboxes` an unknown shape.",
+				clipBoxes.getParameters().get(0).getTensorTypes().stream().anyMatch(t -> t.getDims() == null));
+		assertEquals("`clip_boxes` hybridizes bare (P1).", P1, clipBoxes.getPassingPrecondition());
+		assertTrue("`clip_boxes` is converted.", clipBoxes.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`clip_boxes`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_PARTIAL_RANK),
+				clipBoxes.getInferredInputSignatureAbsenceReason());
+		assertEquals("`bboxes` is the blocker, for the partial rank alone.",
+				List.of(Set.of(InferenceResult.AbsenceReason.WITHHELD_PARTIAL_RANK)),
+				List.copyOf(clipBoxes.getBlockingParameterReasons().values()));
+
+		Function knownOnly = findFunction(functions, "known_only");
+		assertEquals("`known_only` keeps its rank.", "[tf.TensorSpec(shape=(None, 4), dtype=tf.float32)]",
+				knownOnly.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		for (String name : List.of("unknown_only", "ranks_disagree")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` keeps its unknown-rank signature.", "[tf.TensorSpec(shape=None, dtype=tf.float32)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
 	 * Pins that a tuple parameter's container evidence survives the shapes the reported {@code CIN.call} of
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/899 is made of, which is what makes that subject's failure a
 	 * property of the whole project rather than of any one of them. Each arm receives a two-element tuple and each is reduced to a nested
@@ -16800,6 +16891,74 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * The control for {@link #testInferInputSignatureFitStructuredInputs()}: {@code consume} receives the structured inputs of two models'
+	 * {@code fit}, a pair of float32 inputs from one and a pair of a float32 and an int32 input from the other. The pairs agree on their
+	 * length, but their second members disagree in dtype, so no nested specification admits both, and the signature is dropped at that
+	 * member. Each {@code call} receives one pair and keeps its specification.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputsDisagree() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		assertEquals("`Model.call` receives the float32 pair.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]]",
+				findFunction(functions, "Model.call").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("`MixedModel.call` receives the mixed pair.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+				findFunction(functions, "MixedModel.call").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function consume = findFunction(functions, "consume");
+		Parameter inputs = consume.getParameters().get(0);
+
+		// The engine reads both pairs as dataset components of two members (https://github.com/ponder-lab/ML/pull/1087), so the form is
+		// modeled, and each member unions what the two pairs hold there.
+		List<Set<TensorType>> elementTypes = inputs.getContainerElementTypes();
+		assertNotNull("The pairs' members surface.", elementTypes);
+		assertEquals("The pairs have two members.", 2, elementTypes.size());
+		assertEquals("The first members agree.", 1, elementTypes.get(0).size());
+		assertEquals("The second members disagree.", 2, elementTypes.get(1).size());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No nested specification admits both pairs.", result.signature().isPresent());
+		assertEquals("The second members disagree in dtype.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE),
+				result.absenceReason());
+
+		RefactoringStatusEntry entry = consume.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		assertTrue("The diagnostic cites the second member.", entry.getMessage().contains("Element 1 of parameter `inputs`"));
+	}
+
+	/**
+	 * A variant of {@link #testInferInputSignatureFitStructuredInputs()} with 7 rows, so {@code batch(2)} leaves a final batch of 1.
+	 * {@code call} and {@code consume} receive members of 2 rows and of 1 row, and a specification fixing the batch axis at 2 would reject
+	 * the final batch.
+	 */
+	@Test
+	public void testInferInputSignatureFitStructuredInputsShortBatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// The engine reports each member at both batch sizes that reach `consume`, 2 rows and 1 row.
+		List<Set<TensorType>> elementTypes = findFunction(functions, "consume").getParameters().get(0).getContainerElementTypes();
+		assertNotNull("The pair's members surface.", elementTypes);
+		assertEquals("The pair has two members.", 2, elementTypes.size());
+
+		for (Set<TensorType> member : elementTypes)
+			assertEquals("Each member has a full and a short batch.", 2, member.size());
+
+		// The sizes disagree on the batch axis, so the reduction widens it to None, and the final batch is admitted.
+		for (String name : List.of("consume", "Model.call")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` admits the final batch.",
+					"[[tf.TensorSpec(shape=(None, 4), dtype=tf.float32), tf.TensorSpec(shape=(None, 3), dtype=tf.float32)]]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
 	 * An integer subscript of a component unpacked from a tuple parameter in the same function, {@code a, gt = inputs} then
 	 * {@code f(gt[i])}, is a row of that component. {@code row_total} receives a constant index, {@code loop_total} a {@code range} loop
 	 * counter, and {@code call_total} a loop counter in a model's {@code call}.
@@ -16931,5 +17090,80 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("No signature is emitted from the demo's shapes alone.", call.getInferredInputSignature().isPresent());
 		assertEquals("Training's labels have an unknown dtype, beside the demo's int64.",
 				Optional.of(InferenceResult.AbsenceReason.PARTIAL_DTYPE), call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
+	 * Reduced from TensorFlow2.0-Examples' YOLOV3 {@code bbox_giou} and {@code bbox_iou}. The predicted boxes, each function's first
+	 * parameter, come from an element of the result of a functional model built with a list of outputs. The label boxes, the second
+	 * parameter of {@code bbox_giou}, come from an {@code np.zeros} whose shape tuple holds an element of an ndarray.
+	 */
+	@Test
+	public void testInferInputSignatureListOutputModelBoxes() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// An element of a list-output model's result is read as the output at its position (https://github.com/wala/ML/issues/1157).
+		Function giou = findFunction(functions, "bbox_giou");
+		assertTrue("`bbox_giou` is hybridized.", giou.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`boxes1` is the rank-5 output; `boxes2` keeps its rank, with the ndarray element's axes unresolved.",
+				"[tf.TensorSpec(shape=(4, 13, 13, 3, 4), dtype=tf.float32), tf.TensorSpec(shape=(4, None, None, 3, 4), dtype=tf.float32)]",
+				giou.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// As above (https://github.com/wala/ML/issues/1157), `boxes1` is the output at its position, here rank 6.
+		Function iou = findFunction(functions, "bbox_iou");
+		assertTrue("`bbox_iou` is hybridized.", iou.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("`boxes1` is the rank-6 expanded output.",
+				"[tf.TensorSpec(shape=(4, 13, 13, 3, 1, 4), dtype=tf.float32), tf.TensorSpec(shape=(4, 1, 1, 1, 5, 4), dtype=tf.float32)]",
+				iou.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Reduced from NLPGNN's {@code MaskCategoricalCrossentropy.__call__} and {@code MaskAccuracy.__call__}, as GAT's training script calls
+	 * them. The predictions come from an unsorted segment reduction whose {@code num_segments} is {@code tf.shape(x)[0]}, and the mask from
+	 * an {@code np.zeros} of an ndarray's {@code .shape[0]}. The labels come from an array loaded with {@code pickle}, whose shape is
+	 * unknown. {@code masked_mean} receives an {@code np.zeros} of a {@code len()}.
+	 */
+	@Test
+	public void testInferInputSignatureMaskLossesRuntimeSizes() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		// A segment reduction whose `num_segments` isn't a static constant keeps its rank, with the segment axis unknown
+		// (https://github.com/wala/ML/issues/1160), so the predictions are `(None, 4)`.
+		// TODO: The mask has no shape because `np.zeros(labels.shape[0])` has no rank (https://github.com/wala/ML/issues/1159). It
+		// should be rank 1 here, `(None,)`.
+		for (String name : List.of("MaskCategoricalCrossentropy.__call__", "MaskAccuracy.__call__")) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` is hybridized.", function.getTransformations().contains(CONVERT_TO_HYBRID));
+			assertEquals("`" + name + "`'s predictions are rank 2; today, its mask has no shape.",
+					"[tf.TensorSpec(shape=None, dtype=tf.float64), tf.TensorSpec(shape=(None, 4), dtype=tf.float32), "
+							+ "tf.TensorSpec(shape=None, dtype=tf.bool)]",
+					function.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		}
+
+		Function maskedMean = findFunction(functions, "masked_mean");
+		assertTrue("`masked_mean` is hybridized.", maskedMean.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("A mask of `len()` entries is rank 1, with its extent unresolved.",
+				"[tf.TensorSpec(shape=(8,), dtype=tf.float32), tf.TensorSpec(shape=(None,), dtype=tf.float64)]",
+				maskedMean.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * Reduced from transformer's {@code MultiplyConstant.call}, which receives an {@code Embedding} output whose {@code output_dim} the
+	 * analysis can't read.
+	 */
+	@Test
+	public void testInferInputSignatureEmbeddingUnreadDimension() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function call = findFunction(functions, "MultiplyConstant.call");
+		assertTrue("`MultiplyConstant.call` is hybridized.", call.getTransformations().contains(CONVERT_TO_HYBRID));
+		assertEquals("The embedding keeps its rank, with its last axis unresolved.",
+				"[tf.TensorSpec(shape=(None, None, None), dtype=tf.float32)]",
+				call.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 }

@@ -654,7 +654,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 				// to a determinate pass when no signature would be emitted.
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
-					func.computeUnresolvedStaticallyReadAxes(callGraph, builder.getPointerAnalysis());
+					func.computeUnresolvedStaticallyReadAxes(callGraph, builder);
 
 				// Whether the replica dispatch is a caller decides if an emitted signature would describe a calling convention
 				// the function is never called by (issue 928). Cheap: a caller-direction walk with no points-to query.
