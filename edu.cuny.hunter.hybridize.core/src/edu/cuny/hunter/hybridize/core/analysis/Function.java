@@ -140,7 +140,6 @@ import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.classLoader.NewSiteReference;
-import com.ibm.wala.core.util.strings.Atom;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
@@ -909,10 +908,11 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a built-in container or an
-	 * object of a program-defined class with a field that takes one on. An object of a library class that Ariadne models is not examined
-	 * (#1047), so neither is a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's
-	 * one key per scalar type (wala/ML#1148), counts wherever a constant does.
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a list, a tuple, a dict or a
+	 * set with an element that takes one on. Any other object is keyed by {@code tf.function} by its identity, so its fields are not
+	 * examined (#1048). That includes an object of a library class that Ariadne models, which is keyed by its identity too (#1047), such as
+	 * a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar
+	 * type (wala/ML#1148), counts wherever a constant does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -945,10 +945,11 @@ public class Function {
 
 			IClass concreteType = instanceKeyToProcess.concreteType();
 
-			// An object of a library class that Ariadne models is not examined: the fields are the model's, such as an optimizer's
-			// learning rate, and before the model existed there were none (#1047). Built-in containers and objects of program-defined
-			// classes are still examined.
-			if (isLibraryModeled(concreteType)) {
+			// `tf.function` keys a list, a tuple or a dict by its contents but any other object by its identity, so a primitive field of
+			// such an object never causes a retrace (#1048). Only the elements of a list, a tuple, a dict or a set are examined. That
+			// covers an object of a library class that Ariadne models too, such as an optimizer whose model stores its learning rate
+			// (#1047).
+			if (!isKeyedByContents(concreteType)) {
 				subMonitor.done();
 				return false;
 			}
@@ -1021,19 +1022,18 @@ public class Function {
 	}
 
 	/**
-	 * The name of the class loader into which Ariadne registers the classes its library summaries allocate (WALA's synthetic loader).
-	 */
-	private static final Atom SYNTHETIC_LOADER_NAME = Atom.findOrCreateUnicodeAtom("Synthetic");
-
-	/**
-	 * True iff the given class is a library class that Ariadne models in a summary, rather than a built-in container or a class the program
-	 * defines.
+	 * True iff {@code tf.function} keys an argument of the given class by its contents rather than by its identity: the class is a list, a
+	 * tuple or a dict, as the engine's types decide. An object of any other class is keyed by its identity, so its fields never enter the
+	 * trace key (https://www.tensorflow.org/guide/function#rules_of_tracing). Of the engine's other containers, an {@code enumerate} object
+	 * is keyed by its identity. A set is included as a safe stand-in: {@code tf.function} can't key a set at all, and examining its
+	 * elements at least gets a primitive element refused.
 	 *
 	 * @param type The class in question.
-	 * @return True iff the given class is loaded from Ariadne's library summaries and is not a built-in container.
+	 * @return True iff the given class is a list, a tuple, a dict or a set.
 	 */
-	private static boolean isLibraryModeled(IClass type) {
-		return !Util.isContainerType(type.getReference()) && type.getClassLoader().getName().equals(SYNTHETIC_LOADER_NAME);
+	private static boolean isKeyedByContents(IClass type) {
+		TypeReference reference = type.getReference();
+		return Util.isSequenceType(reference) || PythonTypes.dict.equals(reference) || PythonTypes.set.equals(reference);
 	}
 
 	/**
@@ -1363,6 +1363,13 @@ public class Function {
 	private Boolean hasConflictingEagerDtypeCoercions;
 
 	/**
+	 * True iff a NumPy array some call site passes for a parameter has an element, read by a subscript, that the body combines with a value
+	 * of another dtype (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). {@code null} when it could not be
+	 * determined (no call-graph node), in which case the precondition does not block.
+	 */
+	private Boolean hasNumpyElementDtypeCoercions;
+
+	/**
 	 * Per-{@link Parameter} eager-effective dtype pins: a parameter maps here when its direct consumers impose exactly one concrete dtype
 	 * that differs from the parameter's own dtype evidence, and the emitted spec's dtype is substituted accordingly (the repair direction
 	 * of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1).
@@ -1674,6 +1681,14 @@ public class Function {
 										"Can't hybridize a function whose parameter combines with tensors of different dtypes; "
 												+ "eager execution coerces the argument per operation, so no single input signature "
 												+ "preserves its semantics.");
+							else if (TRUE.equals(this.getHasNumpyElementDtypeCoercions()))
+								// An element of a NumPy argument is combined with a value of another dtype (issue 1111): eagerly the
+								// element is a NumPy scalar the operation converts, but traced the argument is a tensor of its own dtype,
+								// whose element the operation rejects. A safety failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.HAS_NUMPY_ELEMENT_DTYPE_COERCIONS,
+										"Can't hybridize a function that combines an element of a NumPy argument with a tensor of another "
+												+ "dtype; eager execution converts the element, but tracing makes the argument a tensor of "
+												+ "its own dtype, which the operation rejects.");
 							else if (this.requiresUnwritableEagerDtypePin())
 								// A parameter is fed a dtype its consumers do not impose, and no specification will be written to
 								// reproduce the conversion at the trace boundary. Eagerly the argument converts at the operation; under
@@ -4028,6 +4043,92 @@ public class Function {
 	}
 
 	/**
+	 * Computes whether a NumPy array some call site passes for a parameter has an element, read by a subscript, that the body combines with
+	 * a value of another dtype (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111). Eagerly the element is a NumPy
+	 * scalar, which the operation converts to its other operand's dtype; traced, the array is a tensor of its own dtype, whose element the
+	 * operation rejects. No input signature repairs this: a signature casting the array to the imposed dtype changes every other read of
+	 * it. Whether the argument is an array is the engine's fact, the NumPy producing-library origin of the value the call site passes; the
+	 * element's dtype and the dtypes its consumers impose are the tensor-type analysis's, read as
+	 * {@link EagerCoercionAnalysis#divergentElementDtypes} reads them.
+	 *
+	 * @param callGraph The call graph.
+	 * @param tensorTypeAnalysis The tensor-type analysis whose typing supplies the element's and its partner operands' dtypes.
+	 * @param pointerAnalysis The pointer analysis, used to resolve a call site's arguments and a coercing call's callee.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}).
+	 */
+	public void computeNumpyElementDtypeCoercions(CallGraph callGraph, TensorTypeAnalysis tensorTypeAnalysis,
+			PointerAnalysis<InstanceKey> pointerAnalysis, Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " combines an element of a NumPy argument with another dtype.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " combines an element of a NumPy argument with another dtype without a call "
+					+ "graph node.");
+			return;
+		}
+
+		List<Parameter> parameters = this.getParameters();
+		EagerCoercionAnalysis analysis = null;
+		boolean divergent = false;
+
+		for (int position = 0; position < parameters.size() && !divergent; position++) {
+			Parameter parameter = parameters.get(position);
+
+			// Keyword-only parameters are excluded, as in `computeEagerDtypeCoercions`: their value-slot alignment is unproven.
+			if (parameter.isSelf() || parameter.isKeywordOnly()
+					|| !argumentKinds(parameter, nodes, callGraph, pointerAnalysis, tensorTypedKeys).contains(ArgumentKind.NUMPY))
+				continue;
+
+			// Built only once some parameter is passed an array, since indexing the tensor types is the expensive part.
+			if (analysis == null)
+				analysis = new EagerCoercionAnalysis(tensorTypeAnalysis, pointerAnalysis);
+
+			for (CGNode node : nodes) {
+				IR ir = node.getIR();
+
+				if (ir == null)
+					continue;
+
+				int[] parameterValues = ir.getSymbolTable().getParameterValueNumbers();
+
+				// Value slot 0 is the callable itself; declared parameter `position` sits at `position + 1`.
+				if (position + 1 >= parameterValues.length)
+					continue;
+
+				Set<DType> imposed = analysis.divergentElementDtypes(node, parameterValues[position + 1]);
+
+				if (!imposed.isEmpty()) {
+					divergent = true;
+					LOG.info("Parameter " + parameter.getName() + " of " + this + " is passed a NumPy array whose elements are combined "
+							+ "with values of dtype " + imposed + ".");
+					break;
+				}
+			}
+		}
+
+		this.hasNumpyElementDtypeCoercions = divergent;
+	}
+
+	/**
+	 * True iff a NumPy array some call site passes for a parameter has an element the body combines with a value of another dtype,
+	 * {@code null} if undetermined.
+	 *
+	 * @return True iff tracing changes the dtype at which an element of a NumPy argument is combined, null if undetermined.
+	 */
+	public Boolean getHasNumpyElementDtypeCoercions() {
+		return this.hasNumpyElementDtypeCoercions;
+	}
+
+	/**
 	 * Computes which of {@code functions} have every known call path dominated by a hybridized caller (issue 767, phase 1), delegating to
 	 * the package-private {@link CallerCoverageAnalysis}. Hybridization must already be computed for every function.
 	 *
@@ -5339,50 +5440,65 @@ public class Function {
 
 		Map<Parameter, Set<ArgumentKind>> kinds = new HashMap<>();
 
-		for (Parameter parameter : this.getParameters()) {
-			if (parameter.isSelf())
-				continue;
-
-			// The callee occupies positional slot 0 of the invoke, so the parameter at declaration index i (self at 0) is the invoke's
-			// positional argument i + 1, as in `isSuppliedAtAnyCallSite`.
-			int positionalSlot = parameter.getIndex() + 1;
-			Set<ArgumentKind> parameterKinds = EnumSet.noneOf(ArgumentKind.class);
-
-			for (CGNode node : nodes)
-				for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
-					IR ir = predecessor.getIR();
-
-					if (ir == null) {
-						parameterKinds.add(ArgumentKind.UNKNOWN);
-						continue;
-					}
-
-					for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
-						for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
-							if (!(instruction instanceof PythonInvokeInstruction invoke)
-									|| hasStarredArgumentAtOrBefore(invoke, positionalSlot)) {
-								parameterKinds.add(ArgumentKind.UNKNOWN);
-								continue;
-							}
-
-							int use;
-
-							if (invoke.getKeywords().contains(parameter.getName()))
-								use = invoke.getUse(parameter.getName());
-							else if (invoke.getNumberOfPositionalParameters() > positionalSlot)
-								use = invoke.getUse(positionalSlot);
-							else
-								continue; // This call site omits the parameter.
-
-							PointerKey argumentKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(predecessor, use);
-							parameterKinds.add(argumentKind(tensorTypedKeys.get(argumentKey)));
-						}
-				}
-
-			kinds.put(parameter, parameterKinds);
-		}
+		for (Parameter parameter : this.getParameters())
+			if (!parameter.isSelf())
+				kinds.put(parameter, argumentKinds(parameter, nodes, callGraph, pointerAnalysis, tensorTypedKeys));
 
 		this.argumentKinds = kinds;
+	}
+
+	/**
+	 * The kinds of argument the reachable call sites of {@code nodes} pass for {@code parameter}. A call site whose argument cannot be
+	 * aligned with the parameter (an unpacked positional argument at or before its slot), or whose caller has no IR, contributes
+	 * {@link ArgumentKind#UNKNOWN}; a call site that omits the parameter contributes nothing.
+	 *
+	 * @param parameter The parameter, which is not {@code self}.
+	 * @param nodes The call-graph nodes of the function declaring it.
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}).
+	 * @return The kinds of argument passed for {@code parameter}.
+	 */
+	private static Set<ArgumentKind> argumentKinds(Parameter parameter, Set<CGNode> nodes, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis, Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		// The callee occupies positional slot 0 of the invoke, so the parameter at declaration index i (self at 0) is the invoke's
+		// positional argument i + 1, as in `isSuppliedAtAnyCallSite`.
+		int positionalSlot = parameter.getIndex() + 1;
+		Set<ArgumentKind> parameterKinds = EnumSet.noneOf(ArgumentKind.class);
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null) {
+					parameterKinds.add(ArgumentKind.UNKNOWN);
+					continue;
+				}
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke)
+								|| hasStarredArgumentAtOrBefore(invoke, positionalSlot)) {
+							parameterKinds.add(ArgumentKind.UNKNOWN);
+							continue;
+						}
+
+						int use;
+
+						if (invoke.getKeywords().contains(parameter.getName()))
+							use = invoke.getUse(parameter.getName());
+						else if (invoke.getNumberOfPositionalParameters() > positionalSlot)
+							use = invoke.getUse(positionalSlot);
+						else
+							continue; // This call site omits the parameter.
+
+						PointerKey argumentKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(predecessor, use);
+						parameterKinds.add(argumentKind(tensorTypedKeys.get(argumentKey)));
+					}
+			}
+
+		return parameterKinds;
 	}
 
 	/**
