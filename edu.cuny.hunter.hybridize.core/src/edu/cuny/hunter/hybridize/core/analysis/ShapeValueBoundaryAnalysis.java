@@ -136,7 +136,7 @@ class ShapeValueBoundaryAnalysis {
 	 * The member reads that read a tensor's type rather than its value: a static {@code .shape}, {@code .get_shape()}, {@code .ndim} and
 	 * {@code .dtype}.
 	 */
-	private static final Set<String> TYPE_MEMBER_NAMES = Set.of("shape", "get_shape", "ndim", "dtype");
+	static final Set<String> TYPE_MEMBER_NAMES = Set.of("shape", "get_shape", "ndim", "dtype");
 
 	/**
 	 * The names of TensorFlow's elementwise comparison ops, whose result is a boolean, not a shape: a shape value compared, as in

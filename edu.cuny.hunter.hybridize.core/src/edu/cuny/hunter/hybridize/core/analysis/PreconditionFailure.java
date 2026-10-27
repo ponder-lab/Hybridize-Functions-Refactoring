@@ -378,6 +378,15 @@ public enum PreconditionFailure {
 	PASSES_SHAPE_VALUE_ACROSS_BOUNDARY(41),
 
 	/**
+	 * The function's body passes a parameter-derived, tensor-typed value as {@code tf.constant}'s {@code value}. Eagerly the value is a
+	 * NumPy array or an eager tensor, which {@code tf.constant} accepts; under {@code tf.function} tracing it is a symbolic tensor, which
+	 * {@code tf.constant} rejects, so tracing raises a {@code TypeError} whatever the caller passes. A Python collection does not fire.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169">Issue 1169</a>
+	 */
+	HAS_TENSOR_PARAMETER_CONSTANT(42),
+
+	/**
 	 * A call site passes a parameter a NumPy array, and the body combines an element of it, read by a subscript, with a value of another
 	 * dtype at an operation that converts its operands, such as a comparison or an arithmetic operator. Eagerly the element is a NumPy
 	 * scalar, which the operation converts to the other operand's dtype; under {@code tf.function} the array crosses the boundary as a

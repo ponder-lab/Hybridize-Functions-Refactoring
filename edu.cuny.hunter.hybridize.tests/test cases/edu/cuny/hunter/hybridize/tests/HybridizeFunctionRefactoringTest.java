@@ -17232,4 +17232,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				proposals.getHasNumpyElementDtypeCoercions());
 		assertEquals("Today, `proposals` converts (P1).", P1, proposals.getPassingPrecondition());
 	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169 (distilling TensorSpeech-TensorFlowASR's
+	 * {@code WarpRNNTTest._run_rnnt}): passing a tensor parameter's value to {@code tf.constant}, positionally or as its {@code value}
+	 * keyword, fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_CONSTANT}. It works eagerly, where the argument is a NumPy array,
+	 * but tracing makes it symbolic, which {@code tf.constant} rejects. Converting the parameter with {@code tf.convert_to_tensor}, passing
+	 * {@code tf.constant} a list of the parameter's static dimensions, its rank, or a NumPy array built from them, which tracing keeps
+	 * concrete, and passing it a literal remain convertible. A subscript under the key {@code "shape"} reads an element, not the type, so
+	 * it does not stop the check.
+	 */
+	@Test
+	public void testTensorParameterConstantBlocksHybridization() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("WarpRNNTTest._run_rnnt", "constant_param", "constant_derived", "constant_keyword",
+				"constant_keyed")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` passes a tensor parameter to tf.constant.", function.getHasTensorParameterConstant());
+			assertNull("`" + identifier + "` must not pass a precondition; tf.constant rejects a symbolic tensor.",
+					function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_TENSOR_PARAMETER_CONSTANT.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_CONSTANT.getCode()));
+		}
+
+		for (String identifier : List.of("convert_param", "constant_shape", "constant_literal", "constant_rank", "constant_arange")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` passes no tensor parameter to tf.constant.", Boolean.FALSE,
+					function.getHasTensorParameterConstant());
+			assertEquals("`" + identifier + "` remains convertible (P1).", P1, function.getPassingPrecondition());
+		}
+	}
 }
