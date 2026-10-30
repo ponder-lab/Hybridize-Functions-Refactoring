@@ -1390,6 +1390,13 @@ public class Function {
 	private Boolean hasNumpyElementDtypeCoercions;
 
 	/**
+	 * True iff some call site receives a NumPy array from this function: the engine gives the call's result a NumPy-only origin
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1199). {@code null} when it could not be determined (no
+	 * call-graph node), in which case the precondition does not block.
+	 */
+	private Boolean returnsNumpyArray;
+
+	/**
 	 * Per-{@link Parameter} eager-effective dtype pins: a parameter maps here when its direct consumers impose exactly one concrete dtype
 	 * that differs from the parameter's own dtype evidence, and the emitted spec's dtype is substituted accordingly (the repair direction
 	 * of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/861, Case 1).
@@ -1715,6 +1722,13 @@ public class Function {
 										"Can't hybridize a function that combines an element of a NumPy argument with a tensor of another "
 												+ "dtype; eager execution converts the element, but tracing makes the argument a tensor of "
 												+ "its own dtype, which the operation rejects.");
+							else if (TRUE.equals(this.getReturnsNumpyArray()))
+								// A caller receives a NumPy array from the function today (issue 1199): traced, the array argument is a
+								// tensor, so the function returns a tensor, and a caller using it as an array breaks. A safety failure;
+								// it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.RETURNS_NUMPY_ARRAY,
+										"Can't hybridize a function that returns a NumPy array to a caller; tracing makes the array argument "
+												+ "a tensor, so the caller would receive a tensor instead.");
 							else if (this.requiresUnwritableEagerDtypePin())
 								// A parameter is fed a dtype its consumers do not impose, and no specification will be written to
 								// reproduce the conversion at the trace boundary. Eagerly the argument converts at the operation; under
@@ -4258,6 +4272,76 @@ public class Function {
 	 */
 	public Boolean getHasNumpyElementDtypeCoercions() {
 		return this.hasNumpyElementDtypeCoercions;
+	}
+
+	/**
+	 * Computes whether some call site receives a NumPy array from this function
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1199). Eagerly, a function that only slices and combines an
+	 * array it is passed returns an array; under {@code tf.function}, the array crosses the boundary as a tensor, and the function returns
+	 * a tensor. Whether a call's result is an array is the engine's fact, the NumPy producing-library origin of the value the call site
+	 * receives, which follows the argument's origin through the body. A result some path of which is an array counts, even when another
+	 * path returns a tensor, since the caller taking the first path receives an array today.
+	 *
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis, used to resolve a call site's result.
+	 * @param tensorTypedKeys The tensor-typed pointer keys mapped to their producing-library origins (see
+	 *        {@link Util#computeTensorTypedOrigins}).
+	 */
+	public void computeReturnsNumpyArray(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis,
+			Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			// Undeterminable; leave null so the precondition does not block.
+			LOG.warn("Can't determine whether " + this + " returns a NumPy array to a caller.", e);
+			return;
+		}
+
+		if (nodes.isEmpty()) {
+			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			LOG.info("Can't determine whether " + this + " returns a NumPy array to a caller without a call graph node.");
+			return;
+		}
+
+		this.returnsNumpyArray = false;
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null)
+					continue;
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (instruction.getNumberOfReturnValues() == 0)
+							continue;
+
+						PointerKey resultKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(predecessor,
+								instruction.getReturnValue(0));
+
+						Set<TensorOrigin> origins = tensorTypedKeys.get(resultKey);
+
+						// Origins merge only where paths do, and an operation mixing an array with a tensor yields TensorFlow's, so a
+						// NumPy origin among others still means some path returns an array.
+						if (origins != null && Util.producerOrigins(origins).contains(TensorOrigin.NUMPY)) {
+							LOG.info(this + " returns a NumPy array to " + predecessor.getMethod().getSignature() + ".");
+							this.returnsNumpyArray = true;
+							return;
+						}
+					}
+			}
+	}
+
+	/**
+	 * True iff some call site receives a NumPy array from this function, {@code null} if undetermined.
+	 *
+	 * @return True iff tracing would turn the array a caller receives into a tensor, null if undetermined.
+	 */
+	public Boolean getReturnsNumpyArray() {
+		return this.returnsNumpyArray;
 	}
 
 	/**

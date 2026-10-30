@@ -12267,7 +12267,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * numpy operations ({@code np.zeros}, {@code np.array}) and no TensorFlow op. Because a numpy array is tensor-convertible, the analysis
 	 * types the numpy results as tensors too; {@link edu.cuny.hunter.hybridize.core.analysis.Util#performsTensorFlowOp} previously counted
 	 * any tensor-typed def as a tensor op and so misreported the function as computing, letting it hybridize. It now excludes tensor-typed
-	 * defs produced by numpy calls, so the benefit precondition (#709/#712) correctly declines the function as barren.
+	 * defs produced by numpy calls, so the function reads as barren (#709/#712). It is declined, and since it returns a NumPy array to its
+	 * caller, the failure it reports is {@link PreconditionFailure#RETURNS_NUMPY_ARRAY} (#1199), which precedes the benefit signal.
 	 * <p>
 	 * The {@code tensor_body} control performs a genuine {@code tf.reduce_sum} and must still be detected as computing.
 	 */
@@ -12279,9 +12280,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// A pure-numpy body performs no TensorFlow computation: the numpy results are tensor-typed but their defining calls are not tensor
 		// ops.
 		assertFalse("`numpy_body` performs no TensorFlow computation (pure numpy body).", numpyBody.getHasTensorComputation());
-		// So it is declined as barren rather than hybridized (#774).
-		assertNotNull("`numpy_body` fails with NO_TENSOR_COMPUTATION.",
-				numpyBody.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.NO_TENSOR_COMPUTATION.getCode()));
+		// It is declined rather than hybridized. It also returns a NumPy array to its caller, a safety failure that precedes the benefit
+		// signal (#1199), so that is the failure it reports.
+		assertNull("`numpy_body` does not convert.", numpyBody.getPassingPrecondition());
+		assertNotNull("`numpy_body` fails with RETURNS_NUMPY_ARRAY.",
+				numpyBody.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_NUMPY_ARRAY.getCode()));
 
 		// Control: a genuine TensorFlow op is still correctly detected as a tensor computation.
 		Function tensorBody = getFunction("tensor_body");
@@ -17460,6 +17463,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`proposals` combines no subscripted element of its NumPy argument.", FALSE,
 				proposals.getHasNumpyElementDtypeCoercions());
 		assertEquals("Today, `proposals` converts (P1).", P1, proposals.getPassingPrecondition());
+	}
+
+	/**
+	 * A function that returns a NumPy array to a caller refuses the conversion
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1199). The fixture reduces TensorFlow2.0-Examples'
+	 * {@code get_wh_from_boxes}, which slices and subtracts the array it is passed, and whose caller indexes the result with an integer
+	 * array: eagerly the result is an array, and traced it is a tensor, which that indexing rejects. {@code get_wh_from_boxes} is that
+	 * case. So are {@code mixed_wh}, one of whose two callers passes an array, and {@code either_wh}, one of whose two paths returns the
+	 * array. {@code tensor_wh} is passed a tensor, and {@code summed_wh}'s result comes from a TensorFlow operation, so each returns a
+	 * tensor eagerly too and is not refused. Each was run on TensorFlow 2.9.3, decorated and not.
+	 */
+	@Test
+	public void testNumpyReturn() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("get_wh_from_boxes", "mixed_wh", "either_wh")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` returns a NumPy array to a caller.", TRUE, function.getReturnsNumpyArray());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with RETURNS_NUMPY_ARRAY.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_NUMPY_ARRAY.getCode()));
+		}
+
+		for (String name : List.of("tensor_wh", "summed_wh")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` returns no NumPy array to a caller.", FALSE, function.getReturnsNumpyArray());
+			assertEquals("`" + name + "` converts (P1).", P1, function.getPassingPrecondition());
+		}
+
+		// FIXME: Decorated, `stacked_wh` raises as `get_wh_from_boxes` does, since `np.vstack` returns an array. The engine gives an
+		// `np.vstack` result a TensorFlow origin, so the result reads as a tensor. With the NumPy origin
+		// (https://github.com/wala/ML/issues/1180), it fails with RETURNS_NUMPY_ARRAY.
+		Function stacked = findFunction(functions, "stacked_wh");
+		assertEquals("Today, `stacked_wh` returns no NumPy array to a caller.", FALSE, stacked.getReturnsNumpyArray());
+		assertEquals("Today, `stacked_wh` converts (P1).", P1, stacked.getPassingPrecondition());
 	}
 
 	/**
