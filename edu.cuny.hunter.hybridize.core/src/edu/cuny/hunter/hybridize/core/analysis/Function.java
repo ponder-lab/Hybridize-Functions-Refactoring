@@ -4294,13 +4294,15 @@ public class Function {
 		try {
 			nodes = this.getNodes(callGraph);
 		} catch (CoreException e) {
-			// Undeterminable; leave null so the precondition does not block.
+			// Undeterminable; leave null so the precondition does not block. Untested: no fixture makes resolving the function's method
+			// reference fail.
 			LOG.warn("Can't determine whether " + this + " returns a NumPy array to a caller.", e);
 			return;
 		}
 
 		if (nodes.isEmpty()) {
-			// Undeterminable without a call-graph node; leave null so the precondition does not block.
+			// Undeterminable without a call-graph node; leave null so the precondition does not block. Untested: this runs only for a
+			// function with a tensor parameter, which the analysis can type only from a call-graph node.
 			LOG.info("Can't determine whether " + this + " returns a NumPy array to a caller without a call graph node.");
 			return;
 		}
@@ -4311,11 +4313,14 @@ public class Function {
 			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
 				IR ir = predecessor.getIR();
 
+				// A caller with no IR has no local to read. Untested: every caller the fixtures reach, program code or a library summary,
+				// has IR.
 				if (ir == null)
 					continue;
 
 				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
 					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						// Untested: every Python invoke defines its result, so this guards only against another instruction kind.
 						if (instruction.getNumberOfReturnValues() == 0)
 							continue;
 
