@@ -33,6 +33,11 @@ def either_wh(boxes, summed):
     return boxes[..., 2:4] - boxes[..., 0:2]
 
 
+def ident(boxes):
+    # Returns the array it is passed unchanged.
+    return boxes
+
+
 def stacked_wh(boxes):
     # Fed an `np.vstack` result, an ndarray at run time.
     return boxes[..., 2:4] - boxes[..., 0:2]
@@ -51,6 +56,8 @@ print(tensor_wh(tf.constant(boxes)))
 print(summed_wh(boxes))
 
 print(either_wh(boxes, len(sys.argv) > 1)[picks])
+
+print(ident(boxes)[picks])
 
 stacked = stacked_wh(np.vstack([boxes, boxes]))
 print(stacked[picks])

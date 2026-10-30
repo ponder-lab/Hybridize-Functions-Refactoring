@@ -17471,14 +17471,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code get_wh_from_boxes}, which slices and subtracts the array it is passed, and whose caller indexes the result with an integer
 	 * array: eagerly the result is an array, and traced it is a tensor, which that indexing rejects. {@code get_wh_from_boxes} is that
 	 * case. So are {@code mixed_wh}, one of whose two callers passes an array, and {@code either_wh}, one of whose two paths returns the
-	 * array. {@code tensor_wh} is passed a tensor, and {@code summed_wh}'s result comes from a TensorFlow operation, so each returns a
-	 * tensor eagerly too and is not refused. Each was run on TensorFlow 2.9.3, decorated and not.
+	 * array. So is {@code ident}, which returns the array unchanged. {@code tensor_wh} is passed a tensor, and {@code summed_wh}'s result
+	 * comes from a TensorFlow operation, so each returns a tensor eagerly too and is not refused. Each was run on TensorFlow 2.9.3,
+	 * decorated and not.
 	 */
 	@Test
 	public void testNumpyReturn() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String name : List.of("get_wh_from_boxes", "mixed_wh", "either_wh")) {
+		for (String name : List.of("get_wh_from_boxes", "mixed_wh", "either_wh", "ident")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "` returns a NumPy array to a caller.", TRUE, function.getReturnsNumpyArray());
 			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
