@@ -439,7 +439,19 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172">Issue 1172</a>
 	 */
-	MAY_BUILD_LAYERS(46);
+	MAY_BUILD_LAYERS(46),
+
+	/**
+	 * A call site receives a NumPy array from the function today: the engine gives the call's result a NumPy-only producing-library origin,
+	 * as for a function that slices and subtracts an array it is passed. Under {@code tf.function}, the array crosses the boundary as a
+	 * tensor and the result comes back as a tensor, so a caller that uses it as an array, such as by indexing it with an integer array,
+	 * raises a {@code TypeError}. The change in the result's type is visible to every such caller, so the conversion is refused whatever
+	 * the callers do with it. A call whose result is a tensor eagerly too, because the argument is one or a TensorFlow operation produced
+	 * the result, does not refuse.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1199">Issue 1199</a>
+	 */
+	RETURNS_NUMPY_ARRAY(47);
 
 	static {
 		// check that the codes are unique.

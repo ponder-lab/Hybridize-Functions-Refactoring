@@ -658,6 +658,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeNumpyElementDtypeCoercions(callGraph, analysis, builder.getPointerAnalysis(), tensorTypedKeys);
 
+				// Check whether a caller receives a NumPy array from the function (issue 1199). Same reachable region and gate; one
+				// origin lookup per call site's result.
+				if (barrenCouldDecide)
+					func.computeReturnsNumpyArray(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
+
 				// to a determinate pass when no signature would be emitted.
 				if (this.getAlwaysCheckStaticShapeReads() || barrenCouldDecide)
 					func.computeUnresolvedStaticallyReadAxes(callGraph, builder);
