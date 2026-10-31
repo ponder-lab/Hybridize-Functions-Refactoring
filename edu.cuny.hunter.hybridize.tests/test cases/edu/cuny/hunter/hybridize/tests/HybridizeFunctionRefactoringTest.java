@@ -17471,15 +17471,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code get_wh_from_boxes}, which slices and subtracts the array it is passed, and whose caller indexes the result with an integer
 	 * array: eagerly the result is an array, and traced it is a tensor, which that indexing rejects. {@code get_wh_from_boxes} is that
 	 * case. So are {@code mixed_wh}, one of whose two callers passes an array, and {@code either_wh}, one of whose two paths returns the
-	 * array. So is {@code ident}, which returns the array unchanged. {@code tensor_wh} is passed a tensor, and {@code summed_wh}'s result
-	 * comes from a TensorFlow operation, so each returns a tensor eagerly too and is not refused. Each was run on TensorFlow 2.9.3,
-	 * decorated and not.
+	 * array. So is {@code ident}, which returns the array unchanged, and {@code stacked_wh}, which returns the result of {@code np.vstack}.
+	 * {@code tensor_wh} is passed a tensor, and {@code summed_wh}'s result comes from a TensorFlow operation, so each returns a tensor
+	 * eagerly too and is not refused. Each was run on TensorFlow 2.9.3, decorated and not.
 	 */
 	@Test
 	public void testNumpyReturn() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String name : List.of("get_wh_from_boxes", "mixed_wh", "either_wh", "ident")) {
+		for (String name : List.of("get_wh_from_boxes", "mixed_wh", "either_wh", "ident", "stacked_wh")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "` returns a NumPy array to a caller.", TRUE, function.getReturnsNumpyArray());
 			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
@@ -17492,13 +17492,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("`" + name + "` returns no NumPy array to a caller.", FALSE, function.getReturnsNumpyArray());
 			assertEquals("`" + name + "` converts (P1).", P1, function.getPassingPrecondition());
 		}
-
-		// FIXME: Decorated, `stacked_wh` raises as `get_wh_from_boxes` does, since `np.vstack` returns an array. The engine gives an
-		// `np.vstack` result a TensorFlow origin, so the result reads as a tensor. With the NumPy origin
-		// (https://github.com/wala/ML/issues/1180), it fails with RETURNS_NUMPY_ARRAY.
-		Function stacked = findFunction(functions, "stacked_wh");
-		assertEquals("Today, `stacked_wh` returns no NumPy array to a caller.", FALSE, stacked.getReturnsNumpyArray());
-		assertEquals("Today, `stacked_wh` converts (P1).", P1, stacked.getPassingPrecondition());
 	}
 
 	/**
