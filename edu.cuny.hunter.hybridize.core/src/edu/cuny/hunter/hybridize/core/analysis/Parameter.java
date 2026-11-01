@@ -251,7 +251,8 @@ public final class Parameter {
 	 * Cache of {@link #datasetContainer}'s answers for each builder. Keyed by the builder so that cached answers are discarded when the
 	 * analysis is re-run. Each value maps a parameter's local to the dataset component's elements, or to nothing when the local is no
 	 * dataset component that is or may be a container. The engine computes each answer from scratch, and both the boolean container
-	 * question and the element extraction ask it of the same locals.
+	 * question and the element extraction ask it of the same locals. A worker asking for a local another worker is computing waits for that
+	 * answer rather than computing it again.
 	 */
 	private static Map<PythonSSAPropagationCallGraphBuilder, Map<PointerKey, Optional<ContainerElements>>> datasetContainersCache = Maps
 			.newConcurrentMap();
@@ -1584,5 +1585,15 @@ public final class Parameter {
 	public static void clearCaches() {
 		tensorContainersCache.clear();
 		datasetContainersCache.clear();
+	}
+
+	/**
+	 * Returns how many answers of whether a parameter's local is a dataset component that is or may be a container are cached, over every
+	 * builder.
+	 *
+	 * @return The number of cached answers.
+	 */
+	public static int getDatasetContainerAnswerCount() {
+		return datasetContainersCache.values().stream().mapToInt(Map::size).sum();
 	}
 }
