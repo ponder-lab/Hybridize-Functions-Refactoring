@@ -24,6 +24,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -245,6 +246,16 @@ public final class Parameter {
 	 * (Phase 3 of {@link #classifyAsTensor}).
 	 */
 	private static Map<TensorTypeAnalysis, Map<InstanceKey, Boolean>> tensorContainersCache = Maps.newConcurrentMap();
+
+	/**
+	 * Cache of {@link #datasetContainer}'s answers for each builder. Keyed by the builder so that cached answers are discarded when the
+	 * analysis is re-run. Each value maps a parameter's local to the dataset component's elements, or to nothing when the local is no
+	 * dataset component that is or may be a container. The engine computes each answer from scratch, and both the boolean container
+	 * question and the element extraction ask it of the same locals. A worker asking for a local another worker is computing waits for that
+	 * answer rather than computing it again.
+	 */
+	private static Map<PythonSSAPropagationCallGraphBuilder, Map<PointerKey, Optional<ContainerElements>>> datasetContainersCache = Maps
+			.newConcurrentMap();
 
 	/**
 	 * Package-private because {@link Parameter}s are only ever constructed inside {@link Function}'s constructor (same package).
@@ -842,14 +853,20 @@ public final class Parameter {
 	 *
 	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the value.
 	 * @param value The value, a parameter's local.
-	 * @return The component's elements, or {@code null} when the value is no dataset component that is or may be a container.
+	 * @return The component's elements, or {@code null} when the value is no dataset component that is or may be a container. Each answer
+	 *         is cached per builder.
 	 */
 	private static ContainerElements datasetContainer(PythonSSAPropagationCallGraphBuilder builder, PointerKey value) {
-		if (ContainerElements.datasetComponent(builder, value) == null)
-			return null;
+		Map<PointerKey, Optional<ContainerElements>> answers = datasetContainersCache.computeIfAbsent(builder,
+				k -> Maps.newConcurrentMap());
 
-		ContainerElements elements = ContainerElements.ofValue(builder, value);
-		return elements.arity().isPresent() || !elements.isComplete() ? elements : null;
+		return answers.computeIfAbsent(value, v -> {
+			if (ContainerElements.datasetComponent(builder, v) == null)
+				return Optional.empty();
+
+			ContainerElements elements = ContainerElements.ofValue(builder, v);
+			return elements.arity().isPresent() || !elements.isComplete() ? Optional.of(elements) : Optional.empty();
+		}).orElse(null);
 	}
 
 	/**
@@ -1567,5 +1584,16 @@ public final class Parameter {
 	 */
 	public static void clearCaches() {
 		tensorContainersCache.clear();
+		datasetContainersCache.clear();
+	}
+
+	/**
+	 * Returns how many answers of whether a parameter's local is a dataset component that is or may be a container are cached, over every
+	 * builder.
+	 *
+	 * @return The number of cached answers.
+	 */
+	public static int getDatasetContainerAnswerCount() {
+		return datasetContainersCache.values().stream().mapToInt(Map::size).sum();
 	}
 }
