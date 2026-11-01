@@ -16887,7 +16887,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.int32)]]",
 				call.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 
-		// Whether a parameter's local is a dataset component is asked once and kept until the caches are cleared.
+		// Whether a parameter's local is a dataset component is cached until the caches are cleared.
 		assertTrue("The dataset-component answers are cached.", Parameter.getDatasetContainerAnswerCount() > 0);
 		Function.clearCaches();
 		assertEquals("Clearing the caches drops the dataset-component answers.", 0, Parameter.getDatasetContainerAnswerCount());
