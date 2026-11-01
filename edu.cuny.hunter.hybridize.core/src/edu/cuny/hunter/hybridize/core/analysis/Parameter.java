@@ -861,11 +861,8 @@ public final class Parameter {
 				k -> Maps.newConcurrentMap());
 
 		return answers.computeIfAbsent(value, v -> {
-			if (ContainerElements.datasetComponent(builder, v) == null)
-				return Optional.empty();
-
-			ContainerElements elements = ContainerElements.ofValue(builder, v);
-			return elements.arity().isPresent() || !elements.isComplete() ? Optional.of(elements) : Optional.empty();
+			ContainerElements elements = ContainerElements.ofDatasetComponent(builder, v);
+			return elements != null && (elements.arity().isPresent() || !elements.isComplete()) ? Optional.of(elements) : Optional.empty();
 		}).orElse(null);
 	}
 
