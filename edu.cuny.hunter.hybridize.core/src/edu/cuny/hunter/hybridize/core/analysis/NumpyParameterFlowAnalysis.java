@@ -20,7 +20,6 @@ import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
-import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
@@ -31,7 +30,6 @@ import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
-import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
@@ -68,7 +66,7 @@ class NumpyParameterFlowAnalysis {
 	 * The (node, value number) index of the tensor-type analysis, consulted for the per-dimension shape staticness at a numpy-over-shape
 	 * sink.
 	 */
-	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
+	private final TensorTypeIndex tensorTypeIndex;
 
 	/** The scan memo (see {@link #scanForTaintedNumpySinks}), shared across the checked function's call-graph nodes. */
 	private final Map<String, NumpyScanResult> memo = new HashMap<>();
@@ -84,7 +82,7 @@ class NumpyParameterFlowAnalysis {
 	NumpyParameterFlowAnalysis(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, TensorTypeAnalysis tensorTypeAnalysis) {
 		this.callGraph = callGraph;
 		this.pointerAnalysis = pointerAnalysis;
-		this.tensorTypeIndex = indexTensorTypes(tensorTypeAnalysis);
+		this.tensorTypeIndex = TensorTypeIndex.of(tensorTypeAnalysis);
 	}
 
 	/** The {@code dtype} attribute: a trace-time-constant element type, so numpy over it is always safe (launders taint). */
@@ -176,30 +174,12 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/**
-	 * Indexes {@code tensorTypeAnalysis}'s local pointer keys by (node, value number) once, so per-value lookups
-	 * ({@link #lookupTensorTypes}) are constant-time rather than a full linear scan of the analysis per call. Build this once per function
-	 * (or project) and reuse it across the function's call-graph nodes rather than rebuilding per node.
-	 */
-	private static Map<CGNode, Map<Integer, Set<TensorType>>> indexTensorTypes(TensorTypeAnalysis tensorTypeAnalysis) {
-		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
-
-		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
-			if (pair.fst instanceof LocalPointerKey local && pair.snd != null)
-				// A None member is no tensor here; it matters only to the signature (wala/ML#1040).
-				pair.snd.getTypes().stream().filter(type -> !type.isNone())
-						.forEach(type -> index.computeIfAbsent(local.getNode(), n -> new HashMap<>())
-								.computeIfAbsent(local.getValueNumber(), v -> new HashSet<>()).add(type));
-
-		return index;
-	}
-
-	/**
 	 * The {@link TensorType}s the tensor-type analysis associates with the local {@code valueNumber} in {@code node}, from the (node, value
-	 * number) index built by {@link #indexTensorTypes}. Empty when the analysis has no tensor classification for the value (not analyzed,
-	 * or classified not-a-tensor).
+	 * number) index shared across functions ({@link TensorTypeIndex}). Empty when the analysis has no tensor classification for the value
+	 * (not analyzed, or classified not-a-tensor).
 	 */
 	private Set<TensorType> lookupTensorTypes(CGNode node, int valueNumber) {
-		return this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(valueNumber, Set.of());
+		return this.tensorTypeIndex.typesOf(node, valueNumber);
 	}
 
 	/**

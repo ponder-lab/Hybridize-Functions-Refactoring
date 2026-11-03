@@ -2,31 +2,25 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.Set;
 
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
-import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
-import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
-import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAInstruction;
-import com.ibm.wala.util.collections.Pair;
 
 /**
  * The analysis behind two preconditions on how a function's body uses a parameter-derived, tensor-typed value: whether it iterates the
@@ -63,8 +57,8 @@ import com.ibm.wala.util.collections.Pair;
  */
 class TensorIterationAnalysis {
 
-	/** The (node, value number) index of the tensor-type analysis, mirroring {@link NumpyParameterFlowAnalysis}'s index. */
-	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
+	/** The (node, value number) index of the tensor-type analysis, shared across functions. */
+	private final TensorTypeIndex tensorTypeIndex;
 
 	/** The pointer analysis, used to resolve the iterated value's producing callee for the {@code tf.range} exemption. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
@@ -79,16 +73,7 @@ class TensorIterationAnalysis {
 		this.builder = builder;
 		this.callGraph = builder.getCallGraph();
 		this.pointerAnalysis = builder.getPointerAnalysis();
-		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
-
-		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
-			if (pair.fst instanceof LocalPointerKey local && pair.snd != null)
-				// A None member is no tensor here; it matters only to the signature (wala/ML#1040).
-				pair.snd.getTypes().stream().filter(type -> !type.isNone())
-						.forEach(type -> index.computeIfAbsent(local.getNode(), n -> new HashMap<>())
-								.computeIfAbsent(local.getValueNumber(), v -> new HashSet<>()).add(type));
-
-		this.tensorTypeIndex = index;
+		this.tensorTypeIndex = TensorTypeIndex.of(tensorTypeAnalysis);
 	}
 
 	/**
@@ -270,7 +255,7 @@ class TensorIterationAnalysis {
 
 	/** True iff the tensor-type analysis types {@code value} in {@code node} as a tensor. */
 	private boolean isTensorTyped(CGNode node, int value) {
-		return !this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(value, Set.of()).isEmpty();
+		return !this.tensorTypeIndex.typesOf(node, value).isEmpty();
 	}
 
 	/**

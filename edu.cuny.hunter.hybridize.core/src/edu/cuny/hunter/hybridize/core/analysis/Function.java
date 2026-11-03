@@ -876,6 +876,7 @@ public class Function {
 		creationsCache.clear();
 		directModCache.clear();
 		Parameter.clearCaches();
+		TensorTypeIndex.clearCaches();
 		autoInjectedImportNames.clear();
 		fileInferredDTypeNames.clear();
 		fileInferredSpecTypeNames.clear();

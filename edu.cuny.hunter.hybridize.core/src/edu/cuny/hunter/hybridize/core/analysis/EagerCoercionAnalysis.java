@@ -1,7 +1,6 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -11,21 +10,17 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
-import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
-import com.ibm.wala.ipa.callgraph.propagation.LocalPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
-import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSABinaryOpInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
-import com.ibm.wala.util.collections.Pair;
 
 /**
  * The eager-coercion analysis behind the implicitly-cast NumPy argument hazard
@@ -123,24 +118,15 @@ class EagerCoercionAnalysis {
 					Set.of("name", "transpose_a", "transpose_b", "adjoint_a", "adjoint_b", "a_is_sparse", "b_is_sparse", "output_type")),
 			"matvec", new OperandShape(1, false, 5, Set.of("name", "transpose_a", "adjoint_a", "a_is_sparse", "b_is_sparse")));
 
-	/** The (node, value number) index of the tensor-type analysis, mirroring {@link TensorIterationAnalysis}'s index. */
-	private final Map<CGNode, Map<Integer, Set<TensorType>>> tensorTypeIndex;
+	/** The (node, value number) index of the tensor-type analysis, shared across functions. */
+	private final TensorTypeIndex tensorTypeIndex;
 
 	/** Resolves a callee's fully-qualified name, which is how an imposing call is told from a same-named method on anything else. */
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
 
 	EagerCoercionAnalysis(TensorTypeAnalysis tensorTypeAnalysis, PointerAnalysis<InstanceKey> pointerAnalysis) {
 		this.pointerAnalysis = pointerAnalysis;
-		Map<CGNode, Map<Integer, Set<TensorType>>> index = new HashMap<>();
-
-		for (Pair<PointerKey, TensorVariable> pair : tensorTypeAnalysis)
-			if (pair.fst instanceof LocalPointerKey local && pair.snd != null)
-				// A None member is no tensor here; it matters only to the signature (wala/ML#1040).
-				pair.snd.getTypes().stream().filter(type -> !type.isNone())
-						.forEach(type -> index.computeIfAbsent(local.getNode(), n -> new HashMap<>())
-								.computeIfAbsent(local.getValueNumber(), v -> new HashSet<>()).add(type));
-
-		this.tensorTypeIndex = index;
+		this.tensorTypeIndex = TensorTypeIndex.of(tensorTypeAnalysis);
 	}
 
 	/**
@@ -209,7 +195,7 @@ class EagerCoercionAnalysis {
 					continue;
 				}
 
-				Set<TensorType> partnerTypes = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(other, Set.of());
+				Set<TensorType> partnerTypes = this.tensorTypeIndex.typesOf(node, other);
 
 				for (TensorType partnerType : partnerTypes) {
 					DType dtype = partnerType.getDType();
@@ -248,8 +234,7 @@ class EagerCoercionAnalysis {
 		for (Iterator<SSAInstruction> uses = node.getDU().getUses(parameterValue); uses.hasNext();)
 			if (uses.next() instanceof PythonPropertyRead read && read.isSubscript() && read.getObjectRef() == parameterValue) {
 				int element = read.getDef();
-				Set<DType> own = this.tensorTypeIndex.getOrDefault(node, Map.of()).getOrDefault(element, Set.of()).stream()
-						.map(TensorType::getDType).collect(Collectors.toSet());
+				Set<DType> own = this.tensorTypeIndex.typesOf(node, element).stream().map(TensorType::getDType).collect(Collectors.toSet());
 
 				if (own.size() != 1 || own.contains(null) || own.contains(DType.UNKNOWN))
 					continue;

@@ -1249,23 +1249,22 @@ public final class Parameter {
 		Set<CGNode> excluded = this.function.getExpectedFailureNodes();
 		Map<CGNode, Set<TensorType>> byNode = new HashMap<>();
 
-		for (Pair<PointerKey, TensorVariable> pair : analysis) {
-			PointerKey pointerKey = pair.fst;
-			if (pointerKey instanceof LocalPointerKey) {
-				LocalPointerKey localPointerKey = (LocalPointerKey) pointerKey;
-				if (localPointerKey.isParameter() && this.matches(localPointerKey)) {
-					TensorVariable tensorVariable = pair.snd;
-					if (tensorVariable == null)
-						throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
-					result.addAll(tensorVariable.getTypes());
+		// Only a parameter of a method declared in this parameter's file can match it, so only those entries are read (#1027).
+		for (Pair<LocalPointerKey, TensorVariable> pair : TensorTypeIndex.of(analysis)
+				.parameterEntries(this.function.getContainingFile().getAbsolutePath())) {
+			LocalPointerKey localPointerKey = pair.fst;
+			if (this.matches(localPointerKey)) {
+				TensorVariable tensorVariable = pair.snd;
+				if (tensorVariable == null)
+					throw new IllegalStateException("Tensor variable was null even though the matching PointerKey is present.");
+				result.addAll(tensorVariable.getTypes());
 
-					// The evidence is per-node, so which node supplied what is the attribution an expected-failure exclusion needs
-					// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
-					if (!excluded.contains(localPointerKey.getNode()))
-						conforming.addAll(tensorVariable.getTypes());
+				// The evidence is per-node, so which node supplied what is the attribution an expected-failure exclusion needs
+				// (#888); unioning it away is what made a specification derivable from a call the callee is specified to reject.
+				if (!excluded.contains(localPointerKey.getNode()))
+					conforming.addAll(tensorVariable.getTypes());
 
-					byNode.computeIfAbsent(localPointerKey.getNode(), k -> new HashSet<>()).addAll(tensorVariable.getTypes());
-				}
+				byNode.computeIfAbsent(localPointerKey.getNode(), k -> new HashSet<>()).addAll(tensorVariable.getTypes());
 			}
 		}
 
