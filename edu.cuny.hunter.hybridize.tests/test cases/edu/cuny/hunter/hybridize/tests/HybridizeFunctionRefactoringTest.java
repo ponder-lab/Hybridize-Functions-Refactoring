@@ -17224,6 +17224,27 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume} receives each batch of a dataset of pairs, as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and each
+	 * element of a dataset mapped from it, which the engine doesn't model as an instance yet. The mapped element is not dropped: it reaches
+	 * the parameter beside the pair's instance as a value that is no container, so the form is unsupported and no specification is written.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetTupleMixed() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The parameter is a container of tensors.", TRUE, element.isTensorContainer());
+		assertNull("The mapped element leaves no element structure.", element.getContainerElementTypes());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+	}
+
+	/**
 	 * With {@code fit} on {@code ((x, mask), y)} and Keras's default train step, {@code call} receives one batch of each member of the
 	 * tuple inputs, {@code (2, 4)} and {@code (2, 3)}, and none of the targets. {@code consume} receives those inputs from {@code call}.
 	 * {@code consume_mixed} receives a tuple whose members differ in dtype.
