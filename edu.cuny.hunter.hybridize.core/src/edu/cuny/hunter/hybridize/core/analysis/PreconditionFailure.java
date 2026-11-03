@@ -315,11 +315,12 @@ public enum PreconditionFailure {
 	 * that assigns to the variable, compares its reference, or writes to the array fails or means something else. A {@code tf.TensorSpec}
 	 * passed as an argument, also inside a list, tuple, or dictionary, makes the call itself raise a {@code ValueError}, and a Python
 	 * {@code set} passed the same way makes it raise a {@code TypeError}, whatever the set holds, since {@code tf.function} can't build a
-	 * trace key for it. A variable used inside the body, or a tensor array stacked before it is returned, crosses nothing and is left
-	 * alone.
+	 * trace key for it. Only a set display or comprehension is seen, since a set built by calling {@code set} has no allocation yet. A
+	 * variable used inside the body, or a tensor array stacked before it is returned, crosses nothing and is left alone.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075">Issue 1075</a>
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184">Issue 1184</a>
+	 * @see <a href="https://github.com/wala/ML/issues/1202">wala/ML#1202</a>
 	 */
 	HAS_UNCROSSABLE_BOUNDARY_VALUES(36),
 

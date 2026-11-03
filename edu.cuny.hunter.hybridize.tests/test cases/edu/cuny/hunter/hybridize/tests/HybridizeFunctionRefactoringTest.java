@@ -15723,6 +15723,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184 for a function already hybrid: {@code scaled} is passed a
+	 * set of floats, so its call raises as written. It is left hybrid, since removing its decorator would make the call run instead, and a
+	 * warning says a caller passes it a set. {@code listed}, passed a list of tensors, is the control.
+	 */
+	@Test
+	public void testHybridFunctionPassedSet() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function scaled = findFunction(functions, "scaled");
+		assertFalse("`scaled` stays hybrid.", scaled.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+		assertEquals("`scaled` is warned about the set.", 1, getSetArgumentEntries(scaled).size());
+
+		Function listed = findFunction(functions, "listed");
+		assertEquals("`listed` isn't warned about a set.", 0, getSetArgumentEntries(listed).size());
+	}
+
+	private static List<RefactoringStatusEntry> getSetArgumentEntries(Function function) {
+		return Arrays.stream(function.getStatus().getEntries())
+				.filter(e -> e.getCode() == Information.SET_ARGUMENT.getCode() && e.getSeverity() == RefactoringStatus.WARNING).toList();
+	}
+
+	/**
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184 for a set built by calling {@code set}: {@code scaled} is
+	 * passed {@code set([1.0, 2.0])}, so its converted call raises a {@code TypeError} on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testCalledSetArgument() throws Exception {
+		Function scaled = findFunction(this.getFunctions(), "scaled");
+
+		// TODO: https://github.com/wala/ML/issues/1202. The engine has no summary for `set`, so the call's result has no allocation, the
+		// set
+		// isn't seen, and `scaled` converts. Flip to `assertSetArgumentRefused` once the call allocates a set.
+		assertEquals("`scaled` is passed nothing seen as uncrossable.", FALSE, scaled.getHasUncrossableBoundaryValues());
+		assertTrue("`scaled` is converted.", scaled.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+	}
+
+	/**
 	 * Asserts that each named function is refused with {@link PreconditionFailure#HAS_UNCROSSABLE_BOUNDARY_VALUES} for the set a call site
 	 * passes it, and not as a function with a primitive parameter.
 	 *

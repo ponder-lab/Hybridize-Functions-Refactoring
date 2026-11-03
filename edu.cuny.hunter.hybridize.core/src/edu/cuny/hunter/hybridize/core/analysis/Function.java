@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
 import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.SET_ARGUMENT;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.UNRESOLVED_DECORATOR;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
@@ -3687,6 +3688,31 @@ public class Function {
 	 */
 	public Boolean getHasKerasSymbolicArguments() {
 		return this.hasKerasSymbolicArguments;
+	}
+
+	/**
+	 * Warns, with {@link Information#SET_ARGUMENT}, when a caller passes this hybrid {@link Function} a set, directly or inside a list,
+	 * tuple, or dictionary. {@code tf.function} can't build a trace key for a set, so every such call raises whatever the set holds. The
+	 * function is left as it is, since removing its decorator would make a call that raises run instead. Nothing is reported when the
+	 * function has no call-graph node or a caller can't be examined. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184.
+	 *
+	 * @param callGraph The call graph, walked in the caller direction for the arguments.
+	 * @param builder The call-graph builder, whose pointer analysis resolves the arguments and their elements.
+	 */
+	public void checkSetArguments(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			LOG.warn("Can't determine whether " + this + " is passed a set.", e);
+			return;
+		}
+
+		if (!nodes.isEmpty() && TRUE.equals(new UncrossableBoundaryValueAnalysis(builder).passesSet(nodes, callGraph)))
+			this.addWarning(SET_ARGUMENT, "A caller passes this hybrid function a set, which tf.function can't build a trace key for, so "
+					+ "each such call raises a TypeError.");
 	}
 
 	/**
