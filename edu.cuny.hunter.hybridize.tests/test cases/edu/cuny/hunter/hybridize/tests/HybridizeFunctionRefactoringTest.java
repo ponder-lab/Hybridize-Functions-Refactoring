@@ -17094,6 +17094,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume} receives each batch of a dataset of pairs, a float32 and an int32 tensor, by iterating it. The engine models such an
+	 * element as a tuple instance whose members are objects of their own (wala/ML#1190), so the parameter is read as a container through
+	 * what it points to, like any other tuple, and the dataset-component query is not asked.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetTuple() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The pair is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// A container instance reaches the parameter, so its elements are read from that instance alone.
+		assertEquals("The dataset-component query is not asked.", 0, Parameter.getDatasetContainerAnswerCount());
+	}
+
+	/**
 	 * With {@code fit} on {@code ((x, mask), y)} and Keras's default train step, {@code call} receives one batch of each member of the
 	 * tuple inputs, {@code (2, 4)} and {@code (2, 3)}, and none of the targets. {@code consume} receives those inputs from {@code call}.
 	 * {@code consume_mixed} receives a tuple whose members differ in dtype.
