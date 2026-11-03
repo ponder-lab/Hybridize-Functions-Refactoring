@@ -2270,6 +2270,10 @@ public class Function {
 	 * A function that calls a graph-only API ({@link #getHasGraphOnlyCalls()}) is kept hybrid with
 	 * {@link PreconditionFailure#HAS_GRAPH_ONLY_CALLS} before either, whichever hybrid-to-eager rule selected the conversion, since running
 	 * the call eagerly breaks it (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171).
+	 * <p>
+	 * A function a caller passes a set ({@link #checkSetArguments}) is left hybrid as well, with no failure, since each such call raises
+	 * and removing the decorator would make it run instead; its {@link Information#SET_ARGUMENT} warning says why
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184).
 	 *
 	 * @param precondition The precondition the conversion passes when it is selected.
 	 */
@@ -2282,6 +2286,10 @@ public class Function {
 							+ "or an optimizer's get_gradients; eagerly, it raises or returns None gradients.");
 		else if (this.getHybridizationParameters().hasInputSignatureParam())
 			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE, getSuppliedInputSignatureMessage(precondition));
+		else if (TRUE.equals(this.hasSetArguments))
+			// A caller passes a set, so each such call raises; removing the decorator would make it run instead, which no refactoring may
+			// do. The function is left hybrid, and the SET_ARGUMENT warning says why (issue 1184).
+			LOG.info(this + " is passed a set, so it is not de-hybridized by " + precondition + ".");
 		else {
 			this.addTransformation(CONVERT_TO_EAGER);
 			this.setPassingPrecondition(precondition);
@@ -3693,8 +3701,8 @@ public class Function {
 	/**
 	 * Warns, with {@link Information#SET_ARGUMENT}, when a caller passes this hybrid {@link Function} a set, directly or inside a list,
 	 * tuple, or dictionary. {@code tf.function} can't build a trace key for a set, so every such call raises whatever the set holds. The
-	 * function is left as it is, since removing its decorator would make a call that raises run instead. Nothing is reported when the
-	 * function has no call-graph node or a caller can't be examined. See
+	 * function is then never de-hybridized ({@link #convertToEagerUnlessSignatureSupplied}), since removing its decorator would make a call
+	 * that raises run instead. Nothing is reported when the function has no call-graph node or a caller can't be examined. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184.
 	 *
 	 * @param callGraph The call graph, walked in the caller direction for the arguments.
@@ -3710,10 +3718,21 @@ public class Function {
 			return;
 		}
 
-		if (!nodes.isEmpty() && TRUE.equals(new UncrossableBoundaryValueAnalysis(builder).passesSet(nodes, callGraph)))
+		if (nodes.isEmpty())
+			return;
+
+		this.hasSetArguments = new UncrossableBoundaryValueAnalysis(builder).passesSet(nodes, callGraph);
+
+		if (TRUE.equals(this.hasSetArguments))
 			this.addWarning(SET_ARGUMENT, "A caller passes this hybrid function a set, which tf.function can't build a trace key for, so "
 					+ "each such call raises a TypeError.");
 	}
+
+	/**
+	 * True iff a caller passes this hybrid {@link Function} a set, {@code null} if undetermined or not checked. Set by
+	 * {@link #checkSetArguments}; a function it is true of is never de-hybridized (issue 1184).
+	 */
+	private Boolean hasSetArguments;
 
 	/**
 	 * Computes whether a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged

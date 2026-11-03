@@ -15723,17 +15723,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184 for a function already hybrid: {@code scaled} is passed a
-	 * set of floats, so its call raises as written. It is left hybrid, since removing its decorator would make the call run instead, and a
-	 * warning says a caller passes it a set. {@code listed}, passed a list of tensors, is the control.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184 for functions already hybrid and passed a set of floats, so
+	 * each call raises as written. Each is left hybrid, since removing its decorator would make the call run instead, and a warning says a
+	 * caller passes it a set. {@code scaled} computes with a tensor parameter; {@code counted} has no tensor parameter, which P2 would
+	 * otherwise de-hybridize; and {@code barren} performs no tensor computation, which P6 would. {@code listed}, passed a list of tensors,
+	 * is the control.
 	 */
 	@Test
 	public void testHybridFunctionPassedSet() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		Function scaled = findFunction(functions, "scaled");
-		assertFalse("`scaled` stays hybrid.", scaled.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
-		assertEquals("`scaled` is warned about the set.", 1, getSetArgumentEntries(scaled).size());
+		for (String identifier : List.of("scaled", "counted", "barren")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` stays hybrid.", function.getTransformations().contains(Transformation.CONVERT_TO_EAGER));
+			assertEquals("`" + identifier + "` is warned about the set.", 1, getSetArgumentEntries(function).size());
+		}
 
 		Function listed = findFunction(functions, "listed");
 		assertEquals("`listed` isn't warned about a set.", 0, getSetArgumentEntries(listed).size());
