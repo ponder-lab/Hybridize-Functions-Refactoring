@@ -3,6 +3,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 import static com.ibm.wala.cast.python.util.Util.getAllocationSiteInNode;
 import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.INPUT_SIGNATURE_INFERENCE;
+import static edu.cuny.hunter.hybridize.core.analysis.Information.SET_ARGUMENT;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.SPECULATIVE_ANALYSIS;
 import static edu.cuny.hunter.hybridize.core.analysis.Information.UNRESOLVED_DECORATOR;
 import static edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure.HAS_PRIMITIVE_PARAMETERS;
@@ -909,11 +910,11 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a list, a tuple, a dict or a
-	 * set with an element that takes one on. Any other object is keyed by {@code tf.function} by its identity, so its fields are not
-	 * examined (#1048). That includes an object of a library class that Ariadne models, which is keyed by its identity too (#1047), such as
-	 * a tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar
-	 * type (wala/ML#1148), counts wherever a constant does.
+	 * Returns true iff the given {@link InstanceKey} takes on primitive values: it is a primitive constant, or a list, a tuple or a dict
+	 * with an element that takes one on. Any other object is keyed by {@code tf.function} by its identity, so its fields are not examined
+	 * (#1048). That includes an object of a library class that Ariadne models, which is keyed by its identity too (#1047), such as a
+	 * tensor, whatever {@code int} it was built from (wala/ML#451). A Python scalar of unknown value, the engine's one key per scalar type
+	 * (wala/ML#1148), counts wherever a constant does.
 	 *
 	 * @param instanceKey The {@link InstanceKey} in question.
 	 * @param ignoreBooleans True iff boolean values should not be considered.
@@ -947,7 +948,7 @@ public class Function {
 			IClass concreteType = instanceKeyToProcess.concreteType();
 
 			// `tf.function` keys a list, a tuple or a dict by its contents but any other object by its identity, so a primitive field of
-			// such an object never causes a retrace (#1048). Only the elements of a list, a tuple, a dict or a set are examined. That
+			// such an object never causes a retrace (#1048). Only the elements of a list, a tuple or a dict are examined. That
 			// covers an object of a library class that Ariadne models too, such as an optimizer whose model stores its learning rate
 			// (#1047).
 			if (!isKeyedByContents(concreteType)) {
@@ -1026,15 +1027,16 @@ public class Function {
 	 * True iff {@code tf.function} keys an argument of the given class by its contents rather than by its identity: the class is a list, a
 	 * tuple or a dict, as the engine's types decide. An object of any other class is keyed by its identity, so its fields never enter the
 	 * trace key (https://www.tensorflow.org/guide/function#rules_of_tracing). Of the engine's other containers, an {@code enumerate} object
-	 * is keyed by its identity. A set is included as a safe stand-in: {@code tf.function} can't key a set at all, and examining its
-	 * elements at least gets a primitive element refused.
+	 * is keyed by its identity. A set isn't keyed at all: passing one makes the call raise, whatever it holds, which
+	 * {@link PreconditionFailure#HAS_UNCROSSABLE_BOUNDARY_VALUES} refuses on its own
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184), so its elements aren't examined here.
 	 *
 	 * @param type The class in question.
-	 * @return True iff the given class is a list, a tuple, a dict or a set.
+	 * @return True iff the given class is a list, a tuple or a dict.
 	 */
 	private static boolean isKeyedByContents(IClass type) {
 		TypeReference reference = type.getReference();
-		return Util.isSequenceType(reference) || PythonTypes.dict.equals(reference) || PythonTypes.set.equals(reference);
+		return Util.isSequenceType(reference) || PythonTypes.dict.equals(reference);
 	}
 
 	/**
@@ -1320,9 +1322,10 @@ public class Function {
 
 	/**
 	 * True iff a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged: a returned
-	 * {@code tf.Variable} or {@code tf.TensorArray}, which is converted to a tensor, or a {@code tf.TensorSpec} a call site passes, which
-	 * makes the call raise, directly or inside a list, tuple, or dictionary. {@code null} when it could not be determined, in which case
-	 * the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
+	 * {@code tf.Variable} or {@code tf.TensorArray}, which is converted to a tensor, or a {@code tf.TensorSpec} or a set a call site
+	 * passes, which makes the call raise, directly or inside a list, tuple, or dictionary. {@code null} when it could not be determined, in
+	 * which case the precondition does not block. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184.
 	 */
 	private Boolean hasUncrossableBoundaryValues;
 
@@ -1749,11 +1752,11 @@ public class Function {
 												+ "KerasTensor, so the decorator raises before anything is traced.");
 							else if (this.getHasUncrossableBoundaryValues() != null && this.getHasUncrossableBoundaryValues())
 								// A returned variable or tensor array is converted to a tensor at the tf.function boundary, losing its
-								// identity and mutability, and a passed tensor spec makes the call raise (issue 1075). A safety failure;
-								// it precedes the benefit signal.
+								// identity and mutability, and a passed tensor spec or set makes the call raise (issues 1075 and 1184). A
+								// safety failure; it precedes the benefit signal.
 								this.addFailure(PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES,
 										"Can't hybridize a function that returns a tf.Variable or tf.TensorArray, which tf.function "
-												+ "converts to a tensor, or is passed a tf.TensorSpec, which makes the call raise.");
+												+ "converts to a tensor, or is passed a tf.TensorSpec or a set, which makes the call raise.");
 							else if (this.getHasReboundStateReads() != null && this.getHasReboundStateReads())
 								// Reads a tensor or a Python scalar from a field another function rebinds between calls, so a trace
 								// keeps the value the field held when it was traced (issues 1076 and 1048). A safety failure; it
@@ -2268,6 +2271,10 @@ public class Function {
 	 * A function that calls a graph-only API ({@link #getHasGraphOnlyCalls()}) is kept hybrid with
 	 * {@link PreconditionFailure#HAS_GRAPH_ONLY_CALLS} before either, whichever hybrid-to-eager rule selected the conversion, since running
 	 * the call eagerly breaks it (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1171).
+	 * <p>
+	 * A function a caller passes a set ({@link #checkSetArguments}) is left hybrid as well, with no failure, since each such call raises
+	 * and removing the decorator would make it run instead; its {@link Information#SET_ARGUMENT} warning says why
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184).
 	 *
 	 * @param precondition The precondition the conversion passes when it is selected.
 	 */
@@ -2280,6 +2287,10 @@ public class Function {
 							+ "or an optimizer's get_gradients; eagerly, it raises or returns None gradients.");
 		else if (this.getHybridizationParameters().hasInputSignatureParam())
 			this.addFailure(PreconditionFailure.HAS_SUPPLIED_INPUT_SIGNATURE, getSuppliedInputSignatureMessage(precondition));
+		else if (TRUE.equals(this.hasSetArguments))
+			// A caller passes a set, so each such call raises; removing the decorator would make it run instead, which no refactoring may
+			// do. The function is left hybrid, and the SET_ARGUMENT warning says why (issue 1184).
+			LOG.info(this + " is passed a set, so it is not de-hybridized by " + precondition + ".");
 		else {
 			this.addTransformation(CONVERT_TO_EAGER);
 			this.setPassingPrecondition(precondition);
@@ -3689,6 +3700,42 @@ public class Function {
 	}
 
 	/**
+	 * Warns, with {@link Information#SET_ARGUMENT}, when a caller passes this hybrid {@link Function} a set, directly or inside a list,
+	 * tuple, or dictionary. {@code tf.function} can't build a trace key for a set, so every such call raises whatever the set holds. The
+	 * function is then never de-hybridized ({@link #convertToEagerUnlessSignatureSupplied}), since removing its decorator would make a call
+	 * that raises run instead. Nothing is reported when the function has no call-graph node or a caller can't be examined. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184.
+	 *
+	 * @param callGraph The call graph, walked in the caller direction for the arguments.
+	 * @param builder The call-graph builder, whose pointer analysis resolves the arguments and their elements.
+	 */
+	public void checkSetArguments(CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder) {
+		Set<CGNode> nodes;
+
+		try {
+			nodes = this.getNodes(callGraph);
+		} catch (CoreException e) {
+			LOG.warn("Can't determine whether " + this + " is passed a set.", e);
+			return;
+		}
+
+		if (nodes.isEmpty())
+			return;
+
+		this.hasSetArguments = new UncrossableBoundaryValueAnalysis(builder).passesSet(nodes, callGraph);
+
+		if (TRUE.equals(this.hasSetArguments))
+			this.addWarning(SET_ARGUMENT, "A caller passes this hybrid function a set, which tf.function can't build a trace key for, so "
+					+ "each such call raises a TypeError.");
+	}
+
+	/**
+	 * True iff a caller passes this hybrid {@link Function} a set, {@code null} if undetermined or not checked. Set by
+	 * {@link #checkSetArguments}; a function it is true of is never de-hybridized (issue 1184).
+	 */
+	private Boolean hasSetArguments;
+
+	/**
 	 * Computes whether a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged
 	 * ({@link UncrossableBoundaryValueAnalysis}), storing the result for {@link #getHasUncrossableBoundaryValues()}. A determinate
 	 * {@code TRUE} from either side, the returns or the call sites, decides it; otherwise ignorance on either side leaves it undetermined.
@@ -3739,7 +3786,7 @@ public class Function {
 	 * True iff a value crossing this {@link Function}'s {@code tf.function} boundary does not cross it unchanged, {@code null} if
 	 * undetermined (issue 1075).
 	 *
-	 * @return True iff this function returns a variable or tensor array, or is passed a tensor spec, null if undetermined.
+	 * @return True iff this function returns a variable or tensor array, or is passed a tensor spec or a set, null if undetermined.
 	 */
 	public Boolean getHasUncrossableBoundaryValues() {
 		return this.hasUncrossableBoundaryValues;

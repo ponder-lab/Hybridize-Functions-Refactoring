@@ -8,6 +8,7 @@ import java.util.function.Predicate;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.client.ContainerElements;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
+import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
@@ -28,13 +29,16 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * identity and mutability are lost, so a caller that assigns to it, or compares its {@code ref()}, fails.
  * <li>A returned {@code tf.TensorArray} is converted to a tensor, so a caller that writes to it fails.
  * <li>A {@code tf.TensorSpec} passed as an argument makes the call itself raise a {@code ValueError}.
+ * <li>A Python {@code set} passed as an argument makes the call itself raise a {@code TypeError}, whatever the set holds, since
+ * {@code tf.function} can't build a trace key for a set (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184). Only a
+ * set display or comprehension is seen; a set built by calling {@code set} has no allocation yet (https://github.com/wala/ML/issues/1202).
  * </ul>
  * Each is decided from the points-to sets Ariadne computes, by the type of the allocation reached: its summaries allocate a variable, a
- * tensor array, and a tensor spec under types of their own, distinct from the module objects that construct them. A value inside a returned
- * or passed list, tuple, or dictionary crosses the boundary too, since {@code tf.function} flattens these structures, so the walk follows
- * container elements, transitively, through the element keys the engine lists for each container. It follows nothing else: an arbitrary
- * object cannot be returned from {@code tf.function} at all. A named tuple is flattened like a tuple, but Ariadne types its instance as its
- * class rather than as a container, so a variable inside one is missed.
+ * tensor array, and a tensor spec under types of their own, distinct from the module objects that construct them, and a set is allocated
+ * under the engine's set type. A value inside a returned or passed list, tuple, or dictionary crosses the boundary too, since
+ * {@code tf.function} flattens these structures, so the walk follows container elements, transitively, through the element keys the engine
+ * lists for each container. It follows nothing else: an arbitrary object cannot be returned from {@code tf.function} at all. A named tuple
+ * is flattened like a tuple, but Ariadne types its instance as its class rather than as a container, so a variable inside one is missed.
  * <p>
  * The return side asks what the function's own body returns, and the argument side what its callers pass, examining the arguments at each
  * call site of the function's call-graph predecessors. Across returns and call sites the quantifier is existential: one return of a
@@ -56,8 +60,30 @@ class UncrossableBoundaryValueAnalysis {
 	private static final Set<String> UNCROSSABLE_RETURN_TYPE_NAMES = Set.of("Ltensorflow/python/ops/variables/Variable",
 			"Ltensorflow/python/ops/tensor_array_ops/TensorArray");
 
-	/** The allocation type of the argument values that make the call raise: what Ariadne's {@code tf.TensorSpec} summary allocates. */
+	/**
+	 * The allocation type of the tensor-spec argument values that make the call raise: what Ariadne's {@code tf.TensorSpec} summary
+	 * allocates.
+	 */
 	private static final Set<String> UNCROSSABLE_ARGUMENT_TYPE_NAMES = Set.of("Ltensorflow/framework/TensorSpec");
+
+	/**
+	 * The predicate an argument value that makes the call raise satisfies: a tensor spec, or a set of the engine's set type, which
+	 * {@code tf.function} can't key whatever it holds (issue 1184).
+	 */
+	private static final Predicate<InstanceKey> UNCROSSABLE_ARGUMENT = hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)
+			.or(UncrossableBoundaryValueAnalysis::isSet);
+
+	/**
+	 * True iff the given value is a set of the engine's set type. Only a set display or comprehension is allocated so; a set built by
+	 * calling {@code set} has no allocation yet.
+	 *
+	 * @param instanceKey The value in question.
+	 * @return True iff the value is a set.
+	 * @see <a href="https://github.com/wala/ML/issues/1202">wala/ML#1202</a>
+	 */
+	private static boolean isSet(InstanceKey instanceKey) {
+		return PythonTypes.set.equals(instanceKey.concreteType().getReference());
+	}
 
 	private final PythonSSAPropagationCallGraphBuilder builder;
 
@@ -128,18 +154,43 @@ class UncrossableBoundaryValueAnalysis {
 	 *
 	 * @param nodes The call-graph nodes of the function in question.
 	 * @param callGraph The call graph, queried in the caller direction.
-	 * @return {@code TRUE} if some call site passes a tensor spec, {@code FALSE} if every examined call site passes none, or {@code null}
-	 *         if a caller could not be examined at all.
+	 * @return {@code TRUE} if some call site passes a tensor spec or a set, {@code FALSE} if every examined call site passes neither, or
+	 *         {@code null} if a caller could not be examined at all.
 	 */
 	Boolean passesUncrossableArgument(Set<CGNode> nodes, CallGraph callGraph) {
+		return this.passesArgument(nodes, callGraph, UNCROSSABLE_ARGUMENT);
+	}
+
+	/**
+	 * Whether some call site of {@code nodes} passes a set, directly or inside a list, tuple, or dictionary (issue 1184).
+	 *
+	 * @param nodes The call-graph nodes of the function in question.
+	 * @param callGraph The call graph, queried in the caller direction.
+	 * @return {@code TRUE} if some call site passes a set, {@code FALSE} if no examined call site does, or {@code null} if a caller could
+	 *         not be examined at all.
+	 */
+	Boolean passesSet(Set<CGNode> nodes, CallGraph callGraph) {
+		return this.passesArgument(nodes, callGraph, UncrossableBoundaryValueAnalysis::isSet);
+	}
+
+	/**
+	 * Whether some call site of {@code nodes} passes a value satisfying {@code target}, directly or inside a list, tuple, or dictionary.
+	 *
+	 * @param nodes The call-graph nodes of the function in question.
+	 * @param callGraph The call graph, queried in the caller direction.
+	 * @param target The values sought.
+	 * @return {@code TRUE} if some call site passes such a value, {@code FALSE} if no examined call site does, or {@code null} if a caller
+	 *         could not be examined at all.
+	 */
+	private Boolean passesArgument(Set<CGNode> nodes, CallGraph callGraph, Predicate<InstanceKey> target) {
 		return anyCallSite(nodes, callGraph, (predecessor, invoke) -> {
 			// Positional slot 0 is the callee itself; the arguments start at 1.
 			for (int slot = 1; slot < invoke.getNumberOfPositionalParameters(); slot++)
-				if (this.reaches(predecessor, invoke.getUse(slot), hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)))
+				if (this.reaches(predecessor, invoke.getUse(slot), target))
 					return true;
 
 			for (String keyword : invoke.getKeywords())
-				if (this.reaches(predecessor, invoke.getUse(keyword), hasTypeIn(UNCROSSABLE_ARGUMENT_TYPE_NAMES)))
+				if (this.reaches(predecessor, invoke.getUse(keyword), target))
 					return true;
 
 			return false;

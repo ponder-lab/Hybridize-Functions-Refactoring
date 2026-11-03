@@ -693,6 +693,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				if (barrenCouldDecide)
 					func.computeUncrossableBoundaryValues(callGraph, builder);
 
+				// A hybrid function a caller passes a set raises on every such call, which no conversion of it would preserve, so it is
+				// only warned about (issue 1184).
+				if (TRUE.equals(func.isHybrid()))
+					func.checkSetArguments(callGraph, builder);
+
 				// Check whether a shape known only as a tensor value crosses the boundary, inbound or outbound, which tracing loses. Same
 				// reachable region and gate; a def-use walk over the function and the user functions it calls.
 				if (barrenCouldDecide)

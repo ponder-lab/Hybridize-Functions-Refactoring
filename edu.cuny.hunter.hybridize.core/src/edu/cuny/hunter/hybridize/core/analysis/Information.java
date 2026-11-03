@@ -34,7 +34,15 @@ public enum Information {
 	 * precondition failure, since some such lookups fail legitimately and repeatably (e.g., an ambiguous user decorator); see
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1121.
 	 */
-	UNRESOLVED_DECORATOR(5);
+	UNRESOLVED_DECORATOR(5),
+
+	/**
+	 * A hybrid function's callers pass it a set, which {@code tf.function} can't build a trace key for, so every such call raises a
+	 * {@code TypeError} whatever the set holds. The function is left hybrid, since removing the decorator would make a call that raises run
+	 * instead. Carried at {@link org.eclipse.ltk.core.refactoring.RefactoringStatus#WARNING}; see
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184.
+	 */
+	SET_ARGUMENT(6);
 
 	static {
 		// check that the codes are unique.
