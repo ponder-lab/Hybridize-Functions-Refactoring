@@ -870,6 +870,23 @@ public final class Parameter {
 	}
 
 	/**
+	 * True iff some value the given local points to is a container instance. A dataset element the engine models as an instance, such as
+	 * one of {@code from_tensor_slices} (wala/ML#1190), is read through that instance like any other container, so the dataset-component
+	 * query is asked only of a local no container instance reaches.
+	 *
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the value.
+	 * @param value The value, a parameter's local.
+	 * @return True iff a container instance reaches the local.
+	 */
+	private static boolean pointsToContainer(PythonSSAPropagationCallGraphBuilder builder, PointerKey value) {
+		for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(value))
+			if (Util.isContainerType(instanceKey.concreteType().getReference()))
+				return true;
+
+		return false;
+	}
+
+	/**
 	 * True iff the parameter at {@code paramInx} has an abstract value in at least one of {@code nodes}, that is, its points-to set is
 	 * non-empty somewhere. When it has none, the analysis models nothing of what arrives, so an empty tensor-type result says nothing about
 	 * whether the argument is a tensor.
@@ -927,11 +944,6 @@ public final class Parameter {
 
 			PointerKey paramePointerKey = builder.getPointerKeyForLocal(node, param);
 
-			if (datasetContainer(builder, paramePointerKey) != null) {
-				progress.done();
-				return true;
-			}
-
 			Iterable<InstanceKey> paramPointsToSet = builder.getPointerAnalysis().getPointsToSet(paramePointerKey);
 
 			for (InstanceKey instanceKey : paramPointsToSet)
@@ -939,6 +951,11 @@ public final class Parameter {
 					progress.done();
 					return true;
 				}
+
+			if (!pointsToContainer(builder, paramePointerKey) && datasetContainer(builder, paramePointerKey) != null) {
+				progress.done();
+				return true;
+			}
 
 			loopProgress.worked(1);
 		}
@@ -1054,9 +1071,10 @@ public final class Parameter {
 
 			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(paramInx));
 
-			// A dataset component that is or may be a tuple arrives here as no container instance, so the value itself is the container.
-			// What its local points to stands for no element of it, so it is not read.
-			ContainerElements component = datasetContainer(builder, pointerKey);
+			// A dataset component that is or may be a tuple, from a producer whose elements the engine doesn't model as instances, arrives
+			// here as no container instance, so the value itself is the container. What its local points to stands for no element of it,
+			// so it is not read.
+			ContainerElements component = pointsToContainer(builder, pointerKey) ? null : datasetContainer(builder, pointerKey);
 
 			if (component != null) {
 				elementsOf.put(pointerKey, component);
