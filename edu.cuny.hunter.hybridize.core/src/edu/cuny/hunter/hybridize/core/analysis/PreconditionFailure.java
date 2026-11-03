@@ -313,10 +313,13 @@ public enum PreconditionFailure {
 	 * level or inside a returned list, tuple, or dictionary, is converted to a tensor holding its value, and a returned
 	 * {@code tf.TensorArray} to a tensor. The conversion raises nothing, but the eager object's identity and mutability are lost: a caller
 	 * that assigns to the variable, compares its reference, or writes to the array fails or means something else. A {@code tf.TensorSpec}
-	 * passed as an argument, also inside a list, tuple, or dictionary, makes the call itself raise a {@code ValueError}. A variable used
-	 * inside the body, or a tensor array stacked before it is returned, crosses nothing and is left alone.
+	 * passed as an argument, also inside a list, tuple, or dictionary, makes the call itself raise a {@code ValueError}, and a Python
+	 * {@code set} passed the same way makes it raise a {@code TypeError}, whatever the set holds, since {@code tf.function} can't build a
+	 * trace key for it. A variable used inside the body, or a tensor array stacked before it is returned, crosses nothing and is left
+	 * alone.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075">Issue 1075</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184">Issue 1184</a>
 	 */
 	HAS_UNCROSSABLE_BOUNDARY_VALUES(36),
 

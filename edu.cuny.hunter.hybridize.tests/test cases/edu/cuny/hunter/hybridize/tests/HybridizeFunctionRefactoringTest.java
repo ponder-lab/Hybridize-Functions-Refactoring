@@ -8017,10 +8017,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * {@code tf.function} keys an object of a program-defined class or an {@code enumerate} object by its identity and a list, a tuple or a
-	 * dict by its contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). It can't key a set at all, whose
-	 * elements are still examined. {@code boxed}'s object and {@code boxes}'s list of objects have an {@code int} field that differs across
-	 * calls, which never causes a retrace, so neither is a primitive parameter. {@code listed}'s list, {@code tupled}'s tuple and
-	 * {@code keyed}'s dict have an {@code int} element that differs across calls, a retrace each, so each is.
+	 * dict by its contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). It can't key a set at all, which is
+	 * refused on its own (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184). {@code boxed}'s object and
+	 * {@code boxes}'s list of objects have an {@code int} field that differs across calls, which never causes a retrace, so neither is a
+	 * primitive parameter. {@code listed}'s list, {@code tupled}'s tuple and {@code keyed}'s dict have an {@code int} element that differs
+	 * across calls, a retrace each, so each is.
 	 */
 	@Test
 	public void testIdentityKeyedObjectParameter() throws Exception {
@@ -8050,13 +8051,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("enumerated's enumerate object reads as a list of ints.", TRUE, enumerated.getHasPrimitiveParameter());
 		assertFalse("enumerated isn't converted.", enumerated.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 
-		// `tf.function` can't key a set argument at all and raises a `TypeError`. A set's elements are still examined as a safe stand-in,
-		// so `setted`'s int element gets it refused, as before the identity rule.
-		// TODO: Whether a set argument should get a refusal of its own is an open question.
+		// `tf.function` can't key a set argument at all and raises a `TypeError`, whatever the set holds, so `setted` is refused for the
+		// set
+		// itself rather than for its int element (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184).
 		Function setted = findFunction(functions, "setted");
-		assertEquals("setted's set holds an int, a primitive.", TRUE, setted.getHasPrimitiveParameter());
+		assertEquals("setted's set isn't examined for primitives.", FALSE, setted.getHasPrimitiveParameter());
 		assertFalse("setted isn't converted.", setted.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
-		assertNotNull("setted fails HAS_PRIMITIVE_PARAMETERS.", setted.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
+		assertNotNull("setted fails HAS_UNCROSSABLE_BOUNDARY_VALUES.",
+				setted.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
 
 		// TODO: Expect a primitive parameter once the engine models `namedtuple` and `attrs` classes, which `tf.function` keys by their
 		// contents (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048). The engine counts neither as a container,
@@ -15672,6 +15674,70 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function mapWeights = findFunction(functions, "Weights.map_weights");
 		assertNull("`Weights.map_weights`'s returned Keras weight is not yet seen as a variable.", mapWeights.getStatus()
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184: a set argument, which {@code tf.function} can't build
+	 * a trace key for, so the converted call raises a {@code TypeError} on TensorFlow 2.9.3. Here the set holds floats, the issue's
+	 * example, passed positionally to {@code scaled} and by keyword to {@code scaled_by_keyword}. The set is refused on its own rather than
+	 * through its elements, so neither function has a primitive parameter.
+	 */
+	@Test
+	public void testSetOfFloatsArgument() throws Exception {
+		assertSetArgumentRefused(this.getFunctions(), "scaled", "scaled_by_keyword");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184 for a set holding no Python primitive: {@code scaled}
+	 * is passed a set of tensor references, the way a program keeps tensors in a set, and {@code boxed} a set of objects of a program
+	 * class. Either converted call raises a {@code TypeError} on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testSetOfTensorsArgument() throws Exception {
+		assertSetArgumentRefused(this.getFunctions(), "scaled", "boxed");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184 for a set inside a container argument, which
+	 * {@code tf.function} flattens: {@code listed} is passed a list holding a set, and {@code keyed} a dictionary holding one. Either
+	 * converted call raises a {@code TypeError} on TensorFlow 2.9.3.
+	 */
+	@Test
+	public void testNestedSetArgument() throws Exception {
+		assertSetArgumentRefused(this.getFunctions(), "listed", "keyed");
+	}
+
+	/**
+	 * The control for https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184: {@code listed} is passed a list of tensors
+	 * and {@code tupled} a tuple of them, which {@code tf.function} keys by their contents, so both convert.
+	 */
+	@Test
+	public void testListAndTupleArgumentsConvert() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("listed", "tupled")) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "` is passed nothing uncrossable.", FALSE, function.getHasUncrossableBoundaryValues());
+			assertTrue("`" + identifier + "` is converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		}
+	}
+
+	/**
+	 * Asserts that each named function is refused with {@link PreconditionFailure#HAS_UNCROSSABLE_BOUNDARY_VALUES} for the set a call site
+	 * passes it, and not as a function with a primitive parameter.
+	 *
+	 * @param functions The functions of the fixture.
+	 * @param identifiers The identifiers of the functions passed a set.
+	 */
+	private static void assertSetArgumentRefused(Set<Function> functions, String... identifiers) {
+		for (String identifier : identifiers) {
+			Function function = findFunction(functions, identifier);
+			assertEquals("`" + identifier + "`'s set is no primitive parameter.", FALSE, function.getHasPrimitiveParameter());
+			assertEquals("`" + identifier + "` is passed a set.", TRUE, function.getHasUncrossableBoundaryValues());
+			assertFalse("`" + identifier + "` isn't converted.", function.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+			assertNotNull("`" + identifier + "` fails with HAS_UNCROSSABLE_BOUNDARY_VALUES.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_UNCROSSABLE_BOUNDARY_VALUES.getCode()));
+		}
 	}
 
 	/**
