@@ -71,7 +71,6 @@ import org.python.pydev.parser.visitors.scope.ASTEntryWithChildren;
 
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
-import com.ibm.wala.cast.python.ml.client.TensorGenerator;
 
 import edu.cuny.citytech.refactoring.common.core.TimeCollector;
 import edu.cuny.citytech.refactoring.common.eval.handlers.EvaluateRefactoringHandler;
@@ -289,9 +288,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 		// The count of points-to results abandoned at the targeted CFA depth (#670); per-point rows are in depth_limited.csv.
 		resultsHeader.add("depth-limited results");
 
-		// The count of queries that reads after the analysis answered as unknown at the engine's read depth limit (wala/ML#1186).
-		resultsHeader.add("depth-cut reads");
-
 		resultsHeader.add("time (s)");
 
 		HybridizeFunctionRefactoringProcessor processor = null;
@@ -355,9 +351,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 					// set up analysis for single project.
 					int targetedCfaDepth = getTargetedCfaDepth(project);
 					TimeCollector resultsTimeCollector = new TimeCollector();
-
-					// The engine's count is process-wide; projects are evaluated one at a time, so its change is this project's.
-					long depthCutReadsBefore = TensorGenerator.getNullEngineReadDepthCuts();
 
 					resultsTimeCollector.start();
 					processor = createHybridizeFunctionRefactoring(new IProject[] { project }, this.getAlwaysCheckPythonSideEffects(),
@@ -527,10 +520,6 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 					for (DepthLimitedPoint point : depthLimitedPoints)
 						depthLimitedPrinter.printRecord(project.getName(), point.method(), point.valueNumber(), point.callStringLength());
-
-					// The reads after the analysis cut at the engine's depth limit (wala/ML#1186). Recorded only: a nonzero count marks a
-					// project whose answers the limit may have decided.
-					resultsRecord.add(TensorGenerator.getNullEngineReadDepthCuts() - depthCutReadsBefore);
 
 					for (String script : processor.getProjectToSkippedScripts().getOrDefault(project, List.of()))
 						skippedScriptsPrinter.printRecord(project.getName(), script);
