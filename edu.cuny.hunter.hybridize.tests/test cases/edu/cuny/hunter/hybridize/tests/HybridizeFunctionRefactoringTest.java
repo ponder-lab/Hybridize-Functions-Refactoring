@@ -17347,7 +17347,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The zipped element is no single tensor.", "", element.getRenderedTensorTypes());
 		assertEquals("The zipped element is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
 				element.getTensorClassificationBasis());
-		assertNull("The pair is no single tensor, so no element types are read.", element.getContainerElementTypes());
+		assertNull("The supervised members have no known type yet, so no element types are read.", element.getContainerElementTypes());
 
 		InferenceResult result = consume.inferInputSignature();
 		assertFalse("No specification is written.", result.signature().isPresent());
