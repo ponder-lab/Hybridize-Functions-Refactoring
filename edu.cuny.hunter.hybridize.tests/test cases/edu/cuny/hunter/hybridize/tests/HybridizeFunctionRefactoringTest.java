@@ -17302,8 +17302,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code consume} receives each element of a zip whose first member is itself a pair of datasets,
 	 * {@code zip(((floats, ints), labels))}, and {@code consume_members} receives its members, unpacked as {@code (x, y), z}. The engine
 	 * types each member of the inner pair at its path through the zipped structure (wala/ML#1208), so the members carry the types of the
-	 * datasets they come from. The element itself nests a container, a form the reduction declines (#905), so no specification is written
-	 * for it.
+	 * datasets they come from. The element itself nests a container, a form the reduction declines
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/905), so no specification is written for it.
 	 */
 	@Test
 	public void testInferInputSignatureIteratedDatasetZipNested() throws Exception {
@@ -17318,7 +17318,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The zipped element is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
 				element.getTensorClassificationBasis());
 
-		// TODO: A nested container has no specification under the reduction (#905).
+		// TODO: A nested container has no specification under the reduction
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/905).
 		InferenceResult result = consume.inferInputSignature();
 		assertFalse("No specification is written.", result.signature().isPresent());
 		assertEquals("The form is unsupported.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
