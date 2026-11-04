@@ -17224,6 +17224,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume} receives each element of two batched datasets zipped together, a float32 and an int32 tensor. The engine models the
+	 * zipped element as a tuple instance whose members are the elements of the zipped datasets (wala/ML#166), so the parameter is read as a
+	 * container through what it points to, as in {@link #testInferInputSignatureIteratedDatasetTuple()}.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetZip() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The pair is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		// A container instance reaches the parameter, so its elements are read from that instance alone.
+		assertEquals("The dataset-component query is not asked.", 0, Parameter.getDatasetContainerAnswerCount());
+	}
+
+	/**
 	 * {@code consume} receives each batch of a dataset of pairs, as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and each
 	 * element of a dataset mapped from it, which the engine doesn't model as an instance yet. The mapped element is not dropped: it reaches
 	 * the parameter beside the pair's instance as a value that is no container, so the form is unsupported and no specification is written.
