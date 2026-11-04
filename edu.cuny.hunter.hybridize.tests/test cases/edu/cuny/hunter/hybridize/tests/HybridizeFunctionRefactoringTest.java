@@ -17300,8 +17300,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * {@code consume} receives each batch of a dataset of pairs, as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and each
-	 * element of a dataset mapped from it, which the engine doesn't model as an instance yet. The mapped element is not dropped: it reaches
-	 * the parameter beside the pair's instance as a value that is no container, so the form is unsupported and no specification is written.
+	 * element of a dataset mapped from it. The engine models the mapped element as the tuple the mapped function returns (wala/ML#164), so
+	 * both reach the parameter as container instances of the same pair, and the parameter is read through them.
 	 */
 	@Test
 	public void testInferInputSignatureIteratedDatasetTupleMixed() throws Exception {
@@ -17310,13 +17310,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function consume = findFunction(this.getFunctions(), "consume");
 		Parameter element = consume.getParameters().get(0);
 
-		assertEquals("The parameter is a container of tensors.", TRUE, element.isTensorContainer());
-		assertNull("The mapped element leaves no element structure.", element.getContainerElementTypes());
+		assertEquals("The pair is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 
-		InferenceResult result = consume.inferInputSignature();
-		assertFalse("No specification is written.", result.signature().isPresent());
-		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
-				result.absenceReason());
+		// Container instances reach the parameter, so its elements are read from those instances alone.
+		assertEquals("The dataset-component query is not asked.", 0, Parameter.getDatasetContainerAnswerCount());
 	}
 
 	/**
