@@ -17270,6 +17270,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume} receives the pair in each element of {@code dataset.enumerate()}, where {@code dataset} is a batched dataset of pairs
+	 * of a float32 and an int32 tensor, and {@code consume_index} receives the index. The engine models the enumerated element as a tuple
+	 * of an int64 index and a copy of the receiver's element (wala/ML#1190), so the pair is read as a container through what it points to,
+	 * as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and the index as a scalar.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetEnumerate() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function consume = findFunction(functions, "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The pair is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+
+		Function consumeIndex = findFunction(functions, "consume_index");
+
+		assertEquals("The index is an int64 scalar.", "INT64[scalar]", consumeIndex.getParameters().get(0).getRenderedTensorTypes());
+		assertEquals("`consume_index` receives the index.", "[tf.TensorSpec(shape=(), dtype=tf.int64)]",
+				consumeIndex.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * {@code consume} receives each batch of a dataset of pairs, as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and each
 	 * element of a dataset mapped from it, which the engine doesn't model as an instance yet. The mapped element is not dropped: it reaches
 	 * the parameter beside the pair's instance as a value that is no container, so the form is unsupported and no specification is written.
