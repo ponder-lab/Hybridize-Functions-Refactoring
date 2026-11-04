@@ -17299,6 +17299,40 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume} receives each element of a zip whose first member is itself a pair of datasets,
+	 * {@code zip(((floats, ints), labels))}, and {@code consume_members} receives its members, unpacked as {@code (x, y), z}. The engine
+	 * types each member of the inner pair at its path through the zipped structure (wala/ML#1208), so the members carry the types of the
+	 * datasets they come from. The element itself nests a container, a form the reduction declines (#905), so no specification is written
+	 * for it.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetZipNested() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function consume = findFunction(functions, "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The zipped element is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The zipped element is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+
+		// TODO: A nested container has no specification under the reduction (#905).
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The form is unsupported.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+
+		Function consumeMembers = findFunction(functions, "consume_members");
+		List<Parameter> members = consumeMembers.getParameters();
+
+		assertEquals("The inner pair's first member is a float32 vector.", "FLOAT32[Constant,4]", members.get(0).getRenderedTensorTypes());
+		assertEquals("The inner pair's second member is an int32 vector.", "INT32[Constant,3]", members.get(1).getRenderedTensorTypes());
+		assertEquals("The label is a float32 scalar.", "FLOAT32[scalar]", members.get(2).getRenderedTensorTypes());
+	}
+
+	/**
 	 * {@code consume} receives each batch of a dataset of pairs, as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and each
 	 * element of a dataset mapped from it. The engine models the mapped element as the tuple the mapped function returns (wala/ML#164), so
 	 * both reach the parameter as container instances of the same pair, and the parameter is read through them.
