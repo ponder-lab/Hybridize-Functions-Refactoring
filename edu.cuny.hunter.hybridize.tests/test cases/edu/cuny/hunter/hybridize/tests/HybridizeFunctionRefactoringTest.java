@@ -17285,6 +17285,66 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume} receives each element of {@code pairs.skip(2)}, where {@code pairs} is a dataset of pairs of a float32 and an int32
+	 * vector. The engine gives the transformed dataset the receiver's element (https://github.com/ponder-lab/ML/pull/1178), so the pair is
+	 * read as a container through what it points to, as in {@link #testInferInputSignatureIteratedDatasetTuple()}.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetSkip() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The pair is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * {@code consume} receives each element of {@code pairs.shard(2, 0)}, where {@code pairs} is a dataset of pairs of a float32 and an
+	 * int32 vector. The engine gives the transformed dataset the receiver's element (https://github.com/ponder-lab/ML/pull/1178), so the
+	 * pair is read as a container through what it points to, as in {@link #testInferInputSignatureIteratedDatasetTuple()}.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetShard() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The pair is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * {@code consume} receives each element of {@code pairs.cache()}, where {@code pairs} is a dataset of pairs of a float32 and an int32
+	 * vector. The engine gives the transformed dataset the receiver's element (https://github.com/ponder-lab/ML/pull/1178), so the pair is
+	 * read as a container through what it points to, as in {@link #testInferInputSignatureIteratedDatasetTuple()}.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetCache() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The pair is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
 	 * {@code consume} receives each batch of a dataset of pairs, as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and each
 	 * element of a dataset mapped from it. The engine models the mapped element as the tuple the mapped function returns (wala/ML#164), so
 	 * both reach the parameter as container instances of the same pair, and the parameter is read through them.
