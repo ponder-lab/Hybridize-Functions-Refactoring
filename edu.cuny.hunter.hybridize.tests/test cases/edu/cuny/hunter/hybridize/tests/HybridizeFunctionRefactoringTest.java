@@ -17334,6 +17334,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume_members} receives the members of each element of a zip whose first member is a namedtuple of datasets,
+	 * {@code zip((P(floats, ints), labels))}, unpacked by position as {@code (a, b), c}. The engine walks the namedtuple like the tuple of
+	 * {@link #testInferInputSignatureIteratedDatasetZipNested()} (wala/ML#1208), so each member carries the type of the dataset it comes
+	 * from.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetZipNamedTuple() throws Exception {
+		Function consumeMembers = findFunction(this.getFunctions(), "consume_members");
+		List<Parameter> members = consumeMembers.getParameters();
+
+		assertEquals("The namedtuple's first member is a float32 vector.", "FLOAT32[Constant,4]", members.get(0).getRenderedTensorTypes());
+		assertEquals("The namedtuple's second member is an int32 vector.", "INT32[Constant,3]", members.get(1).getRenderedTensorTypes());
+		assertEquals("The label is a float32 scalar.", "FLOAT32[scalar]", members.get(2).getRenderedTensorTypes());
+	}
+
+	/**
 	 * {@code consume} receives each batch of a dataset of pairs, as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and each
 	 * element of a dataset mapped from it. The engine models the mapped element as the tuple the mapped function returns (wala/ML#164), so
 	 * both reach the parameter as container instances of the same pair, and the parameter is read through them.
