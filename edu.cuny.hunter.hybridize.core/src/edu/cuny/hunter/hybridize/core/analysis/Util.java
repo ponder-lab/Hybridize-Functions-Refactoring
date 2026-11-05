@@ -666,9 +666,10 @@ public class Util {
 	}
 
 	/**
-	 * True iff {@code invoke} calls only the Python builtin {@code name}: the engine names {@code builtins.name} as the only API the call
-	 * invokes ({@link TensorFlowApis}), none of its targets is program code ({@link CallTargets#isProgramCode}), and the call is not of a
-	 * name the script rebinds, which Ariadne may resolve to the builtin too ({@link #callsRebindingOfBuiltin}).
+	 * True iff {@code invoke} calls only the Python builtin {@code name}: the call has one target, which isn't program code
+	 * ({@link CallTargets#isProgramCode}), the engine names {@code builtins.name} as the only API the call invokes
+	 * ({@link TensorFlowApis}), and the call is not of a name the script rebinds, which Ariadne may resolve to the builtin too
+	 * ({@link #callsRebindingOfBuiltin}).
 	 *
 	 * @param builder The call-graph builder, which the engine asks for the APIs the call invokes.
 	 * @param node The node whose IR holds {@code invoke}.
@@ -678,8 +679,10 @@ public class Util {
 	 */
 	static boolean callsBuiltin(PropagationCallGraphBuilder builder, CGNode node, PythonInvokeInstruction invoke, String name) {
 		CallGraph callGraph = builder.getCallGraph();
-		return TensorFlowApis.of(builder, node, invoke).equals(Set.of(BUILTINS_MODULE_NAME + "." + name))
-				&& callGraph.getPossibleTargets(node, invoke.getCallSite()).stream().noneMatch(CallTargets::isProgramCode)
+		Set<CGNode> targets = callGraph.getPossibleTargets(node, invoke.getCallSite());
+		// One target: the engine's names don't say that a call reaches nothing else, since a target it can't name adds no name.
+		return targets.size() == 1 && targets.stream().noneMatch(CallTargets::isProgramCode)
+				&& TensorFlowApis.of(builder, node, invoke).equals(Set.of(BUILTINS_MODULE_NAME + "." + name))
 				&& !callsRebindingOfBuiltin(node, invoke, node.getDU(), callGraph);
 	}
 

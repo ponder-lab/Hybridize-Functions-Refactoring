@@ -16097,6 +16097,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: a call that may reach {@code len} or something else
+	 * doesn't launder. {@code counted} calls either {@code len} or a bound method that returns its argument, so its parameter's value may
+	 * reach {@code tf.range} unchanged, and it is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryLenAliased() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "counted");
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076: a read of a tensor held in a field that another
 	 * method rebinds on every call. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function} and its state set up
 	 * twice with different tensors, the second call returns the first call's state where the eager reader returns the second's:
