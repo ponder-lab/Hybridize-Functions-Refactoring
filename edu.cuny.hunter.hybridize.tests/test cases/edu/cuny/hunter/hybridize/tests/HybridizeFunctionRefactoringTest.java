@@ -16038,6 +16038,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: an argument the engine doesn't model is still seen
+	 * when it merges with a constant before the call. {@code pick} passes {@code reshape_to} a value that is {@code 2} on one branch and
+	 * {@code tf.shape(c)[0]}, whose points-to set is empty, on the other, so the merged argument's points-to set holds only the constant.
+	 * The phi's operands are followed, and {@code reshape_to} is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryUnmodeledArgumentPhi() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "reshape_to");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: an index operand keeps its color inbound.
+	 * {@code restore} indexes a module-level shape vector with its tensor parameter {@code i} and passes the element to
+	 * {@code tf.reshape}'s shape operand, so the reshaped dimension is {@code i}'s value, which a traced call doesn't see. Only the index
+	 * is a parameter, so {@code restore} is refused only if the index's color flows into the read.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryIndex() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "restore");
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: {@code len} of a tensor reads its type, which
 	 * crosses, so it launders a parameter's value: traced, it is a Python {@code int} constant for a known first dimension and
 	 * {@code tf.shape(x)[0]} for an unknown one. {@code counted} passes {@code len} of its parameter to {@code tf.range}, and
