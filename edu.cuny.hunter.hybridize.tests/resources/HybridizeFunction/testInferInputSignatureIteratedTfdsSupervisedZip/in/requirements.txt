@@ -1,0 +1,2 @@
+tensorflow==2.9.3
+tensorflow-datasets==4.9.0
