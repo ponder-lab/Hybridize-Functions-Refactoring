@@ -24,7 +24,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -246,16 +245,6 @@ public final class Parameter {
 	 * (Phase 3 of {@link #classifyAsTensor}).
 	 */
 	private static Map<TensorTypeAnalysis, Map<InstanceKey, Boolean>> tensorContainersCache = Maps.newConcurrentMap();
-
-	/**
-	 * Cache of {@link #datasetContainer}'s answers for each builder. Keyed by the builder so that cached answers are discarded when the
-	 * analysis is re-run. Each value maps a parameter's local to the dataset component's elements, or to nothing when the local is no
-	 * dataset component that is or may be a container. The engine computes each answer from scratch, and both the boolean container
-	 * question and the element extraction ask it of the same locals. A worker asking for a local another worker is computing waits for that
-	 * answer rather than computing it again.
-	 */
-	private static Map<PythonSSAPropagationCallGraphBuilder, Map<PointerKey, Optional<ContainerElements>>> datasetContainersCache = Maps
-			.newConcurrentMap();
 
 	/**
 	 * Package-private because {@link Parameter}s are only ever constructed inside {@link Function}'s constructor (same package).
@@ -846,47 +835,6 @@ public final class Parameter {
 	}
 
 	/**
-	 * The elements of a value that is a dataset element's structured component, such as the inputs Keras's train step hands {@code call}
-	 * when {@code fit} is given {@code from_tensor_slices(((x, mask), y))}: a tuple at run time that no allocation stands for, so no
-	 * instance key the value points to is a container. A component is a container when the engine reads it as a tuple of known length, or
-	 * when it may be one ({@link ContainerElements#isComplete()} is {@code false}). A component known to be one tensor is not.
-	 *
-	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the value.
-	 * @param value The value, a parameter's local.
-	 * @return The component's elements, or {@code null} when the value is no dataset component that is or may be a container. Each answer
-	 *         is cached per builder.
-	 */
-	private static ContainerElements datasetContainer(PythonSSAPropagationCallGraphBuilder builder, PointerKey value) {
-		Map<PointerKey, Optional<ContainerElements>> answers = datasetContainersCache.computeIfAbsent(builder,
-				k -> Maps.newConcurrentMap());
-
-		return answers.computeIfAbsent(value, v -> {
-			if (ContainerElements.datasetComponent(builder, v) == null)
-				return Optional.empty();
-
-			ContainerElements elements = ContainerElements.ofValue(builder, v);
-			return elements.arity().isPresent() || !elements.isComplete() ? Optional.of(elements) : Optional.empty();
-		}).orElse(null);
-	}
-
-	/**
-	 * True iff some value the given local points to is a container instance. A dataset element the engine models as an instance, such as
-	 * one of {@code from_tensor_slices} (wala/ML#1190), is read through that instance like any other container, so the dataset-component
-	 * query is asked only of a local no container instance reaches.
-	 *
-	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the value.
-	 * @param value The value, a parameter's local.
-	 * @return True iff a container instance reaches the local.
-	 */
-	private static boolean pointsToContainer(PythonSSAPropagationCallGraphBuilder builder, PointerKey value) {
-		for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(value))
-			if (Util.isContainerType(instanceKey.concreteType().getReference()))
-				return true;
-
-		return false;
-	}
-
-	/**
 	 * True iff the parameter at {@code paramInx} has an abstract value in at least one of {@code nodes}, that is, its points-to set is
 	 * non-empty somewhere. When it has none, the analysis models nothing of what arrives, so an empty tensor-type result says nothing about
 	 * whether the argument is a tensor.
@@ -951,11 +899,6 @@ public final class Parameter {
 					progress.done();
 					return true;
 				}
-
-			if (!pointsToContainer(builder, paramePointerKey) && datasetContainer(builder, paramePointerKey) != null) {
-				progress.done();
-				return true;
-			}
 
 			loopProgress.worked(1);
 		}
@@ -1041,8 +984,7 @@ public final class Parameter {
 		Predicate<InstanceKey> containers = getTensorContainers(tensorAnalysis, builder);
 		SubMonitor.done(monitor);
 
-		// What the engine says of each container's elements, asked once per container. A container is an instance key, or the local of a
-		// dataset component that is or may be a tuple, whose elements are recorded when it is found.
+		// What the engine says of each container's elements, asked once per container.
 		Map<Object, ContainerElements> elementsOf = new HashMap<>();
 		java.util.function.Function<Object, ContainerElements> elements = c -> elementsOf.computeIfAbsent(c,
 				x -> ContainerElements.of(builder, (InstanceKey) x));
@@ -1070,21 +1012,6 @@ public final class Parameter {
 				continue;
 
 			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(paramInx));
-
-			// A dataset component that is or may be a tuple, from a producer whose elements the engine doesn't model as instances, arrives
-			// here as no container instance, so the value itself is the container. What its local points to stands for no element of it,
-			// so it is not read.
-			ContainerElements component = pointsToContainer(builder, pointerKey) ? null : datasetContainer(builder, pointerKey);
-
-			if (component != null) {
-				elementsOf.put(pointerKey, component);
-				reaching.add(pointerKey);
-
-				if (component.arity().isPresent())
-					sequences.add(pointerKey);
-
-				continue;
-			}
 
 			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey)) {
 				TypeReference reference = getTypeReference(instanceKey);
@@ -1601,16 +1528,5 @@ public final class Parameter {
 	 */
 	public static void clearCaches() {
 		tensorContainersCache.clear();
-		datasetContainersCache.clear();
-	}
-
-	/**
-	 * Returns how many answers of whether a parameter's local is a dataset component that is or may be a container are cached, over every
-	 * builder.
-	 *
-	 * @return The number of cached answers.
-	 */
-	public static int getDatasetContainerAnswerCount() {
-		return datasetContainersCache.values().stream().mapToInt(Map::size).sum();
 	}
 }
