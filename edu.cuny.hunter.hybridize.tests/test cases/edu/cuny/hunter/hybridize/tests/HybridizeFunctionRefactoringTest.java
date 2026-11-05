@@ -16987,17 +16987,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The signature comes from the element's inputs, not its targets.", "[tf.TensorSpec(shape=(2,), dtype=tf.int32)]",
 				count.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 
-		// The engine reads `call`'s inputs as a dataset component that is a pair of tensors
-		// (https://github.com/ponder-lab/ML/pull/1087), so they reduce to a nested specification, one entry per member.
+		// The engine hands `call` the dataset element's copy, a tuple instance whose members are tensors
+		// (https://github.com/ponder-lab/ML/pull/1171), so its inputs reduce to a nested specification, one entry per member.
 		Function call = findFunction(this.getFunctions(), "Model.call");
 		assertEquals("`call`'s inputs are the pair, member by member.",
 				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2,), dtype=tf.int32)]]",
 				call.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-
-		// Whether a parameter's local is a dataset component is asked once and kept until the caches are cleared.
-		assertTrue("The dataset-component answers are cached.", Parameter.getDatasetContainerAnswerCount() > 0);
-		Function.clearCaches();
-		assertEquals("Clearing the caches drops the dataset-component answers.", 0, Parameter.getDatasetContainerAnswerCount());
 	}
 
 	/**
@@ -17203,7 +17198,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * {@code consume} receives each batch of a dataset of pairs, a float32 and an int32 tensor, by iterating it. The engine models such an
 	 * element as a tuple instance whose members are objects of their own (wala/ML#1190), so the parameter is read as a container through
-	 * what it points to, like any other tuple, and the dataset-component query is not asked.
+	 * what it points to, like any other tuple.
 	 */
 	@Test
 	public void testInferInputSignatureIteratedDatasetTuple() throws Exception {
@@ -17218,9 +17213,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`consume` receives the pair, member by member.",
 				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
 				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-
-		// A container instance reaches the parameter, so its elements are read from that instance alone.
-		assertEquals("The dataset-component query is not asked.", 0, Parameter.getDatasetContainerAnswerCount());
 	}
 
 	/**
@@ -17241,9 +17233,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`consume` receives the pair, member by member.",
 				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
 				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-
-		// A container instance reaches the parameter, so its elements are read from that instance alone.
-		assertEquals("The dataset-component query is not asked.", 0, Parameter.getDatasetContainerAnswerCount());
 	}
 
 	/**
@@ -17264,9 +17253,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`consume` receives the pair, member by member.",
 				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]",
 				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-
-		// A container instance reaches the parameter, so its elements are read from that instance alone.
-		assertEquals("The dataset-component query is not asked.", 0, Parameter.getDatasetContainerAnswerCount());
 	}
 
 	/**
@@ -17367,9 +17353,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`consume` receives the pair, member by member.",
 				"[[tf.TensorSpec(shape=(2, 4), dtype=tf.float32), tf.TensorSpec(shape=(2, 3), dtype=tf.int32)]]",
 				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
-
-		// Container instances reach the parameter, so its elements are read from those instances alone.
-		assertEquals("The dataset-component query is not asked.", 0, Parameter.getDatasetContainerAnswerCount());
 	}
 
 	/**
@@ -17389,8 +17372,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// The tuple inputs are no single tensor, so they carry no tensor type of their own.
 		assertEquals("The inputs have no flat typing.", "", inputs.getRenderedTensorTypes());
 
-		// The engine reads the inputs as a dataset component that is a pair of tensors (https://github.com/ponder-lab/ML/pull/1087), so
-		// each function reduces them to a nested specification, one entry per member, which admits the pair it receives. Before, they
+		// The engine hands `call` the dataset element's copy, a tuple instance whose members are tensors
+		// (https://github.com/ponder-lab/ML/pull/1171), so each function reduces the inputs to a nested specification, one entry per
+		// member, which admits the pair it receives. Before, they
 		// were typed as one tensor of several shapes, and the single specification written for them rejected the pair.
 		for (Function function : List.of(consume, findFunction(functions, "Model.call")))
 			assertEquals("`" + function.getIdentifier() + "` receives the pair, member by member.",
@@ -17429,8 +17413,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function consume = findFunction(functions, "consume");
 		Parameter inputs = consume.getParameters().get(0);
 
-		// The engine reads both pairs as dataset components of two members (https://github.com/ponder-lab/ML/pull/1087), so the form is
-		// modeled, and each member unions what the two pairs hold there.
+		// The engine hands `call` each element's copy, a tuple instance of two members (https://github.com/ponder-lab/ML/pull/1171), so
+		// the form is modeled, and each member unions what the two pairs hold there.
 		List<Set<TensorType>> elementTypes = inputs.getContainerElementTypes();
 		assertNotNull("The pairs' members surface.", elementTypes);
 		assertEquals("The pairs have two members.", 2, elementTypes.size());
