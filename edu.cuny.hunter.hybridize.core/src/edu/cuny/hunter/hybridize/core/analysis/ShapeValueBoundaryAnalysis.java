@@ -456,7 +456,7 @@ class ShapeValueBoundaryAnalysis {
 
 		// `len` reads its argument's type, which crosses: traced, it is a Python int constant for a known first dimension, and
 		// `tf.shape(x)[0]`, a dynamic shape op, for an unknown one. Either way it launders.
-		if (Util.callsBuiltin(node, invoke, LEN_BUILTIN_NAME, this.builder.getCallGraph()))
+		if (Util.callsBuiltin(this.builder, node, invoke, LEN_BUILTIN_NAME))
 			return;
 
 		// Outbound, a comparison of a shape value is a boolean, not a shape.
