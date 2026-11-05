@@ -10028,9 +10028,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * A dict that may hold an element the analysis does not list: {@code store} writes a tensor into it under a key the analysis cannot
-	 * resolve, and then passes it to {@code read}. The engine reports the dict incomplete ({@code ContainerElements.isComplete()}), and an
-	 * incomplete container may hold a tensor, so {@code read}'s parameter is a container of tensors. No nested specification is built from
-	 * the elements the analysis lists, since they may not be all of them.
+	 * resolve, and then passes it to {@code read}. The engine reports the dict incomplete ({@code ContainerElements.isComplete()}) and
+	 * lists no tensor element, so whether {@code read}'s parameter holds a tensor is unknown: it is not a container of tensors, and
+	 * {@code read} is reported as having tensor parameters that can't be inferred
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
 	 */
 	@Test
 	public void testTensorContainerIncomplete() throws Exception {
@@ -10038,9 +10039,132 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		Function read = getFunction("read");
 		Parameter d = read.getParameters().get(0);
-		assertEquals("An incomplete dict may hold a tensor, so it is a container of tensors.", TRUE, d.isTensorContainer());
+		// An incomplete dict was a container of tensors before #1223; its stored types are the engine's to publish (wala/ML#1222).
+		assertEquals("An incomplete dict is not a container of tensors on incompleteness alone.", FALSE, d.isTensorContainer());
+		assertNull("Whether it is a tensor is unknown.", d.isTensor());
+		assertEquals(TensorClassificationBasis.INCOMPLETE_CONTAINER, d.getTensorClassificationBasis());
 		assertNull("No element structure is read off an incomplete container.", d.getContainerElementTypes());
-		assertTrue("No signature is written for it.", read.getInferredInputSignature().isEmpty());
+		assertNull("Whether `read` has a tensor parameter is unknown.", read.getHasTensorParameter());
+		assertNotNull("`read` takes the undetermined path.", read.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+		assertTrue("`read` is not converted.", read.getTransformations().isEmpty());
+	}
+
+	/**
+	 * A dict whose keys are read from a file and whose values are ints
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223). The engine reports it incomplete and lists no tensor
+	 * element, so {@code convert}'s {@code vocab} is not a container of tensors, nor is it determined not to be a tensor. Nothing else says
+	 * {@code convert} has a tensor parameter, so it takes the undetermined path rather than either answer.
+	 */
+	@Test
+	public void testIncompleteContainerUnknown() throws Exception {
+		Function convert = getFunction("convert");
+		Parameter vocab = convert.getParameters().get(0);
+		assertEquals("`vocab` is not a container of tensors.", FALSE, vocab.isTensorContainer());
+		assertNull("Whether `vocab` is a tensor is unknown.", vocab.isTensor());
+		assertEquals("`vocab` may hold elements the analysis does not list.", TensorClassificationBasis.INCOMPLETE_CONTAINER,
+				vocab.getTensorClassificationBasis());
+
+		Parameter items = convert.getParameters().get(1);
+		assertEquals("`items` is determined not to be a tensor.", TensorClassificationBasis.ANALYZED_NOT_TENSOR,
+				items.getTensorClassificationBasis());
+
+		assertNull("Whether `convert` has a tensor parameter is unknown.", convert.getHasTensorParameter());
+		assertNotNull("`convert` takes the undetermined path.", convert.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+		assertNull("`convert` is not reported as having no tensor parameters.",
+				convert.getEntryMatchingFailure(PreconditionFailure.HAS_NO_TENSOR_PARAMETERS));
+		assertNull(convert.getPassingPrecondition());
+		assertTrue("`convert` is not converted.", convert.getTransformations().isEmpty());
+	}
+
+	/**
+	 * A dict that holds tensors under computed keys: {@code fill} stores a tensor under {@code str(i)} in a loop, a key the analysis can't
+	 * list, and passes the dict to {@code read}. Until the engine publishes the types stored under unlisted keys
+	 * (https://github.com/wala/ML/issues/1222), {@code read} can't be shown to have a tensor parameter, but neither is it let through as
+	 * having none: it is refused as undetermined, not converted
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 */
+	@Test
+	public void testIncompleteContainerComputedKeyTensor() throws Exception {
+		Function read = getFunction("read");
+		Parameter d = read.getParameters().get(0);
+		assertEquals("`d` is not a container of tensors on incompleteness alone.", FALSE, d.isTensorContainer());
+		assertNull("Whether `d` is a tensor is unknown.", d.isTensor());
+		assertEquals(TensorClassificationBasis.INCOMPLETE_CONTAINER, d.getTensorClassificationBasis());
+		assertNull("Whether `read` has a tensor parameter is unknown.", read.getHasTensorParameter());
+		assertNotNull("`read` is refused as undetermined.", read.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+		assertNull(read.getPassingPrecondition());
+		assertTrue("`read` is not converted.", read.getTransformations().isEmpty());
+	}
+
+	/**
+	 * A parameter passed a tensor at one call and, at another, a dict holding tensors under keys the analysis can't list. The tensor makes
+	 * the parameter tensor-typed, and the incomplete dict is still a container whose form the reduction doesn't model, so no signature is
+	 * written from the tensor call alone, which the dict call would fail against (#976,
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 */
+	@Test
+	public void testIncompleteContainerBesideTensor() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function read = getFunction("read");
+		Parameter d = read.getParameters().get(0);
+		InferenceResult result = read.inferInputSignature();
+		assertFalse("No signature is written from the tensor call alone: " + result.signature(), result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+
+		assertEquals("`d` is tensor-typed by the direct call.", TRUE, d.isTensor());
+		assertEquals(TensorClassificationBasis.TENSOR_ANALYSIS, d.getTensorClassificationBasis());
+		assertEquals("The incomplete dict is a container the reduction doesn't model.", TRUE, d.isConformingTensorContainer());
+		assertNull("No element structure is read off an incomplete container.", d.getContainerElementTypes());
+	}
+
+	/**
+	 * A function with a tensor parameter beside one receiving a dict whose keys the analysis can't list. The function has a tensor
+	 * parameter, and the other parameter's tensor-ness is unknown, so the signature is dropped and the INFO says it is undetermined rather
+	 * than suggesting the parameter accept a tensor (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 */
+	@Test
+	public void testIncompleteContainerBesideTensorParameter() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function scale = getFunction("scale");
+		assertEquals("`scale` has a tensor parameter.", TRUE, scale.getHasTensorParameter());
+		Parameter vocab = scale.getParameters().get(1);
+		assertNull("Whether `vocab` is a tensor is unknown.", vocab.isTensor());
+		assertEquals(TensorClassificationBasis.INCOMPLETE_CONTAINER, vocab.getTensorClassificationBasis());
+
+		InferenceResult result = scale.inferInputSignature();
+		assertFalse("No signature is written.", result.signature().isPresent());
+		assertTrue("The INFO says `vocab`'s tensor-ness can't be determined.", Arrays.stream(scale.getStatus().getEntries()).anyMatch(
+				e -> e.getMessage().startsWith("Whether parameter `vocab` of `") && e.getMessage().contains("can't be determined")));
+	}
+
+	/**
+	 * Dicts of ints whose keys the analysis lists, the complete counterpart of {@link #testIncompleteContainerUnknown()}: the engine
+	 * reports each dict complete and lists only int elements, so the parameter receiving it is determined not to be a tensor, and neither
+	 * function takes the undetermined path (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 */
+	@Test
+	public void testCompleteContainerOfInts() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function lookup = getFunction("lookup");
+		Parameter table = lookup.getParameters().get(0);
+		assertEquals("`table` is not a container of tensors.", FALSE, table.isTensorContainer());
+		assertEquals("`table` is determined not to be a tensor.", FALSE, table.isTensor());
+		assertEquals(TensorClassificationBasis.ANALYZED_NOT_TENSOR, table.getTensorClassificationBasis());
+		assertEquals("`lookup` has no tensor parameter.", FALSE, lookup.getHasTensorParameter());
+		assertNotNull(lookup.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
+		assertNull("`lookup` doesn't take the undetermined path.", lookup.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+
+		Function scale = getFunction("scale");
+		Parameter scaleTable = scale.getParameters().get(1);
+		assertEquals("`table` is not a container of tensors.", FALSE, scaleTable.isTensorContainer());
+		assertEquals("`table` is determined not to be a tensor.", FALSE, scaleTable.isTensor());
+		assertEquals(TensorClassificationBasis.ANALYZED_NOT_TENSOR, scaleTable.getTensorClassificationBasis());
+		assertEquals("`scale` has a tensor parameter.", TRUE, scale.getHasTensorParameter());
+		assertNull("`scale` doesn't take the undetermined path.", scale.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
 	}
 
 	/**

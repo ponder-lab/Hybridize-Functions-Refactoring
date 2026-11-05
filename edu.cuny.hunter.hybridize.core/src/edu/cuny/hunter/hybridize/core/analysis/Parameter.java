@@ -153,7 +153,9 @@ public final class Parameter {
 	 * (type hints) and the Phase 2 (Ariadne) cache is empty, and also on a Phase 2 hit whose every type came from an expected-failure call
 	 * site, where the reduction has nothing of the parameter's own to read and the conforming callers may still pass a container (#888).
 	 * The remaining earlier-returning phases (self, type-hint hit, or empty call-graph nodes) leave this field at its default. {@code null}
-	 * therefore means either classification has not run or it ran without asking the container question.
+	 * therefore means either classification has not run or it ran without asking the container question. Where the verdict is already
+	 * {@code TRUE} by a type hint or the tensor analysis, a container that may hold elements the analysis does not list also counts, since
+	 * there it decides only that the form is not reduced ({@link #hasTensorOrIncompleteContainer}).
 	 */
 	private Boolean tensorContainer;
 
@@ -191,8 +193,9 @@ public final class Parameter {
 	private Map<CGNode, Set<TensorType>> tensorTypesByNode = Map.of();
 
 	/**
-	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run; otherwise
-	 * {@code TRUE} or {@code FALSE}.
+	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run, and left
+	 * {@code null} when it ran but could not tell ({@link TensorClassificationBasis#INCOMPLETE_CONTAINER}); otherwise {@code TRUE} or
+	 * {@code FALSE}.
 	 */
 	private Boolean tensor;
 
@@ -811,9 +814,10 @@ public final class Parameter {
 
 	/**
 	 * Returns which {@link InstanceKey}s represent containers of tensors: the containers some element of which, whatever its position, the
-	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}), and the containers that may hold
-	 * elements the analysis does not list ({@link ContainerElements#isComplete()}), any of which may be a tensor. Each answer is cached per
-	 * analysis.
+	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}). A container that may hold elements
+	 * the analysis does not list ({@link ContainerElements#isComplete()}) is not one on that ground alone: whether a value stored under an
+	 * unlisted key is a tensor is a type fact the engine does not yet publish, so such a container leaves the question open instead
+	 * ({@link #receivesIncompleteContainer}). Each answer is cached per analysis.
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
 	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the containers.
@@ -827,11 +831,41 @@ public final class Parameter {
 			if (!Util.isContainerType(k.concreteType().getReference()))
 				return false;
 
-			ContainerElements elements = ContainerElements.of(builder, k);
-
-			// A container whose element keys are not all of them may hold a tensor under a key the analysis does not list.
-			return !elements.elementTypes(tensorAnalysis).isEmpty() || !elements.isComplete();
+			return !ContainerElements.of(builder, k).elementTypes(tensorAnalysis).isEmpty();
 		});
+	}
+
+	/**
+	 * True iff a container that may hold elements the analysis does not list ({@link ContainerElements#isComplete()}) reaches the parameter
+	 * at {@code paramInx} in any of {@code nodes}, directly or as an element of another container. A value stored under an unlisted key may
+	 * be a tensor or not, and the engine does not say which, so such a container decides nothing about the parameter
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 *
+	 * @param paramInx The index of the parameter under question.
+	 * @param nodes The call graph nodes corresponding to the parameter's owning function.
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the containers.
+	 * @return True iff an incomplete container reaches the parameter.
+	 */
+	private static boolean receivesIncompleteContainer(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+		Predicate<InstanceKey> incomplete = k -> Util.isContainerType(k.concreteType().getReference())
+				&& !ContainerElements.of(builder, k).isComplete();
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int i = paramInx + 1; // the first argument is the function being invoked.
+
+			if (ir == null || i >= ir.getNumberOfParameters())
+				continue;
+
+			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(i));
+
+			// The same walk Phase 3 makes into nested containers, testing for incompleteness instead of tensor elements.
+			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey))
+				if (isTensorContainer(instanceKey, incomplete, builder))
+					return true;
+		}
+
+		return false;
 	}
 
 	/**
@@ -928,6 +962,25 @@ public final class Parameter {
 	}
 
 	/**
+	 * Asks the container question of a parameter whose verdict is already {@code TRUE}: whether a container of tensors reaches it, or a
+	 * container that may hold elements the analysis does not list. There the answer decides only the specification, not the verdict, and an
+	 * incomplete container is one whose form the reduction does not model, so the signature is dropped rather than written from the other
+	 * calls' tensors alone, which the container would fail against (#976). Where the answer decides the verdict, as in Phase 3, an
+	 * incomplete container decides nothing (#1223).
+	 *
+	 * @param tensorAnalysis Ariadne's analysis result.
+	 * @param nodes The call graph nodes corresponding to the owning function.
+	 * @param builder The propagation-call-graph builder for the project.
+	 * @param monitor Progress monitor for the sub-work.
+	 * @return True iff a container of tensors or an incomplete container reaches this parameter.
+	 */
+	private boolean hasTensorOrIncompleteContainer(TensorTypeAnalysis tensorAnalysis, Set<CGNode> nodes,
+			PythonSSAPropagationCallGraphBuilder builder, IProgressMonitor monitor) {
+		return this.hasTensorContainer(tensorAnalysis, nodes, builder, monitor)
+				|| receivesIncompleteContainer(this.getIndex(), nodes, builder);
+	}
+
+	/**
 	 * Whether a container reaching this parameter holds an element that cannot be represented as a tensor, Python {@code None} being the
 	 * case this was written for. Set by {@link #extractContainerElements}, read when the signature is reduced.
 	 *
@@ -946,9 +999,9 @@ public final class Parameter {
 
 	/**
 	 * Extracts the element structure from the conforming nodes and records whether a container reaches the parameter from them at all. The
-	 * second answer reuses {@link #tensorContainer} when no node is excluded, and otherwise asks {@link #hasTensorContainer} of the
-	 * conforming nodes alone, since a container passed only by a call the tests declare must fail is no container the function accepts
-	 * (#976, #892).
+	 * second answer reuses {@link #tensorContainer} when no node is excluded, and otherwise asks {@link #hasTensorOrIncompleteContainer} of
+	 * the conforming nodes alone, since the verdict is already {@code TRUE} wherever this runs, and since a container passed only by a call
+	 * the tests declare must fail is no container the function accepts (#976, #892).
 	 *
 	 * @param tensorAnalysis Ariadne's analysis result.
 	 * @param nodes The call graph nodes corresponding to the owning function.
@@ -961,7 +1014,7 @@ public final class Parameter {
 		Set<CGNode> conforming = this.conformingNodes(nodes);
 
 		this.conformingTensorContainer = conforming.size() == nodes.size() ? this.tensorContainer
-				: Boolean.valueOf(this.hasTensorContainer(tensorAnalysis, conforming, builder, subMonitor.split(1)));
+				: Boolean.valueOf(this.hasTensorOrIncompleteContainer(tensorAnalysis, conforming, builder, subMonitor.split(1)));
 
 		this.extractContainerElements(tensorAnalysis, conforming, builder, subMonitor.split(1));
 	}
@@ -1383,7 +1436,7 @@ public final class Parameter {
 						// annotation carries no dtype (#494). Where no conforming call-site evidence exists either, what the callers pass
 						// may still be a container whose elements do carry one, so ask rather than return on the hint alone (#899).
 						// Returning here is what kept the recovery of #888 from reaching an annotated parameter at all.
-						this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+						this.tensorContainer = this.hasTensorOrIncompleteContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
 
 						if (this.tensorContainer)
 							this.extractConformingContainerElements(tensorAnalysis, nodes, builder, subMonitor.split(1));
@@ -1420,7 +1473,7 @@ public final class Parameter {
 					// parameter's own instance keys, so it costs a points-to walk and answers no where no container is involved. The
 					// verdict below is TRUE either way, so this asks a further question about an already tensor-typed parameter and
 					// moves no precondition; what it changes is the specification the reduction may write.
-					this.tensorContainer = this.hasTensorContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
+					this.tensorContainer = this.hasTensorOrIncompleteContainer(tensorAnalysis, nodes, builder, subMonitor.split(1));
 					this.receivesLibraryContainer = receivesLibraryContainer(this.getIndex(), this.conformingNodes(nodes), builder);
 
 					if (this.tensorContainer)
@@ -1452,6 +1505,17 @@ public final class Parameter {
 					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_CONTAINER;
 					return this.tensor = TRUE;
 				}
+
+				// A container the analysis can't list every element of may hold a tensor under a key it doesn't list, or may not, so the
+				// verdict is left unknown rather than taken either way (#1223).
+				// TODO: Read the types stored under unlisted keys once the engine publishes them (https://github.com/wala/ML/issues/1222).
+				if (receivesIncompleteContainer(this.getIndex(), nodes, builder)) {
+					LOG.info("Can't tell whether parameter: " + this.getName() + " of " + this.function
+							+ " is tensor-like: it receives a container that may hold elements the analysis does not list.");
+					this.tensorClassificationBasis = TensorClassificationBasis.INCOMPLETE_CONTAINER;
+					this.tensor = null;
+					return false;
+				}
 			} else
 				subMonitor.worked(2);
 
@@ -1472,7 +1536,8 @@ public final class Parameter {
 	/**
 	 * Returns the cached tensor-typed classification produced by {@link #classifyAsTensor}.
 	 *
-	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if {@link #classifyAsTensor} has not yet run.
+	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if {@link #classifyAsTensor} has not yet run or could not
+	 *         tell ({@link TensorClassificationBasis#INCOMPLETE_CONTAINER}).
 	 */
 	public Boolean isTensor() {
 		return this.tensor;
