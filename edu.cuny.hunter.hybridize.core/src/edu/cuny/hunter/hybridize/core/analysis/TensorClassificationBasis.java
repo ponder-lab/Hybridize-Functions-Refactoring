@@ -43,6 +43,15 @@ public enum TensorClassificationBasis {
 	NO_ABSTRACT_VALUE,
 
 	/**
+	 * Every phase ran and none classified the parameter as tensor-like, but a container reaching it may hold elements the analysis does not
+	 * list, as a dict whose keys are read from a file does. A value stored under such a key may be a tensor or not, and the engine does not
+	 * publish which, so this is not a determination: the verdict is left unknown, and the function is reported as having tensor parameters
+	 * that can't be inferred. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223 and
+	 * https://github.com/wala/ML/issues/1222.
+	 */
+	INCOMPLETE_CONTAINER,
+
+	/**
 	 * The enclosing function is absent from the call graph, so the tensor-type and container phases were <em>skipped</em> and the verdict
 	 * took its default. Deliberately names the phases not running rather than a negative result: nothing was concluded about this
 	 * parameter, and reading it as weak evidence of a non-tensor would repeat the conflation this enum exists to end.

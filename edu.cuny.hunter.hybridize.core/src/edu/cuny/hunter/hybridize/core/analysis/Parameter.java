@@ -191,8 +191,9 @@ public final class Parameter {
 	private Map<CGNode, Set<TensorType>> tensorTypesByNode = Map.of();
 
 	/**
-	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run; otherwise
-	 * {@code TRUE} or {@code FALSE}.
+	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run, and left
+	 * {@code null} when it ran but could not tell ({@link TensorClassificationBasis#INCOMPLETE_CONTAINER}); otherwise {@code TRUE} or
+	 * {@code FALSE}.
 	 */
 	private Boolean tensor;
 
@@ -811,9 +812,10 @@ public final class Parameter {
 
 	/**
 	 * Returns which {@link InstanceKey}s represent containers of tensors: the containers some element of which, whatever its position, the
-	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}), and the containers that may hold
-	 * elements the analysis does not list ({@link ContainerElements#isComplete()}), any of which may be a tensor. Each answer is cached per
-	 * analysis.
+	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}). A container that may hold elements
+	 * the analysis does not list ({@link ContainerElements#isComplete()}) is not one on that ground alone: whether a value stored under an
+	 * unlisted key is a tensor is a type fact the engine does not yet publish, so such a container leaves the question open instead
+	 * ({@link #receivesIncompleteContainer}). Each answer is cached per analysis.
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
 	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the containers.
@@ -827,11 +829,41 @@ public final class Parameter {
 			if (!Util.isContainerType(k.concreteType().getReference()))
 				return false;
 
-			ContainerElements elements = ContainerElements.of(builder, k);
-
-			// A container whose element keys are not all of them may hold a tensor under a key the analysis does not list.
-			return !elements.elementTypes(tensorAnalysis).isEmpty() || !elements.isComplete();
+			return !ContainerElements.of(builder, k).elementTypes(tensorAnalysis).isEmpty();
 		});
+	}
+
+	/**
+	 * True iff a container that may hold elements the analysis does not list ({@link ContainerElements#isComplete()}) reaches the parameter
+	 * at {@code paramInx} in any of {@code nodes}, directly or as an element of another container. A value stored under an unlisted key may
+	 * be a tensor or not, and the engine does not say which, so such a container decides nothing about the parameter
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 *
+	 * @param paramInx The index of the parameter under question.
+	 * @param nodes The call graph nodes corresponding to the parameter's owning function.
+	 * @param builder The {@link PythonSSAPropagationCallGraphBuilder} whose pointer analysis models the containers.
+	 * @return True iff an incomplete container reaches the parameter.
+	 */
+	private static boolean receivesIncompleteContainer(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+		Predicate<InstanceKey> incomplete = k -> Util.isContainerType(k.concreteType().getReference())
+				&& !ContainerElements.of(builder, k).isComplete();
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+			int i = paramInx + 1; // the first argument is the function being invoked.
+
+			if (ir == null || i >= ir.getNumberOfParameters())
+				continue;
+
+			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(i));
+
+			// The same walk Phase 3 makes into nested containers, testing for incompleteness instead of tensor elements.
+			for (InstanceKey instanceKey : builder.getPointerAnalysis().getPointsToSet(pointerKey))
+				if (isTensorContainer(instanceKey, incomplete, builder))
+					return true;
+		}
+
+		return false;
 	}
 
 	/**
@@ -1452,6 +1484,17 @@ public final class Parameter {
 					this.tensorClassificationBasis = TensorClassificationBasis.TENSOR_CONTAINER;
 					return this.tensor = TRUE;
 				}
+
+				// A container the analysis can't list every element of may hold a tensor under a key it doesn't list, or may not, so the
+				// verdict is left unknown rather than taken either way (#1223).
+				// TODO: Read the types stored under unlisted keys once the engine publishes them (https://github.com/wala/ML/issues/1222).
+				if (receivesIncompleteContainer(this.getIndex(), nodes, builder)) {
+					LOG.info("Can't tell whether parameter: " + this.getName() + " of " + this.function
+							+ " is tensor-like: it receives a container that may hold elements the analysis does not list.");
+					this.tensorClassificationBasis = TensorClassificationBasis.INCOMPLETE_CONTAINER;
+					this.tensor = null;
+					return false;
+				}
 			} else
 				subMonitor.worked(2);
 
@@ -1472,7 +1515,8 @@ public final class Parameter {
 	/**
 	 * Returns the cached tensor-typed classification produced by {@link #classifyAsTensor}.
 	 *
-	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if {@link #classifyAsTensor} has not yet run.
+	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if {@link #classifyAsTensor} has not yet run or could not
+	 *         tell ({@link TensorClassificationBasis#INCOMPLETE_CONTAINER}).
 	 */
 	public Boolean isTensor() {
 		return this.tensor;

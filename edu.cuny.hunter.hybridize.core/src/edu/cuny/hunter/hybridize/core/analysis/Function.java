@@ -2317,14 +2317,17 @@ public class Function {
 	/**
 	 * True iff every non-{@code self} parameter's tensor classification is a determination, so that a "no tensor parameter" verdict is an
 	 * established absence rather than a lack of evidence. A parameter with no abstract value
-	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}) or one whose classification didn't run concluded nothing. See
+	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}), one receiving a container that may hold elements the analysis does not list
+	 * ({@link TensorClassificationBasis#INCOMPLETE_CONTAINER}), or one whose classification didn't run concluded nothing. See
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
 	 *
 	 * @return True iff the parameters' non-tensor classifications are all determinations.
 	 */
 	public boolean isTensorParameterAbsenceEstablished() {
-		return this.getParameters().stream().filter(p -> !p.isSelf()).map(Parameter::getTensorClassificationBasis).noneMatch(b -> b == null
-				|| b == TensorClassificationBasis.NO_ABSTRACT_VALUE || b == TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN);
+		return this.getParameters().stream().filter(p -> !p.isSelf()).map(Parameter::getTensorClassificationBasis)
+				.noneMatch(b -> b == null || b == TensorClassificationBasis.NO_ABSTRACT_VALUE
+						|| b == TensorClassificationBasis.INCOMPLETE_CONTAINER
+						|| b == TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN);
 	}
 
 	/**
@@ -5617,6 +5620,11 @@ public class Function {
 			} else if (nodes.isEmpty())
 				// if there are no nodes representing this function, then it most likely isn't called.
 				throw new CantInferTensorParametersException("Can't infer tensor parameters for " + this + " without a call graph node.");
+			else if (params.stream().anyMatch(p -> p.getTensorClassificationBasis() == TensorClassificationBasis.INCOMPLETE_CONTAINER))
+				// A parameter receives a container that may hold a tensor under a key the analysis doesn't list, and nothing else says the
+				// function has a tensor parameter, so whether it has one is unknown (#1223).
+				throw new CantInferTensorParametersException("Can't infer tensor parameters for " + this
+						+ ": a parameter receives a container that may hold elements the analysis does not list.");
 
 		if (this.hasTensorParameter == null) {
 			this.hasTensorParameter = FALSE;
