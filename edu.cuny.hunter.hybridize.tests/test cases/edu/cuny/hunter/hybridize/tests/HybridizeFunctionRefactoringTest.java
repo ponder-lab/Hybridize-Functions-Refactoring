@@ -18216,11 +18216,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a method one call site shares between a Keras
 	 * model and a layer that is no model. {@code Block.project} builds a {@code Dense} on its first call, and its receiver may be either
-	 * object, so whether it is a model is unknown and the method is refused.
+	 * object, so whether it is a model is unknown and the method is checked. Its {@code self.d} may be either object's {@code Dense},
+	 * chosen by the argument it is called unbound with, so it is refused for a first call on a retrace
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224): measured on TensorFlow 2.9.3, decorating it raises
+	 * "tf.function only supports singleton tf.Variables created on the first call" on the second object.
 	 */
 	@Test
 	public void testMayBuildLayersMixedReceivers() throws Exception {
-		assertMayBuildLayers(this.getFunctions(), "Block.project", true, null, null);
+		assertMayBuildLayers(this.getFunctions(), "Block.project", true, null, FIRST_CALL_ON_RETRACE);
 	}
 
 	/**
@@ -18352,8 +18355,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * constructs more than one layer with it. Each method calls its sublayers by index rather than in a loop, so no loop's condition
 	 * refuses it first.
 	 * <p>
-	 * TODO: Engine issue to be filed: the front end lowers an f-string to its source text as a constant. Once it doesn't, the f-string's
-	 * name is computed as {@code Formatted}'s is.
+	 * TODO: The front end reads an f-string as one {@code ConstantKey} holding its raw source text, opening quote included
+	 * (https://github.com/wala/ML/issues/1231). Once it doesn't, the f-string's name is computed as {@code Formatted}'s is.
 	 */
 	@Test
 	public void testMayBuildLayersComputedNames() throws Exception {
@@ -18426,6 +18429,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * tensor branch, so the first trace calls {@code b}; measured on TensorFlow 2.9.3, decorating {@code Gated.call} retraces without
 	 * error. It isn't refused.
 	 */
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a layer chosen by data rather than by control.
+	 * {@code Chosen.call} calls {@code (self.a if flag else self.b)(x)}, with {@code flag} a parameter passed both {@code False} and
+	 * {@code True}: measured on TensorFlow 2.9.3, decorating it raises "tf.function only supports singleton tf.Variables created on the
+	 * first call" once a retrace takes the other layer. The call itself is under no branch, but its callee may be two layers, merged under
+	 * a branch that may vary, so it is refused for a first call on a retrace. {@code Configured.call} chooses on a module constant, which
+	 * the engine shows fixed, and {@code Aliased.call} calls its one {@code Dense} through a local alias; neither is refused.
+	 */
+	@Test
+	public void testMayBuildLayersDataChosenLayer() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Chosen.call", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "Aliased.call", true, false, null);
+		assertMayBuildLayers(functions, "Configured.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
 	@Test
 	public void testMayBuildLayersTensorBranch() throws Exception {
 		Set<Function> functions = this.getFunctions();

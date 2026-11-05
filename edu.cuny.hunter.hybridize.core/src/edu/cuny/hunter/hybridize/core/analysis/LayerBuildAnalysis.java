@@ -59,6 +59,7 @@ import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAGetInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
+import com.ibm.wala.ssa.SSAPhiInstruction;
 import com.ibm.wala.ssa.SSASwitchInstruction;
 import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.types.TypeName;
@@ -86,8 +87,9 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * a literal or a module constant is, or the engine types it as a tensor, whose branch AutoGraph traces both arms of, so the first trace
  * makes the first call. Anything else, such as a parameter or field that may hold two values, an iterator over {@code self.blocks}, or a
  * value whose points-to set is empty, may vary, and the method is refused; whether a condition is fixed at every call is a fact the engine
- * doesn't publish yet (wala/ML#1230). A layer chosen by data rather than by control, such as {@code (self.a if flag else self.b)(x)}, isn't
- * covered.</li>
+ * doesn't publish yet (wala/ML#1230). A layer chosen by data rather than by control counts too: a call whose callee value may be more than
+ * one layer is refused unless a phi merges them under branches that are fixed so, as {@code (self.a if flag else self.b)(x)} is refused for
+ * a parameter {@code flag}. One layer through a local alias is one value.</li>
  * <li>{@link LayerBuildShape#COLLIDING_NAMES}: decorating the method names the variables built in its trace without the scopes of the
  * receiver and the layers enclosing it, so two sublayers that carry the same name build variables with the same names, and a save keyed by
  * name, such as to HDF5, fails or mixes weights (issue 1172). The sublayers are the layer objects reachable from the receiver through
@@ -398,6 +400,11 @@ class LayerBuildAnalysis {
 					if (!cfg.containsNode(block))
 						continue;
 
+					// A callee chosen among several layers by a value that may differ between traces may first call one on a retrace.
+					if (!this.isSelectedFixedly(node, call.getUse(0), ir, cfg, controlDependence, new HashSet<>()))
+						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE,
+								"its call at " + describePosition(node, call) + " may call a different layer on a retrace"));
+
 					for (Object callee : this.getCallees(node, call)) {
 						callingBlocks.computeIfAbsent(callee, k -> new LinkedHashSet<>()).add(block);
 						firstCalls.putIfAbsent(callee, call);
@@ -423,6 +430,74 @@ class LayerBuildAnalysis {
 		}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * True iff {@code callee}, a call's callee value, calls the same layer on every trace: the engine allocates at most one layer it may
+	 * be, told apart by allocating node, or it merges several at a phi whose choosing branches are fixed
+	 * ({@link #varies(CGNode, ISSABasicBlock, IR)}) and each of whose operands is selected fixedly in turn. A value that may be several
+	 * layers and that no phi selects, such as a field or an element holding several, has no selecting value the engine shows fixed, so it
+	 * isn't. A single layer called through a local alias is the same value and is.
+	 *
+	 * @param node The node of {@code callee}.
+	 * @param callee A value number of {@code node}.
+	 * @param ir The node's IR.
+	 * @param cfg The node's control-flow graph, without exceptional edges.
+	 * @param controlDependence The control dependence graph of {@code cfg}.
+	 * @param seen The values already visited, along a cycle of phis.
+	 * @return True iff the value is one layer on every trace.
+	 */
+	private boolean isSelectedFixedly(CGNode node, int callee, IR ir, PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
+			ControlDependenceGraph<ISSABasicBlock> controlDependence, Set<Integer> seen) {
+		if (!seen.add(callee))
+			return true;
+
+		Set<CGNode> allocators = new HashSet<>();
+
+		for (InstanceKey instanceKey : this.getPointerAnalysis()
+				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, callee))) {
+			Optional<IClass> allocatedClass = allocatedClass(instanceKey);
+
+			if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference()))
+				allocators.add(findAllocationSiteInNode(instanceKey).getNode());
+		}
+
+		if (allocators.size() <= 1)
+			return true;
+
+		if (!(node.getDU().getDef(callee) instanceof SSAPhiInstruction phi))
+			return false;
+
+		ISSABasicBlock merge = null;
+
+		for (ISSABasicBlock block : ir.getControlFlowGraph())
+			for (Iterator<SSAPhiInstruction> phis = block.iteratePhis(); phis.hasNext();)
+				if (phis.next() == phi)
+					merge = block;
+
+		if (merge == null || !cfg.containsNode(merge))
+			return false;
+
+		// The branches choosing an incoming edge: each predecessor, and its controllers, other than the merge's own.
+		Set<ISSABasicBlock> choosing = new LinkedHashSet<>();
+
+		for (Iterator<ISSABasicBlock> predNodes = cfg.getPredNodes(merge); predNodes.hasNext();) {
+			ISSABasicBlock pred = predNodes.next();
+			choosing.add(pred);
+			choosing.addAll(getControllers(controlDependence, pred));
+		}
+
+		choosing.removeAll(getControllers(controlDependence, merge));
+
+		for (ISSABasicBlock branch : choosing)
+			if (this.varies(node, branch, ir))
+				return false;
+
+		for (int i = 0; i < phi.getNumberOfUses(); i++)
+			if (!this.isSelectedFixedly(node, phi.getUse(i), ir, cfg, controlDependence, seen))
+				return false;
+
+		return true;
 	}
 
 	/**
