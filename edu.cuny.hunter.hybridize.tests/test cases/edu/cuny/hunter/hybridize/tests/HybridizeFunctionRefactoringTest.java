@@ -18224,4 +18224,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The namedtuple's second member is an int32 vector.", "INT32[Constant,3]", members.get(1).getRenderedTensorTypes());
 		assertEquals("The label is a float32 scalar.", "FLOAT32[scalar]", members.get(2).getRenderedTensorTypes());
 	}
+
+	/**
+	 * {@code consume} receives each batch of a dataset that is either of two, {@code (floats if flag else ints).batch(2)}, where
+	 * {@code floats} has float32 vectors of four and {@code ints} int32 vectors of three. The engine pairs each batch's shape with its own
+	 * dtype (wala/ML#1207), so neither a float32 batch of threes nor an int32 batch of fours is read. The two dtypes still differ, so no
+	 * specification is written.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetEitherBatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter x = consume.getParameters().get(0);
+
+		assertEquals("Each batch keeps its own dataset's shape and dtype.",
+				"FLOAT32[Constant,2; Constant,4] | INT32[Constant,2; Constant,3]", x.getRenderedTensorTypes());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The dtypes differ.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), result.absenceReason());
+	}
 }
