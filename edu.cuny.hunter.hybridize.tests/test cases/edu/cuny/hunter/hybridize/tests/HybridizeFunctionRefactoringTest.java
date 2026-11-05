@@ -17285,6 +17285,70 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume} receives each element of {@code tfds.load} under {@code as_supervised=True}, an {@code (image, label)} pair, and
+	 * {@code consume_members} receives its members. The engine models such an element as a pair whose members are objects of their own
+	 * (wala/ML#164), so the element is a container, not one tensor. The members carry no shape or dtype, so no specification is written.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedTfdsSupervised() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function consume = findFunction(functions, "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The pair is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertTrue("`consume` is hybridized.", consume.getTransformations().contains(CONVERT_TO_HYBRID));
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The members are untyped, so the form is unsupported.",
+				Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED), result.absenceReason());
+
+		Function consumeMembers = findFunction(functions, "consume_members");
+
+		for (Parameter member : consumeMembers.getParameters())
+			assertEquals("`" + member.getName() + "` is a tensor of unknown shape and dtype.", "UNKNOWN[TOP]",
+					member.getRenderedTensorTypes());
+	}
+
+	/**
+	 * {@code consume} receives each element of the supervised dataset of {@link #testInferInputSignatureIteratedTfdsSupervised()} zipped
+	 * with a dataset of float32 vectors, and {@code consume_members} receives its members, unpacked as {@code (image, label), weight}. The
+	 * zip holds the supervised dataset's element, the pair, rather than the dataset as one leaf, so no member of the zipped element is read
+	 * as a single tensor (wala/ML#164).
+	 */
+	@Test
+	public void testInferInputSignatureIteratedTfdsSupervisedZip() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function consume = findFunction(functions, "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The zipped element is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The zipped element is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+		assertNull("The supervised members have no known type yet, so no element types are read.", element.getContainerElementTypes());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The form is unsupported.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+
+		Function consumeMembers = findFunction(functions, "consume_members");
+		List<Parameter> members = consumeMembers.getParameters();
+
+		assertEquals("The image is a tensor of unknown shape and dtype.", "UNKNOWN[TOP]", members.get(0).getRenderedTensorTypes());
+		assertEquals("The label is a tensor of unknown shape and dtype.", "UNKNOWN[TOP]", members.get(1).getRenderedTensorTypes());
+		assertEquals("The weight is a float32 vector.", "FLOAT32[Constant,4]", members.get(2).getRenderedTensorTypes());
+	}
+
+	/**
 	 * {@code consume} receives each batch of a dataset of pairs, as in {@link #testInferInputSignatureIteratedDatasetTuple()}, and each
 	 * element of a dataset mapped from it. The engine models the mapped element as the tuple the mapped function returns (wala/ML#164), so
 	 * both reach the parameter as container instances of the same pair, and the parameter is read through them.
