@@ -431,17 +431,29 @@ public enum PreconditionFailure {
 	HAS_GRAPH_ONLY_CALLS(45),
 
 	/**
-	 * The function, or code it calls, may create a Keras layer's variables, as a layer's first call does when it builds the layer. Under
-	 * {@code tf.function}, the build runs inside the trace, outside the name scopes of the layers that enclose it, so sibling layers'
-	 * variables get the same names, such as {@code dense/kernel:0}, and saving the weights by name, such as to HDF5, fails with
-	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}. The engine names the variable creation of a program
-	 * layer's {@code build} and of a built-in layer's first call alike. A call graph can't tell which call to a layer is its first, so a
-	 * function calling a layer that may already be built is refused too. A Keras model's {@code call} saves regardless, so a method whose
-	 * receiver the engine knows to be a model is exempt; one whose receiver is unknown is refused. A function that is no method runs inside
-	 * no layer's name scope, so it is exempt too. Neither is a {@code staticmethod} or {@code classmethod} helper on a nested layer
-	 * refused, as it has no {@code self} receiver. See {@link LayerBuildAnalysis}.
+	 * The function, or code it calls, may create a Keras layer's variables, as a layer's first call does when it builds the layer, in a
+	 * shape that changes its behavior under {@code tf.function} ({@link LayerBuildShape}). The engine names the variable creation of a
+	 * program layer's {@code build} and of a built-in layer's first call alike. Calling, on every call, sublayers constructed in
+	 * {@code __init__} or {@code build} is safe: Keras builds them under {@code init_scope} during the first trace, and a retrace builds
+	 * nothing. A method is refused only for one of three shapes, which the failure's message names:
+	 * <ol>
+	 * <li>{@link LayerBuildShape#CONSTRUCTED_IN_BODY}: it, or a function it calls other than a layer's {@code __init__} or {@code build},
+	 * constructs a layer, so each trace creates new variables, and the second raises.</li>
+	 * <li>{@link LayerBuildShape#FIRST_CALL_ON_RETRACE}: it, or a function it calls, may first call a layer under a branch or loop whose
+	 * condition may differ between traces: the engine shows neither that the condition is one constant in every context nor that it is a
+	 * tensor, whose branch AutoGraph traces both arms of. A retrace then creates the layer's variables and raises.</li>
+	 * <li>{@link LayerBuildShape#COLLIDING_NAMES}: two sublayers reachable from its receiver may carry the same constant name, or one
+	 * carries a computed name. The build runs inside the trace, outside the name scopes of the layers that enclose it, so their variables
+	 * may get the same names, such as {@code dense/kernel:0}, and saving the weights by name, such as to HDF5, fails with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}.</li>
+	 * </ol>
+	 * A Keras model's {@code call} saves regardless, so a method whose receiver the engine knows to be a model is exempt; one whose
+	 * receiver is unknown is checked. A function that is no method runs inside no layer's name scope, so it is exempt too. Neither is a
+	 * {@code staticmethod} or {@code classmethod} helper on a nested layer refused, as it has no {@code self} receiver. See
+	 * {@link LayerBuildAnalysis}.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172">Issue 1172</a>
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224">Issue 1224</a>
 	 */
 	MAY_BUILD_LAYERS(46),
 
