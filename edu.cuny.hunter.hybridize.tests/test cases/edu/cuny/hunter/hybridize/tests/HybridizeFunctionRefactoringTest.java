@@ -17285,20 +17285,54 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * {@code consume} receives the first member of each batch of {@code zip((floats, ints)).batch(2)}, where both datasets have eight rows.
-	 * The zip's size is known, and two divides it, so every batch is full (wala/ML#1203). The member is read as a float32 batch of two
-	 * vectors of four, with no partial batch of unknown size, and the specification fixes the batch dimension.
+	 * {@code consume} receives each element of a zip whose first member is itself a pair of datasets,
+	 * {@code zip(((floats, ints), labels))}, and {@code consume_members} receives its members, unpacked as {@code (x, y), z}. The engine
+	 * types each member of the inner pair at its path through the zipped structure (wala/ML#1208), so the members carry the types of the
+	 * datasets they come from. The element itself nests a container, a form the reduction declines
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/905), so no specification is written for it.
 	 */
 	@Test
-	public void testInferInputSignatureIteratedDatasetZipBatch() throws Exception {
+	public void testInferInputSignatureIteratedDatasetZipNested() throws Exception {
 		this.setInferInputSignatures(true);
 
-		Function consume = findFunction(this.getFunctions(), "consume");
-		Parameter a = consume.getParameters().get(0);
+		Set<Function> functions = this.getFunctions();
 
-		assertEquals("Every batch is full.", "FLOAT32[Constant,2; Constant,4]", a.getRenderedTensorTypes());
-		assertEquals("`consume` receives full batches.", "[tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]",
-				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		Function consume = findFunction(functions, "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		assertEquals("The zipped element is no single tensor.", "", element.getRenderedTensorTypes());
+		assertEquals("The zipped element is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
+				element.getTensorClassificationBasis());
+
+		// TODO: A nested container has no specification under the reduction
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/905).
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The form is unsupported.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+
+		Function consumeMembers = findFunction(functions, "consume_members");
+		List<Parameter> members = consumeMembers.getParameters();
+
+		assertEquals("The inner pair's first member is a float32 vector.", "FLOAT32[Constant,4]", members.get(0).getRenderedTensorTypes());
+		assertEquals("The inner pair's second member is an int32 vector.", "INT32[Constant,3]", members.get(1).getRenderedTensorTypes());
+		assertEquals("The label is a float32 scalar.", "FLOAT32[scalar]", members.get(2).getRenderedTensorTypes());
+	}
+
+	/**
+	 * {@code consume_members} receives the members of each element of a zip whose first member is a namedtuple of datasets,
+	 * {@code zip((P(floats, ints), labels))}, unpacked by position as {@code (a, b), c}. The engine walks the namedtuple like the tuple of
+	 * {@link #testInferInputSignatureIteratedDatasetZipNested()} (wala/ML#1208), so each member carries the type of the dataset it comes
+	 * from.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetZipNamedTuple() throws Exception {
+		Function consumeMembers = findFunction(this.getFunctions(), "consume_members");
+		List<Parameter> members = consumeMembers.getParameters();
+
+		assertEquals("The namedtuple's first member is a float32 vector.", "FLOAT32[Constant,4]", members.get(0).getRenderedTensorTypes());
+		assertEquals("The namedtuple's second member is an int32 vector.", "INT32[Constant,3]", members.get(1).getRenderedTensorTypes());
+		assertEquals("The label is a float32 scalar.", "FLOAT32[scalar]", members.get(2).getRenderedTensorTypes());
 	}
 
 	/**
@@ -18132,57 +18166,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * {@code consume} receives each element of a zip whose first member is itself a pair of datasets,
-	 * {@code zip(((floats, ints), labels))}, and {@code consume_members} receives its members, unpacked as {@code (x, y), z}. The engine
-	 * types each member of the inner pair at its path through the zipped structure (wala/ML#1208), so the members carry the types of the
-	 * datasets they come from. The element itself nests a container, a form the reduction declines
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/905), so no specification is written for it.
-	 */
-	@Test
-	public void testInferInputSignatureIteratedDatasetZipNested() throws Exception {
-		this.setInferInputSignatures(true);
-
-		Set<Function> functions = this.getFunctions();
-
-		Function consume = findFunction(functions, "consume");
-		Parameter element = consume.getParameters().get(0);
-
-		assertEquals("The zipped element is no single tensor.", "", element.getRenderedTensorTypes());
-		assertEquals("The zipped element is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
-				element.getTensorClassificationBasis());
-
-		// TODO: A nested container has no specification under the reduction
-		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/905).
-		InferenceResult result = consume.inferInputSignature();
-		assertFalse("No specification is written.", result.signature().isPresent());
-		assertEquals("The form is unsupported.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
-				result.absenceReason());
-
-		Function consumeMembers = findFunction(functions, "consume_members");
-		List<Parameter> members = consumeMembers.getParameters();
-
-		assertEquals("The inner pair's first member is a float32 vector.", "FLOAT32[Constant,4]", members.get(0).getRenderedTensorTypes());
-		assertEquals("The inner pair's second member is an int32 vector.", "INT32[Constant,3]", members.get(1).getRenderedTensorTypes());
-		assertEquals("The label is a float32 scalar.", "FLOAT32[scalar]", members.get(2).getRenderedTensorTypes());
-	}
-
-	/**
-	 * {@code consume_members} receives the members of each element of a zip whose first member is a namedtuple of datasets,
-	 * {@code zip((P(floats, ints), labels))}, unpacked by position as {@code (a, b), c}. The engine walks the namedtuple like the tuple of
-	 * {@link #testInferInputSignatureIteratedDatasetZipNested()} (wala/ML#1208), so each member carries the type of the dataset it comes
-	 * from.
-	 */
-	@Test
-	public void testInferInputSignatureIteratedDatasetZipNamedTuple() throws Exception {
-		Function consumeMembers = findFunction(this.getFunctions(), "consume_members");
-		List<Parameter> members = consumeMembers.getParameters();
-
-		assertEquals("The namedtuple's first member is a float32 vector.", "FLOAT32[Constant,4]", members.get(0).getRenderedTensorTypes());
-		assertEquals("The namedtuple's second member is an int32 vector.", "INT32[Constant,3]", members.get(1).getRenderedTensorTypes());
-		assertEquals("The label is a float32 scalar.", "FLOAT32[scalar]", members.get(2).getRenderedTensorTypes());
-	}
-
-	/**
 	 * {@code consume} receives each batch of a dataset that is either of two, {@code (floats if flag else ints).batch(2)}, where
 	 * {@code floats} has float32 vectors of four and {@code ints} int32 vectors of three. The engine pairs each batch's shape with its own
 	 * dtype (wala/ML#1207), so neither a float32 batch of threes nor an int32 batch of fours is read. The two dtypes still differ, so no
@@ -18201,5 +18184,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		InferenceResult result = consume.inferInputSignature();
 		assertFalse("No specification is written.", result.signature().isPresent());
 		assertEquals("The dtypes differ.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), result.absenceReason());
+	}
+
+	/**
+	 * {@code consume} receives the first member of each batch of {@code zip((floats, ints)).batch(2)}, where both datasets have eight rows.
+	 * The zip's size is known, and two divides it, so every batch is full (wala/ML#1203). The member is read as a float32 batch of two
+	 * vectors of four, with no partial batch of unknown size, and the specification fixes the batch dimension.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetZipBatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter a = consume.getParameters().get(0);
+
+		assertEquals("Every batch is full.", "FLOAT32[Constant,2; Constant,4]", a.getRenderedTensorTypes());
+		assertEquals("`consume` receives full batches.", "[tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 }
