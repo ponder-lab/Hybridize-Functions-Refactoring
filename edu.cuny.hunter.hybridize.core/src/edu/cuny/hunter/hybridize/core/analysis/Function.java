@@ -5605,7 +5605,8 @@ public class Function {
 
 				// The analysis models no value reaching the parameter here, which isn't evidence that no primitive does. A defaulted
 				// parameter no caller supplies is always its default, and one the tensor analysis types here is a tensor, so both stay
-				// determined.
+				// determined. The tensor types are those inferTensorParameters fills in, so this must run after it, as the processor
+				// orders them.
 				// TODO: Read the engine's own distinction between its bottom and an unmodeled value once it publishes one
 				// (https://github.com/wala/ML/issues/1224).
 				if (pointsToSet.isEmpty() && !this.isDefaultedUnsuppliedPrimitive(paramInx)

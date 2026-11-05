@@ -10202,6 +10202,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A parameter the analysis models in one calling context and not in another
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245). Each function is passed an int literal and the result of
+	 * string formatting, whose points-to set is empty, so what reaches it there is unknown. Neither parameter is determined not to be a
+	 * tensor, and the hybrid function isn't converted to eager on an absence the analysis doesn't establish.
+	 */
+	@Test
+	public void testEmptyPointsToInOneContext() throws Exception {
+		for (String identifier : List.of("mixed", "hybrid_mixed")) {
+			Function function = getFunction(identifier);
+			Parameter n = function.getParameters().get(0);
+			assertNull("Whether `n` of `" + identifier + "` is a tensor is unknown.", n.isTensor());
+			assertEquals(TensorClassificationBasis.NO_ABSTRACT_VALUE, n.getTensorClassificationBasis());
+			assertNull("Whether `" + identifier + "` has a tensor parameter is unknown.", function.getHasTensorParameter());
+			assertNotNull("`" + identifier + "` takes the undetermined path.",
+					function.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+			assertTrue("`" + identifier + "` is not converted.", function.getTransformations().isEmpty());
+		}
+	}
+
+	/**
 	 * A tensor function whose other parameter is passed only the result of string formatting, a value the analysis doesn't model. Whether
 	 * {@code scale}'s {@code name} is a primitive is unknown, so {@code scale} is refused as undetermined rather than let through as having
 	 * no primitive parameter, and {@code name} blocks its input signature as undetermined. The parameter of {@code repeat} is passed int

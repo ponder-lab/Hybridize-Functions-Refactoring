@@ -869,16 +869,17 @@ public final class Parameter {
 	}
 
 	/**
-	 * True iff the parameter at {@code paramInx} has an abstract value in at least one of {@code nodes}, that is, its points-to set is
-	 * non-empty somewhere. When it has none, the analysis models nothing of what arrives, so an empty tensor-type result says nothing about
-	 * whether the argument is a tensor.
+	 * True iff the parameter at {@code paramInx} has an abstract value in every one of {@code nodes}, that is, its points-to set is
+	 * non-empty in each. Where it is empty, the analysis models nothing of what arrives there, so an empty tensor-type result says nothing
+	 * about whether the argument is a tensor, even when another context's set holds a non-tensor
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
 	 *
 	 * @param paramInx The index of the parameter under question.
 	 * @param nodes The call graph nodes corresponding to the parameter's owning function.
 	 * @param builder The {@link CallGraphBuilder}.
-	 * @return True iff the parameter has an abstract value in some node.
+	 * @return True iff the parameter has an abstract value in every node.
 	 */
-	private static boolean hasAbstractValue(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
+	private static boolean hasAbstractValueEverywhere(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
 			int i = paramInx + 1; // the first argument is the function being invoked.
@@ -888,11 +889,11 @@ public final class Parameter {
 
 			PointerKey pointerKey = builder.getPointerKeyForLocal(node, ir.getParameter(i));
 
-			if (builder.getPointerAnalysis().getPointsToSet(pointerKey).iterator().hasNext())
-				return true;
+			if (!builder.getPointerAnalysis().getPointsToSet(pointerKey).iterator().hasNext())
+				return false;
 		}
 
-		return false;
+		return true;
 	}
 
 	/**
@@ -1523,9 +1524,9 @@ public final class Parameter {
 			// verdict is left unknown rather than taken as not a tensor (#1245).
 			// TODO: Read the engine's own distinction between its bottom and an unmodeled value once it publishes one
 			// (https://github.com/wala/ML/issues/1224).
-			if (!nodes.isEmpty() && !hasAbstractValue(this.getIndex(), nodes, builder)) {
+			if (!nodes.isEmpty() && !hasAbstractValueEverywhere(this.getIndex(), nodes, builder)) {
 				LOG.info("Can't tell whether parameter: " + this.getName() + " of " + this.function
-						+ " is tensor-like: the analysis models no value that reaches it.");
+						+ " is tensor-like: the analysis models no value that reaches it in some calling context.");
 				this.tensorClassificationBasis = TensorClassificationBasis.NO_ABSTRACT_VALUE;
 				this.tensor = null;
 				return false;
