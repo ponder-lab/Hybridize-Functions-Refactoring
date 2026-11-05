@@ -458,8 +458,15 @@ class LayerBuildAnalysis {
 				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, callee))) {
 			Optional<IClass> allocatedClass = allocatedClass(instanceKey);
 
-			if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference()))
-				allocators.add(findAllocationSiteInNode(instanceKey).getNode());
+			if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference())) {
+				AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
+
+				// A layer whose allocation the engine doesn't place can't be told apart from the others.
+				if (site == null)
+					return false;
+
+				allocators.add(site.getNode());
+			}
 		}
 
 		if (allocators.size() <= 1)
@@ -772,9 +779,15 @@ class LayerBuildAnalysis {
 						.forEach(receivers::add);
 		}
 
+		Map<CGNode, Set<InstanceKey>> sublayers = this.getSublayers(receivers);
+
+		if (sublayers == null)
+			return Optional
+					.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "a sublayer's allocation, and so its name, can't be determined"));
+
 		Map<String, CGNode> named = new HashMap<>();
 
-		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : this.getSublayers(receivers).entrySet()) {
+		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.entrySet()) {
 			CGNode allocator = sublayer.getKey();
 			Names names = this.getNames(allocator, sublayer.getValue());
 
@@ -800,7 +813,7 @@ class LayerBuildAnalysis {
 	 * The node allocating a receiver is left out.
 	 *
 	 * @param receivers The objects the receiver may be.
-	 * @return The sublayers' objects by the node allocating them.
+	 * @return The sublayers' objects by the node allocating them, or {@code null} if the engine doesn't place a sublayer's allocation.
 	 */
 	private Map<CGNode, Set<InstanceKey>> getSublayers(Set<InstanceKey> receivers) {
 		Map<InstanceKey, Set<InstanceFieldPointerKey>> fields = getFieldIndex(this.getPointerAnalysis());
@@ -825,10 +838,14 @@ class LayerBuildAnalysis {
 						Optional<IClass> allocatedClass = allocatedClass(value);
 
 						if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference())) {
-							CGNode allocator = findAllocationSiteInNode(value).getNode();
+							AllocationSiteInNode site = findAllocationSiteInNode(value);
 
-							if (!receiverAllocators.contains(allocator))
-								ret.computeIfAbsent(allocator, k -> new HashSet<>()).add(value);
+							// A sublayer whose allocation the engine doesn't place has names that can't be read.
+							if (site == null)
+								return null;
+
+							if (!receiverAllocators.contains(site.getNode()))
+								ret.computeIfAbsent(site.getNode(), k -> new HashSet<>()).add(value);
 						}
 					}
 
