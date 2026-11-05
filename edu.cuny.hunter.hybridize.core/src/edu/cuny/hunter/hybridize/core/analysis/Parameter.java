@@ -194,8 +194,8 @@ public final class Parameter {
 
 	/**
 	 * Cached classification of whether this parameter is tensor-typed. {@code null} until {@link #classifyAsTensor} has run, and left
-	 * {@code null} when it ran but could not tell ({@link TensorClassificationBasis#INCOMPLETE_CONTAINER}); otherwise {@code TRUE} or
-	 * {@code FALSE}.
+	 * {@code null} when it ran but could not tell ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE},
+	 * {@link TensorClassificationBasis#INCOMPLETE_CONTAINER}); otherwise {@code TRUE} or {@code FALSE}.
 	 */
 	private Boolean tensor;
 
@@ -1519,13 +1519,24 @@ public final class Parameter {
 			} else
 				subMonitor.worked(2);
 
+			// An empty points-to set throughout means the analysis models nothing that reaches the parameter, not that nothing does, so the
+			// verdict is left unknown rather than taken as not a tensor (#1245).
+			// TODO: Read the engine's own distinction between its bottom and an unmodeled value once it publishes one
+			// (https://github.com/wala/ML/issues/1224).
+			if (!nodes.isEmpty() && !hasAbstractValue(this.getIndex(), nodes, builder)) {
+				LOG.info("Can't tell whether parameter: " + this.getName() + " of " + this.function
+						+ " is tensor-like: the analysis models no value that reaches it.");
+				this.tensorClassificationBasis = TensorClassificationBasis.NO_ABSTRACT_VALUE;
+				this.tensor = null;
+				return false;
+			}
+
 			// The two situations that reach this one verdict. With the function in the call graph, both phases above ran and neither
 			// classified the parameter as tensor-like, which under contract-compliant generators is the analysis's bottom and so a
 			// determination. With the function absent from it, both phases were SKIPPED and nothing was concluded at all. They are
 			// indistinguishable in the verdict, which is what #971 is about, so the basis records which one happened.
 			this.tensorClassificationBasis = nodes.isEmpty() ? TensorClassificationBasis.CLASSIFICATION_DID_NOT_RUN
-					: hasAbstractValue(this.getIndex(), nodes, builder) ? TensorClassificationBasis.ANALYZED_NOT_TENSOR
-							: TensorClassificationBasis.NO_ABSTRACT_VALUE;
+					: TensorClassificationBasis.ANALYZED_NOT_TENSOR;
 
 			return this.tensor = FALSE;
 		} finally {
@@ -1537,7 +1548,7 @@ public final class Parameter {
 	 * Returns the cached tensor-typed classification produced by {@link #classifyAsTensor}.
 	 *
 	 * @return {@code TRUE} if tensor-typed, {@code FALSE} if not, or {@code null} if {@link #classifyAsTensor} has not yet run or could not
-	 *         tell ({@link TensorClassificationBasis#INCOMPLETE_CONTAINER}).
+	 *         tell ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}, {@link TensorClassificationBasis#INCOMPLETE_CONTAINER}).
 	 */
 	public Boolean isTensor() {
 		return this.tensor;

@@ -1544,7 +1544,7 @@ public class Function {
 	/**
 	 * True iff {@link #hasTensorParameter} was set by {@link #inferTensorParameters}'s speculative context analysis rather than by any
 	 * {@link Parameter}'s own classification. Speculation fires only when no parameter classified, so it leaves every {@link Parameter}'s
-	 * {@link Parameter#isTensor()} at {@code FALSE} and its {@link Parameter#getTensorTypes()} empty; {@link #computeInputSignature()}
+	 * {@link Parameter#isTensor()} short of {@code TRUE} and its {@link Parameter#getTensorTypes()} empty; {@link #computeInputSignature()}
 	 * reads this to report the honest blocking reason instead of dispatching per parameter and reporting each as non-tensor (#783).
 	 */
 	private boolean tensorParameterFromSpeculation;
@@ -5541,6 +5541,21 @@ public class Function {
 		return true;
 	}
 
+	/**
+	 * Infers whether this {@link Function} has a parameter that is likely a primitive, caching the answer for
+	 * {@link #getHasPrimitiveParameter()}. A parameter is flagged when its points-to set holds only primitives, unless it is a defaulted
+	 * parameter no caller supplies or is bound to one constant at every call. A parameter whose points-to set is empty in some calling
+	 * context, and that the tensor analysis doesn't type as a tensor there, is undetermined there: the analysis models nothing that reaches
+	 * it, not that nothing does, so it is neither flagged nor taken as not primitive. Unless another parameter is flagged, the function's
+	 * answer is then unknown (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
+	 *
+	 * @param callGraph The system {@link CallGraph}.
+	 * @param pointerAnalysis The system {@link PointerAnalysis}.
+	 * @param monitor Progress monitor signaled while inferring primitive parameters.
+	 * @throws CantInferPrimitiveParametersException If this {@link Function} has no call graph node, or if no parameter is flagged and the
+	 *         analysis models no value reaching one.
+	 * @throws CoreException If resolving this function's {@link MethodReference} fails while looking up its call-graph nodes.
+	 */
 	public void inferPrimitiveParameters(CallGraph callGraph, PointerAnalysis<InstanceKey> pointerAnalysis, IProgressMonitor monitor)
 			throws CantInferPrimitiveParametersException, CoreException {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Infering primitive parameters...", IProgressMonitor.UNKNOWN);
@@ -5548,6 +5563,9 @@ public class Function {
 
 		if (nodes.isEmpty())
 			throw new CantInferPrimitiveParametersException("Can't infer primitive parameters of " + this + " without a call graph node.");
+
+		// True iff some parameter's points-to set is empty in some node, so whether it is primitive there is unknown (#1245).
+		boolean undetermined = false;
 
 		subMonitor.beginTask("Examining nodes...", nodes.size());
 
@@ -5585,11 +5603,29 @@ public class Function {
 					return;
 				}
 
+				// The analysis models no value reaching the parameter here, which isn't evidence that no primitive does. A defaulted
+				// parameter no caller supplies is always its default, and one the tensor analysis types here is a tensor, so both stay
+				// determined.
+				// TODO: Read the engine's own distinction between its bottom and an unmodeled value once it publishes one
+				// (https://github.com/wala/ML/issues/1224).
+				if (pointsToSet.isEmpty() && !this.isDefaultedUnsuppliedPrimitive(paramInx)
+						&& !this.isTensorTyped(paramInx, nodeRepresentingThisFunction)) {
+					LOG.info("Can't tell whether parameter of: " + this + " with index: " + paramInx
+							+ " is primitive: the analysis models no value that reaches it.");
+					undetermined = true;
+				}
+
 				subMonitor.worked(1);
 			}
 
 			subMonitor.worked(1);
 		}
+
+		subMonitor.done();
+
+		if (undetermined)
+			throw new CantInferPrimitiveParametersException(
+					"Can't infer primitive parameters of " + this + ": the analysis models no value that reaches a parameter.");
 
 		LOG.info(this + " likely does not have a primitive parameter.");
 		this.hasPrimitiveParameter = FALSE;
@@ -5684,6 +5720,28 @@ public class Function {
 			}
 
 		return sawCallSite;
+	}
+
+	/**
+	 * Returns true iff the tensor analysis gives the positional parameter at the given IR parameter index a tensor type in the given node.
+	 * Such a parameter is a tensor there, and so not a primitive, even where the analysis models no value reaching it, as for the result of
+	 * an op whose value the pointer analysis doesn't model but whose type the tensor analysis does
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245). A parameter that cannot be mapped is not typed.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param node A {@link CGNode} representing this {@link Function}.
+	 * @return True iff that parameter has a {@link TensorType} in {@code node}.
+	 */
+	private boolean isTensorTyped(int irParamIndex, CGNode node) {
+		int declarationIndex = irParamIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return false;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		return !parameter.isKeywordOnly() && parameter.getIndex() == declarationIndex && !parameter.getTensorTypes(node).isEmpty();
 	}
 
 	/**
@@ -5820,6 +5878,11 @@ public class Function {
 				// function has a tensor parameter, so whether it has one is unknown (#1223).
 				throw new CantInferTensorParametersException("Can't infer tensor parameters for " + this
 						+ ": a parameter receives a container that may hold elements the analysis does not list.");
+			else if (params.stream().anyMatch(p -> p.getTensorClassificationBasis() == TensorClassificationBasis.NO_ABSTRACT_VALUE))
+				// The analysis models no value reaching a parameter, and nothing else says the function has a tensor parameter, so whether
+				// it has one is unknown (#1245).
+				throw new CantInferTensorParametersException(
+						"Can't infer tensor parameters for " + this + ": the analysis models no value that reaches a parameter.");
 
 		if (this.hasTensorParameter == null) {
 			this.hasTensorParameter = FALSE;
@@ -6351,6 +6414,16 @@ public class Function {
 							"Whether parameter `" + param.getName() + "` of `" + this + "` is tensor-typed can't be determined: it "
 									+ "receives a container that may hold elements the analysis does not list. It prevents "
 									+ "input-signature inference.");
+					addBlockingReason(blocking, param, AbsenceReason.NON_TENSOR_PARAMETER);
+					// Not reached, as for the non-tensor case below.
+					continue;
+				}
+
+				if (param.getTensorClassificationBasis() == TensorClassificationBasis.NO_ABSTRACT_VALUE) {
+					// Required, and whether it is a tensor is unknown (#1245), so the source-side suggestion below would be a guess.
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Whether parameter `" + param.getName() + "` of `" + this + "` is tensor-typed can't be determined: the "
+									+ "analysis models no value that reaches it. It prevents input-signature inference.");
 					addBlockingReason(blocking, param, AbsenceReason.NON_TENSOR_PARAMETER);
 					// Not reached, as for the non-tensor case below.
 					continue;
