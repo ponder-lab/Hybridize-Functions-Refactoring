@@ -16026,11 +16026,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: {@code len} of a tensor reads its static first
-	 * dimension into a Python {@code int}, so it launders a parameter's value. {@code counted} passes {@code len} of its parameter to
-	 * {@code tf.range}, and {@code propagate} passes it to {@code add_self_loops}, which passes it to {@code tf.range} and uses the result
-	 * as gather indices; neither is refused. {@code add_self_loops} receives a Python {@code int} of unknown value, a primitive parameter,
-	 * so the check isn't run on it.
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: a parameter that looks as though only Python scalars
+	 * reach it, because a call passes it a value the engine doesn't model, is still a source. {@code forward} is called with {@code 2} and
+	 * with {@code tf.shape(c)[0]}, a tensor whose points-to set is empty, and passes either to {@code reshape_to} from one call site, so
+	 * {@code reshape_to}'s one node sees only the constant. The second call's reshape gets its leading dimension from a tensor value that
+	 * doesn't cross, so {@code reshape_to} is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryUnmodeledArgument() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "reshape_to");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: {@code len} of a tensor reads its type, which
+	 * crosses, so it launders a parameter's value: traced, it is a Python {@code int} constant for a known first dimension and
+	 * {@code tf.shape(x)[0]} for an unknown one. {@code counted} passes {@code len} of its parameter to {@code tf.range}, and
+	 * {@code propagate} passes it to {@code add_self_loops}, which passes it to {@code tf.range} and uses the result as gather indices;
+	 * neither is refused. {@code add_self_loops} receives a Python {@code int} of unknown value, a primitive parameter, so the check isn't
+	 * run on it.
 	 */
 	@Test
 	public void testShapeValueAcrossBoundaryLen() throws Exception {

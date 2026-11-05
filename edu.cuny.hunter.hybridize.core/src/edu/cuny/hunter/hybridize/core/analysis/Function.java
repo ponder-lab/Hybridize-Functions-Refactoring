@@ -126,6 +126,7 @@ import com.ibm.wala.cast.python.loader.IPythonClass;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion.Resolution;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ml.types.TensorType;
@@ -3889,7 +3890,7 @@ public class Function {
 
 		for (CGNode node : nodes) {
 			Boolean passes = analysis.passesShapeValue(node, this.isMethod(),
-					this.pythonScalarParameterSlots(node, nodes, callGraph, builder.getPointerAnalysis()));
+					this.pythonScalarParameterSlots(node, nodes, callGraph, builder));
 
 			if (Boolean.TRUE.equals(passes)) {
 				ret = Boolean.TRUE;
@@ -3917,17 +3918,19 @@ public class Function {
 	/**
 	 * The parameter slots of {@code node} that only Python scalars reach, as {@link #inferPrimitiveParameters} classifies them: the
 	 * parameter's points-to set is non-empty and every value in it is a primitive ({@link #isPrimitiveValue(InstanceKey, boolean)},
-	 * booleans counted), and its argument is aligned at every call site ({@link #isArgumentAlignedAtEveryCallSite}), so that the points-to
-	 * set holds every value it receives. A tensor parameter, and one whose points-to set is empty, are not among them.
+	 * booleans counted), its argument is aligned at every call site ({@link #isArgumentAlignedAtEveryCallSite}), and no call site passes it
+	 * an argument with no abstract value ({@link #isArgumentKnownAtEveryCallSite}), so that the points-to set holds every value it
+	 * receives. A tensor parameter, and one whose points-to set is empty, are not among them.
 	 *
 	 * @param node The call-graph node whose parameters are examined.
-	 * @param nodes Every call-graph node of this {@link Function}, whose callers are examined for alignment.
+	 * @param nodes Every call-graph node of this {@link Function}, whose callers are examined.
 	 * @param callGraph The call graph.
-	 * @param pointerAnalysis The pointer analysis.
+	 * @param builder The call-graph builder, holding the pointer analysis.
 	 * @return The IR parameter slots, past the receiver of a method, that only Python scalars reach.
 	 */
 	private Set<Integer> pythonScalarParameterSlots(CGNode node, Set<CGNode> nodes, CallGraph callGraph,
-			PointerAnalysis<InstanceKey> pointerAnalysis) {
+			PythonSSAPropagationCallGraphBuilder builder) {
+		PointerAnalysis<InstanceKey> pointerAnalysis = builder.getPointerAnalysis();
 		Set<Integer> ret = new HashSet<>();
 		IR ir = node.getIR();
 
@@ -3943,11 +3946,71 @@ public class Function {
 			for (InstanceKey instanceKey : pointsToSet)
 				allInstancesArePrimitive &= isPrimitiveValue(instanceKey, false);
 
-			if (allInstancesArePrimitive && this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph))
+			if (allInstancesArePrimitive && this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph)
+					&& this.isArgumentKnownAtEveryCallSite(paramInx, nodes, callGraph, builder))
 				ret.add(paramInx);
 		}
 
 		return ret;
+	}
+
+	/**
+	 * Returns true iff every call site of this {@link Function} passes the parameter at the given IR parameter index an argument with a
+	 * non-empty points-to set, or doesn't pass it, leaving its default. A call-graph node's points-to set for the parameter is the union of
+	 * the arguments its calling contexts pass, so an argument with no abstract value, such as a tensor the engine doesn't model, adds
+	 * nothing to it, and the parameter may then look as though only Python scalars reach it. A caller that isn't program code, such as a
+	 * trampoline, and a call whose binding of this function the engine doesn't report ({@link CallTargets#parameterBoundTargets}), are
+	 * undetermined. Assumes {@link #isArgumentAlignedAtEveryCallSite} holds, so that no starred argument precedes the parameter's slot.
+	 *
+	 * @param irParamIndex The IR parameter index.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}.
+	 * @param callGraph The call graph.
+	 * @param builder The call-graph builder, which the engine asks how each call binds this function's parameters.
+	 * @return True iff no call site passes the parameter an argument whose points-to set is empty, and there is at least one.
+	 */
+	private boolean isArgumentKnownAtEveryCallSite(int irParamIndex, Set<CGNode> nodes, CallGraph callGraph,
+			PythonSSAPropagationCallGraphBuilder builder) {
+		PointerAnalysis<InstanceKey> pointerAnalysis = builder.getPointerAnalysis();
+		String name = this.getParameters().get(irParamIndex - 1).getName();
+		boolean sawCallSite = false;
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null || !CallTargets.isProgramCode(predecessor))
+					return false;
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							return false;
+
+						Boolean bound = CallTargets.parameterBoundTargets(builder, predecessor, invoke).get(node);
+
+						if (bound == null)
+							return false;
+
+						sawCallSite = true;
+
+						// Positional arguments start at use 1, past the callee, and shift by one past a bound receiver.
+						int position = irParamIndex - (bound ? 1 : 0);
+						int argument;
+
+						if (invoke.getKeywords().contains(name))
+							argument = invoke.getUse(name);
+						else if (position >= 1 && position < invoke.getNumberOfPositionalParameters())
+							argument = invoke.getUse(position);
+						else
+							continue; // Not passed: the parameter takes its default.
+
+						if (pointerAnalysis.getPointsToSet(pointerAnalysis.getHeapModel().getPointerKeyForLocal(predecessor, argument))
+								.isEmpty())
+							return false;
+					}
+			}
+
+		return sawCallSite;
 	}
 
 	/**

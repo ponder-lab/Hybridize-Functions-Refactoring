@@ -47,10 +47,12 @@ import edu.cuny.hunter.hybridize.core.analysis.StaticShapeReadAnalysis.ShapeArgu
  * dimensions come from that operand's value ({@link #SHAPE_OPERANDS}), and that op's result reaches a return. The parameter's type alone
  * crosses, so the result's dimensions are lost. A dynamic shape op ({@code tf.shape}, {@code tf.size}, {@code tf.rank}), a static
  * {@code .shape} or {@code .dtype} read, and the builtin {@code len}, as the call graph resolves it, launder the value: they read the
- * parameter's type, which crosses, and {@code len}'s result is a Python {@code int}, which stays a Python value. A parameter that only
- * Python scalars reach, every value in its points-to set a primitive ({@link Function#isPrimitiveValue(InstanceKey, boolean)}) and its
- * argument aligned at every call site, is not a source at all: {@code tf.function} keeps a Python scalar's value in its trace key, so the
- * value crosses. A tensor parameter, and one whose values the analysis doesn't know, are sources.
+ * parameter's type, which crosses. Under {@code tf.function}, autograph converts {@code len(x)}: a known static first dimension is a Python
+ * {@code int} constant in the trace, and an unknown one is {@code tf.shape(x)[0]}, a dynamic shape op, which launders already; measured on
+ * TensorFlow 2.9.3. A parameter that only Python scalars reach, every value in its points-to set a primitive
+ * ({@link Function#isPrimitiveValue(InstanceKey, boolean)}), its argument aligned at every call site, and no call site's argument without
+ * an abstract value, is not a source at all: {@code tf.function} keeps a Python scalar's value in its trace key, so the value crosses. A
+ * tensor parameter, and one whose values the analysis doesn't know, are sources.
  * <li><b>Outbound.</b> A returned value, or an element of a returned list, tuple or dictionary, derives from a dynamic shape op, or from
  * slicing, concatenating, or computing over one. The caller then receives the shape's type but not its value. A value computed from a shape
  * value together with a tensor that is not one, such as a loss divided by a batch size, is data, not a shape, and is not followed; so is a
@@ -152,7 +154,7 @@ class ShapeValueBoundaryAnalysis {
 	private static final Set<String> COMPARISON_OP_FQNS = Set.of("tensorflow.equal", "tensorflow.not_equal", "tensorflow.less",
 			"tensorflow.less_equal", "tensorflow.greater", "tensorflow.greater_equal");
 
-	/** The Python builtin reading a value's length, which for a tensor is its static first dimension. */
+	/** The Python builtin reading a value's length, which for a tensor is its first dimension. */
 	private static final String LEN_BUILTIN_NAME = "len";
 
 	/** The method fixing its receiver's static shape, whose receiver, not its result, takes the shape operand's dimensions. */
@@ -452,7 +454,8 @@ class ShapeValueBoundaryAnalysis {
 		if (ops.stream().anyMatch(StaticShapeReadAnalysis.DYNAMIC_SHAPE_OP_FQNS::contains))
 			return;
 
-		// `len` reads its argument's static length, part of its type, into a Python int, which stays a Python value: it launders.
+		// `len` reads its argument's type, which crosses: traced, it is a Python int constant for a known first dimension, and
+		// `tf.shape(x)[0]`, a dynamic shape op, for an unknown one. Either way it launders.
 		if (Util.callsBuiltin(node, invoke, LEN_BUILTIN_NAME, this.builder.getCallGraph()))
 			return;
 
