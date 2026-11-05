@@ -10225,7 +10225,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * A tensor function whose other parameter is passed only the result of string formatting, a value the analysis doesn't model. Whether
 	 * {@code scale}'s {@code name} is a primitive is unknown, so {@code scale} is refused as undetermined rather than let through as having
 	 * no primitive parameter, and {@code name} blocks its input signature as undetermined. The parameter of {@code repeat} is passed int
-	 * literals, so it is primitive as before, and that of {@code defaulted} always takes its default, so it is exempt as before
+	 * literals, so it is primitive as before, and that of {@code defaulted} always takes its default, so it is exempt as before. The
+	 * {@code *args} and {@code **kwargs} slots of {@code absorbing}, passed nothing, and the keyword-only {@code n} of {@code keyword},
+	 * taking its default, have empty points-to sets without being unmodeled, so neither function is undetermined
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
 	 */
 	@Test
@@ -10260,6 +10262,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`defaulted`'s `n` takes its default, so it is no primitive parameter.", FALSE, defaulted.getHasPrimitiveParameter());
 		assertNull("`defaulted` doesn't take the undetermined path for primitives.",
 				defaulted.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
+
+		// A rest slot no caller passes anything into, and a keyword-only parameter taking its default, are empty without being unmodeled.
+		for (String identifier : List.of("absorbing", "keyword")) {
+			Function function = getFunction(identifier);
+			assertEquals("`" + identifier + "` has no primitive parameter.", FALSE, function.getHasPrimitiveParameter());
+			assertNull("`" + identifier + "` doesn't take the undetermined path for primitives.",
+					function.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
+		}
 	}
 
 	/**
@@ -11992,11 +12002,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testSubscriptSliceOpaqueOverTyping() throws Exception {
-		assertFalse("`check`'s `value` (slice of an opaque argparse attribute) is not a tensor.",
-				getFunction("check").getHasTensorParameter());
+		// Each `value` used to be determined not to be a tensor (FALSE). The analysis models no value reaching either, so whether either
+		// is a tensor is now unknown (null), and neither is typed as a tensor, which is what this guards
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
+		Function check = getFunction("check");
+		assertNull("`check`'s `value` (slice of an opaque argparse attribute) is not typed as a tensor.", check.getHasTensorParameter());
+		assertEquals(TensorClassificationBasis.NO_ABSTRACT_VALUE, check.getParameters().get(0).getTensorClassificationBasis());
 		// Control: the same opaque attribute without a slice.
-		assertFalse("`plain`'s `value` (the opaque argparse attribute, no slice); not a tensor.",
-				getFunction("plain").getHasTensorParameter());
+		Function plain = getFunction("plain");
+		assertNull("`plain`'s `value` (the opaque argparse attribute, no slice) is not typed as a tensor.", plain.getHasTensorParameter());
+		assertEquals(TensorClassificationBasis.NO_ABSTRACT_VALUE, plain.getParameters().get(0).getTensorClassificationBasis());
 	}
 
 	/**
@@ -15986,11 +16001,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testCalledSetArgument() throws Exception {
 		Function scaled = findFunction(this.getFunctions(), "scaled");
 
-		// TODO: https://github.com/wala/ML/issues/1202. The engine has no summary for `set`, so the call's result has no allocation, the
-		// set
-		// isn't seen, and `scaled` converts. Flip to `assertSetArgumentRefused` once the call allocates a set.
-		assertEquals("`scaled` is passed nothing seen as uncrossable.", FALSE, scaled.getHasUncrossableBoundaryValues());
-		assertTrue("`scaled` is converted.", scaled.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		// TODO: https://github.com/wala/ML/issues/1202. The engine has no summary for `set`, so the call's result has no allocation and the
+		// set isn't seen. `scaled` used to convert on that, its boundary check answering FALSE. Its `s` has an empty points-to set, so
+		// whether it is primitive is unknown, and `scaled` is now refused as undetermined before the boundary check runs, which leaves that
+		// check's answer null (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245). Flip to
+		// `assertSetArgumentRefused` once the call allocates a set.
+		assertNull("`scaled`'s boundary check doesn't run.", scaled.getHasUncrossableBoundaryValues());
+		assertNull("Whether `scaled` has a primitive parameter is unknown.", scaled.getHasPrimitiveParameter());
+		assertNotNull("`scaled` takes the undetermined path for primitives.",
+				scaled.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
+		assertTrue("`scaled` is not converted.", scaled.getTransformations().isEmpty());
 	}
 
 	/**

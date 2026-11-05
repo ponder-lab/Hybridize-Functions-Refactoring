@@ -5544,10 +5544,10 @@ public class Function {
 	/**
 	 * Infers whether this {@link Function} has a parameter that is likely a primitive, caching the answer for
 	 * {@link #getHasPrimitiveParameter()}. A parameter is flagged when its points-to set holds only primitives, unless it is a defaulted
-	 * parameter no caller supplies or is bound to one constant at every call. A parameter whose points-to set is empty in some calling
-	 * context, and that the tensor analysis doesn't type as a tensor there, is undetermined there: the analysis models nothing that reaches
-	 * it, not that nothing does, so it is neither flagged nor taken as not primitive. Unless another parameter is flagged, the function's
-	 * answer is then unknown (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
+	 * parameter no caller supplies or is bound to one constant at every call. A positional parameter whose points-to set is empty in some
+	 * calling context, and that the tensor analysis doesn't type as a tensor there, is undetermined there: the analysis models nothing that
+	 * reaches it, not that nothing does, so it is neither flagged nor taken as not primitive. Unless another parameter is flagged, the
+	 * function's answer is then unknown (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
 	 *
 	 * @param callGraph The system {@link CallGraph}.
 	 * @param pointerAnalysis The system {@link PointerAnalysis}.
@@ -5606,10 +5606,12 @@ public class Function {
 				// The analysis models no value reaching the parameter here, which isn't evidence that no primitive does. A defaulted
 				// parameter no caller supplies is always its default, and one the tensor analysis types here is a tensor, so both stay
 				// determined. The tensor types are those inferTensorParameters fills in, so this must run after it, as the processor
-				// orders them.
+				// orders them. Only a positional parameter's slot counts: a `**kwargs` or `*args` slot is empty when no caller passes
+				// anything into it, and a keyword-only parameter's slot can't be told apart from them here, so its emptiness says
+				// nothing about an unmodeled value.
 				// TODO: Read the engine's own distinction between its bottom and an unmodeled value once it publishes one
 				// (https://github.com/wala/ML/issues/1224).
-				if (pointsToSet.isEmpty() && !this.isDefaultedUnsuppliedPrimitive(paramInx)
+				if (pointsToSet.isEmpty() && this.getPositionalParameter(paramInx) != null && !this.isDefaultedUnsuppliedPrimitive(paramInx)
 						&& !this.isTensorTyped(paramInx, nodeRepresentingThisFunction)) {
 					LOG.info("Can't tell whether parameter of: " + this + " with index: " + paramInx
 							+ " is primitive: the analysis models no value that reaches it.");
@@ -5724,6 +5726,26 @@ public class Function {
 	}
 
 	/**
+	 * Returns the positional {@link Parameter} declared at the given IR parameter index, or {@code null} if the slot maps to none. IR slot
+	 * 0 is the callable, so slot 1 is the first declared parameter. A slot past the positional parameters, such as a {@code *args} or
+	 * {@code **kwargs} slot, or one shared with a keyword-only parameter, maps to none.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @return The positional parameter at that slot, or {@code null}.
+	 */
+	private Parameter getPositionalParameter(int irParamIndex) {
+		int declarationIndex = irParamIndex - 1;
+		List<Parameter> parameters = this.getParameters();
+
+		if (declarationIndex < 0 || declarationIndex >= parameters.size())
+			return null;
+
+		Parameter parameter = parameters.get(declarationIndex);
+
+		return !parameter.isKeywordOnly() && parameter.getIndex() == declarationIndex ? parameter : null;
+	}
+
+	/**
 	 * Returns true iff the tensor analysis gives the positional parameter at the given IR parameter index a tensor type in the given node.
 	 * Such a parameter is a tensor there, and so not a primitive, even where the analysis models no value reaching it, as for the result of
 	 * an op whose value the pointer analysis doesn't model but whose type the tensor analysis does
@@ -5734,15 +5756,8 @@ public class Function {
 	 * @return True iff that parameter has a {@link TensorType} in {@code node}.
 	 */
 	private boolean isTensorTyped(int irParamIndex, CGNode node) {
-		int declarationIndex = irParamIndex - 1;
-		List<Parameter> parameters = this.getParameters();
-
-		if (declarationIndex < 0 || declarationIndex >= parameters.size())
-			return false;
-
-		Parameter parameter = parameters.get(declarationIndex);
-
-		return !parameter.isKeywordOnly() && parameter.getIndex() == declarationIndex && !parameter.getTensorTypes(node).isEmpty();
+		Parameter parameter = this.getPositionalParameter(irParamIndex);
+		return parameter != null && !parameter.getTensorTypes(node).isEmpty();
 	}
 
 	/**
