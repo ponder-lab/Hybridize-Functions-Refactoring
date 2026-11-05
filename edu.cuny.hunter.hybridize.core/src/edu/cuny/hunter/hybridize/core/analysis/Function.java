@@ -161,6 +161,7 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAPhiInstruction;
+import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
@@ -4038,8 +4039,10 @@ public class Function {
 	 * Returns true iff no value with no abstract object may reach the given value of the given node: its points-to set is non-empty and,
 	 * since an empty set disappears once merged with a non-empty one, so is that of each operand of a phi defining it, and, if it is one of
 	 * the node's parameters, of every argument passed for it
-	 * ({@link #isArgumentKnownAtEveryCallSite(Set, int, String, CallGraph, PythonSSAPropagationCallGraphBuilder, Set)}). A value read from
-	 * a container, whose stores this doesn't follow, is taken as its points-to set shows it.
+	 * ({@link #isArgumentKnownAtEveryCallSite(Set, int, String, CallGraph, PythonSSAPropagationCallGraphBuilder, Set)}), and, if it is a
+	 * call's result, of every value each target with an IR returns, since a callee's returns merge as a phi's operands do. A target with no
+	 * IR is taken as the result's points-to set shows it. A value read from a container or an attribute, whose stores this doesn't follow,
+	 * is taken as its points-to set shows it too.
 	 *
 	 * @param node The call-graph node holding the value.
 	 * @param value The value number.
@@ -4050,7 +4053,8 @@ public class Function {
 	 */
 	private static boolean isValueKnown(CGNode node, int value, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
 			Set<Pair<CGNode, Integer>> seen) {
-		// TODO: A value read from a container isn't followed to the values stored in it. Once the engine gives an integer subscript of a
+		// TODO: A value read from a container or an attribute isn't followed to the values stored in it. Once the engine gives an integer
+		// subscript of a
 		// tensor an abstract object (https://github.com/wala/ML/issues/1225), no value it models has an empty points-to set to merge away.
 		if (!seen.add(Pair.make(node, value)))
 			return true;
@@ -4069,6 +4073,20 @@ public class Function {
 			for (int i = 0; i < phi.getNumberOfUses(); i++)
 				if (phi.getUse(i) < 0 || !isValueKnown(node, phi.getUse(i), callGraph, builder, seen))
 					return false;
+
+			return true;
+		}
+
+		if (node.getDU().getDef(value) instanceof SSAAbstractInvokeInstruction invoke && invoke.hasDef() && invoke.getDef() == value) {
+			for (CGNode target : callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+				IR targetIR = target.getIR();
+
+				if (targetIR != null)
+					for (SSAInstruction instruction : targetIR.getInstructions())
+						if (instruction instanceof SSAReturnInstruction ret && ret.getResult() >= 0
+								&& !isValueKnown(target, ret.getResult(), callGraph, builder, seen))
+							return false;
+			}
 
 			return true;
 		}

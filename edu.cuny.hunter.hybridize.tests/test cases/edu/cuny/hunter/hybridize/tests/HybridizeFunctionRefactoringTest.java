@@ -16049,6 +16049,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: an argument the engine doesn't model is still seen
+	 * when a callee's returns merge it with a constant. {@code count} returns {@code 2} or {@code tf.shape(c)[0]}, whose points-to set is
+	 * empty, so its result's points-to set holds only the constant. The callee's returns are followed, and {@code reshape_to}, which
+	 * {@code pick} passes the result, is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryUnmodeledArgumentReturn() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "reshape_to");
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: an index operand keeps its color inbound.
 	 * {@code restore} indexes a module-level shape vector with its tensor parameter {@code i} and passes the element to
 	 * {@code tf.reshape}'s shape operand, so the reshaped dimension is {@code i}'s value, which a traced call doesn't see. Only the index
