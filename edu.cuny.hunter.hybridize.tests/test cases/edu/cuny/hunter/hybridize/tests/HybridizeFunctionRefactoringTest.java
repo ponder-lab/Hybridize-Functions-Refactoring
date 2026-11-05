@@ -10141,6 +10141,33 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Dicts of ints whose keys the analysis lists, the complete counterpart of {@link #testIncompleteContainerUnknown()}: the engine
+	 * reports each dict complete and lists only int elements, so the parameter receiving it is determined not to be a tensor, and neither
+	 * function takes the undetermined path (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 */
+	@Test
+	public void testCompleteContainerOfInts() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function lookup = getFunction("lookup");
+		Parameter table = lookup.getParameters().get(0);
+		assertEquals("`table` is not a container of tensors.", FALSE, table.isTensorContainer());
+		assertEquals("`table` is determined not to be a tensor.", FALSE, table.isTensor());
+		assertEquals(TensorClassificationBasis.ANALYZED_NOT_TENSOR, table.getTensorClassificationBasis());
+		assertEquals("`lookup` has no tensor parameter.", FALSE, lookup.getHasTensorParameter());
+		assertNotNull(lookup.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
+		assertNull("`lookup` doesn't take the undetermined path.", lookup.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+
+		Function scale = getFunction("scale");
+		Parameter scaleTable = scale.getParameters().get(1);
+		assertEquals("`table` is not a container of tensors.", FALSE, scaleTable.isTensorContainer());
+		assertEquals("`table` is determined not to be a tensor.", FALSE, scaleTable.isTensor());
+		assertEquals(TensorClassificationBasis.ANALYZED_NOT_TENSOR, scaleTable.getTensorClassificationBasis());
+		assertEquals("`scale` has a tensor parameter.", TRUE, scale.getHasTensorParameter());
+		assertNull("`scale` doesn't take the undetermined path.", scale.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
+	}
+
+	/**
 	 * A tuple display: the engine knows its length and the tensor types at each position, so the parameter reduces to a nested entry with
 	 * one specification per position.
 	 */
