@@ -18303,4 +18303,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`consume` receives full batches.", "[tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]",
 				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
+
+	/**
+	 * {@code consume} receives a member of each element of {@code from_tensor_slices(P(floats, ints))}, with {@code P} a namedtuple, read
+	 * by name as {@code e.b}. The engine gives the element the namedtuple's named fields, aliased to its positions (wala/ML#1210), so the
+	 * member is read as the int32 vector it slices from {@code ints}.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetNamedTupleField() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+
+		assertEquals("The member read by name is an int32 vector.", "INT32[Constant,3]",
+				consume.getParameters().get(0).getRenderedTensorTypes());
+		assertEquals("`consume` receives the member.", "[tf.TensorSpec(shape=(3,), dtype=tf.int32)]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
 }
