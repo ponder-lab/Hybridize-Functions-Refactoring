@@ -6150,6 +6150,17 @@ public class Function {
 					continue;
 				}
 
+				if (param.getTensorClassificationBasis() == TensorClassificationBasis.INCOMPLETE_CONTAINER) {
+					// Required, and whether it is a tensor is unknown (#1223), so the source-side suggestion below would be a guess.
+					this.addInfo(INPUT_SIGNATURE_INFERENCE,
+							"Whether parameter `" + param.getName() + "` of `" + this + "` is tensor-typed can't be determined: it "
+									+ "receives a container that may hold elements the analysis does not list. It prevents "
+									+ "input-signature inference.");
+					addBlockingReason(blocking, param, AbsenceReason.NON_TENSOR_PARAMETER);
+					// Not reached, as for the non-tensor case below.
+					continue;
+				}
+
 				// Required and non-tensor. The developer's source code is correct as-is; this is a design opportunity, not a
 				// problem. Emit a source-side recovery suggestion. The tool does not synthesize a TensorType here because wrapping
 				// a Python primitive as a tensor changes AutoGraph's rewrite of Python control flow over the parameter (`range(n)`

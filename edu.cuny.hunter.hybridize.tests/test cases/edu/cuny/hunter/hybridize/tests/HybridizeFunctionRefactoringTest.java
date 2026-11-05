@@ -10097,6 +10097,50 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A parameter passed a tensor at one call and, at another, a dict holding tensors under keys the analysis can't list. The tensor makes
+	 * the parameter tensor-typed, and the incomplete dict is still a container whose form the reduction doesn't model, so no signature is
+	 * written from the tensor call alone, which the dict call would fail against (#976,
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 */
+	@Test
+	public void testIncompleteContainerBesideTensor() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function read = getFunction("read");
+		Parameter d = read.getParameters().get(0);
+		InferenceResult result = read.inferInputSignature();
+		assertFalse("No signature is written from the tensor call alone: " + result.signature(), result.signature().isPresent());
+		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
+				result.absenceReason());
+
+		assertEquals("`d` is tensor-typed by the direct call.", TRUE, d.isTensor());
+		assertEquals(TensorClassificationBasis.TENSOR_ANALYSIS, d.getTensorClassificationBasis());
+		assertEquals("The incomplete dict is a container the reduction doesn't model.", TRUE, d.isConformingTensorContainer());
+		assertNull("No element structure is read off an incomplete container.", d.getContainerElementTypes());
+	}
+
+	/**
+	 * A function with a tensor parameter beside one receiving a dict whose keys the analysis can't list. The function has a tensor
+	 * parameter, and the other parameter's tensor-ness is unknown, so the signature is dropped and the INFO says it is undetermined rather
+	 * than suggesting the parameter accept a tensor (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
+	 */
+	@Test
+	public void testIncompleteContainerBesideTensorParameter() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function scale = getFunction("scale");
+		assertEquals("`scale` has a tensor parameter.", TRUE, scale.getHasTensorParameter());
+		Parameter vocab = scale.getParameters().get(1);
+		assertNull("Whether `vocab` is a tensor is unknown.", vocab.isTensor());
+		assertEquals(TensorClassificationBasis.INCOMPLETE_CONTAINER, vocab.getTensorClassificationBasis());
+
+		InferenceResult result = scale.inferInputSignature();
+		assertFalse("No signature is written.", result.signature().isPresent());
+		assertTrue("The INFO says `vocab`'s tensor-ness can't be determined.", Arrays.stream(scale.getStatus().getEntries()).anyMatch(
+				e -> e.getMessage().startsWith("Whether parameter `vocab` of `") && e.getMessage().contains("can't be determined")));
+	}
+
+	/**
 	 * A tuple display: the engine knows its length and the tensor types at each position, so the parameter reduces to a nested entry with
 	 * one specification per position.
 	 */
