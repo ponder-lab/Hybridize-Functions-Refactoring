@@ -16131,6 +16131,106 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: a parameter that only Python scalars reach is not a
+	 * shape value, since {@code tf.function} keeps a Python scalar's value in its trace key. {@code resize} passes its Python {@code int}
+	 * parameters to {@code tf.image.resize}'s {@code size} and returns the result, and is not refused. {@code reshape_by} reshapes by a
+	 * {@code tf.shape} tensor it is passed, and is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryPythonScalars() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function resize = findFunction(functions, "resize");
+		assertFalse("`resize` passes no shape value across its boundary.", resize.getPassesShapeValueAcrossBoundary());
+		assertNull("`resize` doesn't fail with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", resize.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+		assertEquals("`resize` hybridizes (P1).", P1, resize.getPassingPrecondition());
+
+		assertPassesShapeValueAcrossBoundary(functions, "reshape_by");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: a parameter that looks as though only Python scalars
+	 * reach it, because a call passes it a value the engine doesn't model, is still a source. {@code forward} is called with {@code 2} and
+	 * with {@code tf.shape(c)[0]}, a tensor whose points-to set is empty, and passes either to {@code reshape_to} from one call site, so
+	 * {@code reshape_to}'s one node sees only the constant. The second call's reshape gets its leading dimension from a tensor value that
+	 * doesn't cross, so {@code reshape_to} is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryUnmodeledArgument() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "reshape_to");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: an argument the engine doesn't model is still seen
+	 * when it merges with a constant before the call. {@code pick} passes {@code reshape_to} a value that is {@code 2} on one branch and
+	 * {@code tf.shape(c)[0]}, whose points-to set is empty, on the other, so the merged argument's points-to set holds only the constant.
+	 * The phi's operands are followed, and {@code reshape_to} is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryUnmodeledArgumentPhi() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "reshape_to");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: an argument the engine doesn't model is still seen
+	 * when a callee's returns merge it with a constant. {@code count} returns {@code 2} or {@code tf.shape(c)[0]}, whose points-to set is
+	 * empty, so its result's points-to set holds only the constant. The callee's returns are followed, and {@code reshape_to}, which
+	 * {@code pick} passes the result, is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryUnmodeledArgumentReturn() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "reshape_to");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: an index operand keeps its color inbound.
+	 * {@code restore} indexes a module-level shape vector with its tensor parameter {@code i} and passes the element to
+	 * {@code tf.reshape}'s shape operand, so the reshaped dimension is {@code i}'s value, which a traced call doesn't see. Only the index
+	 * is a parameter, so {@code restore} is refused only if the index's color flows into the read.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryIndex() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "restore");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: {@code len} of a tensor reads its type, which
+	 * crosses, so it launders a parameter's value: traced, it is a Python {@code int} constant for a known first dimension and
+	 * {@code tf.shape(x)[0]} for an unknown one. {@code counted} passes {@code len} of its parameter to {@code tf.range}, and
+	 * {@code propagate} passes it to {@code add_self_loops}, which passes it to {@code tf.range} and uses the result as gather indices;
+	 * neither is refused. {@code add_self_loops} receives a Python {@code int} of unknown value, a primitive parameter, so the check isn't
+	 * run on it.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryLen() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("propagate", "counted")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` passes no shape value across its boundary.", function.getPassesShapeValueAcrossBoundary());
+			assertNull("`" + identifier + "` doesn't fail with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+		}
+
+		Function addSelfLoops = findFunction(functions, "add_self_loops");
+		assertTrue("`add_self_loops` has a primitive parameter.", addSelfLoops.getHasPrimitiveParameter());
+		assertNull("The check isn't run on `add_self_loops`.", addSelfLoops.getPassesShapeValueAcrossBoundary());
+		assertNull("`add_self_loops` doesn't fail with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", addSelfLoops.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: a call that may reach {@code len} or something else
+	 * doesn't launder. {@code counted} calls either {@code len} or a bound method that returns its argument, so its parameter's value may
+	 * reach {@code tf.range} unchanged, and it is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryLenAliased() throws Exception {
+		assertPassesShapeValueAcrossBoundary(this.getFunctions(), "counted");
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076: a read of a tensor held in a field that another
 	 * method rebinds on every call. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function} and its state set up
 	 * twice with different tensors, the second call returns the first call's state where the eager reader returns the second's:

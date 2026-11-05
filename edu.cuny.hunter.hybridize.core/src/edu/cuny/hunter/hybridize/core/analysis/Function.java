@@ -126,6 +126,7 @@ import com.ibm.wala.cast.python.loader.IPythonClass;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion;
 import com.ibm.wala.cast.python.ml.analysis.AppliedDTypeCoercion.Resolution;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ml.types.TensorType;
@@ -159,6 +160,8 @@ import com.ibm.wala.ipa.modref.ModRef;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
+import com.ibm.wala.ssa.SSAPhiInstruction;
+import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
@@ -3891,7 +3894,8 @@ public class Function {
 		Boolean ret = Boolean.FALSE;
 
 		for (CGNode node : nodes) {
-			Boolean passes = analysis.passesShapeValue(node, this.isMethod());
+			Boolean passes = analysis.passesShapeValue(node, this.isMethod(),
+					this.pythonScalarParameterSlots(node, nodes, callGraph, builder));
 
 			if (Boolean.TRUE.equals(passes)) {
 				ret = Boolean.TRUE;
@@ -3914,6 +3918,197 @@ public class Function {
 	 */
 	public Boolean getPassesShapeValueAcrossBoundary() {
 		return this.passesShapeValueAcrossBoundary;
+	}
+
+	/**
+	 * The parameter slots of {@code node} that only Python scalars reach, as {@link #inferPrimitiveParameters} classifies them: the
+	 * parameter's points-to set is non-empty and every value in it is a primitive ({@link #isPrimitiveValue(InstanceKey, boolean)},
+	 * booleans counted), its argument is aligned at every call site ({@link #isArgumentAlignedAtEveryCallSite}), and no call site passes it
+	 * an argument with no abstract value ({@link #isArgumentKnownAtEveryCallSite}), so that the points-to set holds every value it
+	 * receives. A tensor parameter, and one whose points-to set is empty, are not among them.
+	 *
+	 * @param node The call-graph node whose parameters are examined.
+	 * @param nodes Every call-graph node of this {@link Function}, whose callers are examined.
+	 * @param callGraph The call graph.
+	 * @param builder The call-graph builder, holding the pointer analysis.
+	 * @return The IR parameter slots, past the receiver of a method, that only Python scalars reach.
+	 */
+	private Set<Integer> pythonScalarParameterSlots(CGNode node, Set<CGNode> nodes, CallGraph callGraph,
+			PythonSSAPropagationCallGraphBuilder builder) {
+		PointerAnalysis<InstanceKey> pointerAnalysis = builder.getPointerAnalysis();
+		Set<Integer> ret = new HashSet<>();
+		IR ir = node.getIR();
+
+		if (ir == null)
+			return ret;
+
+		for (int paramInx = this.isMethod() ? 2 : 1; paramInx < ir.getNumberOfParameters(); paramInx++) {
+			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, ir.getParameter(paramInx));
+			OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
+
+			boolean allInstancesArePrimitive = !pointsToSet.isEmpty();
+
+			for (InstanceKey instanceKey : pointsToSet)
+				allInstancesArePrimitive &= isPrimitiveValue(instanceKey, false);
+
+			if (allInstancesArePrimitive && this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph)
+					&& this.isArgumentKnownAtEveryCallSite(paramInx, nodes, callGraph, builder))
+				ret.add(paramInx);
+		}
+
+		return ret;
+	}
+
+	/**
+	 * Returns true iff every call site of this {@link Function} passes the parameter at the given IR parameter index an argument whose
+	 * values are all known, or doesn't pass it, leaving its default
+	 * ({@link #isArgumentKnownAtEveryCallSite(Set, int, String, CallGraph, PythonSSAPropagationCallGraphBuilder, Set)}). Assumes
+	 * {@link #isArgumentAlignedAtEveryCallSite} holds, so that no starred argument precedes the parameter's slot.
+	 *
+	 * @param irParamIndex The IR parameter index.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}.
+	 * @param callGraph The call graph.
+	 * @param builder The call-graph builder, which the engine asks how each call binds this function's parameters.
+	 * @return True iff no call site passes the parameter an argument a value with no abstract object may reach, and there is at least one.
+	 */
+	private boolean isArgumentKnownAtEveryCallSite(int irParamIndex, Set<CGNode> nodes, CallGraph callGraph,
+			PythonSSAPropagationCallGraphBuilder builder) {
+		// TODO: Read whether the argument's value set is complete from the engine once it publishes a scalar argument's value set at each
+		// call (https://github.com/wala/ML/issues/1224, Fact 1), instead of walking merges here.
+		return isArgumentKnownAtEveryCallSite(nodes, irParamIndex, this.getParameters().get(irParamIndex - 1).getName(), callGraph, builder,
+				new HashSet<>());
+	}
+
+	/**
+	 * Returns true iff every call site of the given call-graph nodes passes the parameter at the given IR parameter index an argument whose
+	 * values are all known ({@link #isValueKnown}), or doesn't pass it, leaving its default. A node's points-to set for a parameter is the
+	 * union of the arguments its calling contexts pass, so an argument with no abstract value, such as a tensor the engine doesn't model,
+	 * adds nothing to it, and the parameter may then look as though only Python scalars reach it. A caller that isn't program code, such as
+	 * the trampoline through which an instance method is called, and a call whose binding of the callee the engine doesn't report
+	 * ({@link CallTargets#parameterBoundTargets}), are undetermined, so a method called through a trampoline never passes.
+	 *
+	 * @param nodes The callee's call-graph nodes.
+	 * @param irParamIndex The IR parameter index.
+	 * @param name The parameter's name, by which a keyword argument passes it, or {@code null} if unknown, in which case a call passing any
+	 *        keyword argument is undetermined.
+	 * @param callGraph The call graph.
+	 * @param builder The call-graph builder, which the engine asks how each call binds the callee's parameters.
+	 * @param seen The (node, value number) pairs already being examined, which cut a cycle through recursive calls or a loop's phi.
+	 * @return True iff no call site passes the parameter an argument a value with no abstract object may reach, and there is at least one.
+	 */
+	private static boolean isArgumentKnownAtEveryCallSite(Set<CGNode> nodes, int irParamIndex, String name, CallGraph callGraph,
+			PythonSSAPropagationCallGraphBuilder builder, Set<Pair<CGNode, Integer>> seen) {
+		boolean sawCallSite = false;
+
+		for (CGNode node : nodes)
+			for (CGNode predecessor : Iterator2Iterable.make(callGraph.getPredNodes(node))) {
+				IR ir = predecessor.getIR();
+
+				if (ir == null || !CallTargets.isProgramCode(predecessor))
+					return false;
+
+				for (CallSiteReference site : Iterator2Iterable.make(callGraph.getPossibleSites(predecessor, node)))
+					for (SSAAbstractInvokeInstruction instruction : ir.getCalls(site)) {
+						if (!(instruction instanceof PythonInvokeInstruction invoke))
+							return false;
+
+						Boolean bound = CallTargets.parameterBoundTargets(builder, predecessor, invoke).get(node);
+
+						if (bound == null)
+							return false;
+
+						sawCallSite = true;
+
+						// Positional arguments start at use 1, past the callee, and shift by one past a bound receiver.
+						int position = irParamIndex - (bound ? 1 : 0);
+						int argument;
+
+						if (name != null && invoke.getKeywords().contains(name))
+							argument = invoke.getUse(name);
+						else if (name == null && !invoke.getKeywords().isEmpty())
+							return false; // A keyword may pass it, and which one is unknown.
+						else if (position >= 1 && position < invoke.getNumberOfPositionalParameters())
+							argument = invoke.getUse(position);
+						else
+							continue; // Not passed: the parameter takes its default.
+
+						if (!isValueKnown(predecessor, argument, callGraph, builder, seen))
+							return false;
+					}
+			}
+
+		return sawCallSite;
+	}
+
+	/**
+	 * Returns true iff no value with no abstract object may reach the given value of the given node: its points-to set is non-empty and,
+	 * since an empty set disappears once merged with a non-empty one, so is that of each operand of a phi defining it, and, if it is one of
+	 * the node's parameters, of every argument passed for it
+	 * ({@link #isArgumentKnownAtEveryCallSite(Set, int, String, CallGraph, PythonSSAPropagationCallGraphBuilder, Set)}), and, if it is a
+	 * call's result, of every value each target with an IR returns, since a callee's returns merge as a phi's operands do. A target with no
+	 * IR is taken as the result's points-to set shows it. A value read from a container or an attribute, whose stores this doesn't follow,
+	 * is taken as its points-to set shows it too.
+	 *
+	 * @param node The call-graph node holding the value.
+	 * @param value The value number.
+	 * @param callGraph The call graph.
+	 * @param builder The call-graph builder, holding the pointer analysis.
+	 * @param seen The (node, value number) pairs already being examined; one seen again is left to the other paths reaching it.
+	 * @return True iff no value with no abstract object may reach {@code value}.
+	 */
+	private static boolean isValueKnown(CGNode node, int value, CallGraph callGraph, PythonSSAPropagationCallGraphBuilder builder,
+			Set<Pair<CGNode, Integer>> seen) {
+		// TODO: A value read from a container or an attribute isn't followed to the values stored in it. Once the engine gives an integer
+		// subscript of a
+		// tensor an abstract object (https://github.com/wala/ML/issues/1225), no value it models has an empty points-to set to merge away.
+		if (!seen.add(Pair.make(node, value)))
+			return true;
+
+		PointerAnalysis<InstanceKey> pointerAnalysis = builder.getPointerAnalysis();
+
+		if (pointerAnalysis.getPointsToSet(pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value)).isEmpty())
+			return false;
+
+		IR ir = node.getIR();
+
+		if (ir == null)
+			return false;
+
+		if (node.getDU().getDef(value) instanceof SSAPhiInstruction phi) {
+			for (int i = 0; i < phi.getNumberOfUses(); i++)
+				if (phi.getUse(i) < 0 || !isValueKnown(node, phi.getUse(i), callGraph, builder, seen))
+					return false;
+
+			return true;
+		}
+
+		if (node.getDU().getDef(value) instanceof SSAAbstractInvokeInstruction invoke && invoke.hasDef() && invoke.getDef() == value) {
+			for (CGNode target : callGraph.getPossibleTargets(node, invoke.getCallSite())) {
+				IR targetIR = target.getIR();
+
+				if (targetIR != null)
+					for (SSAInstruction instruction : targetIR.getInstructions())
+						if (instruction instanceof SSAReturnInstruction ret && ret.getResult() >= 0
+								&& !isValueKnown(target, ret.getResult(), callGraph, builder, seen))
+							return false;
+			}
+
+			return true;
+		}
+
+		int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
+
+		for (int i = 0; i < parameters.length; i++)
+			if (parameters[i] == value) {
+				if (i == 0)
+					return false; // The function object itself.
+
+				String[] names = ir.getLocalNames(0, value);
+				String name = names != null && names.length == 1 ? names[0] : null;
+				return isArgumentKnownAtEveryCallSite(Set.of(node), i, name, callGraph, builder, seen);
+			}
+
+		return true;
 	}
 
 	/**

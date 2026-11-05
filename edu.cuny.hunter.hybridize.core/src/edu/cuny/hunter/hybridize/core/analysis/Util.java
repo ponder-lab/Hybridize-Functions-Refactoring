@@ -48,6 +48,8 @@ import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
+import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
@@ -60,6 +62,7 @@ import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.ipa.callgraph.propagation.PropagationCallGraphBuilder;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
@@ -492,6 +495,9 @@ public class Util {
 	/** The type-name prefix of Ariadne's prelude objects for Python builtins. */
 	static final String BUILTIN_PRELUDE_TYPE_NAME_PREFIX = "Lwala/builtin/";
 
+	/** The module under which the engine names a Python builtin's API ({@link TensorFlowApis}), such as {@code builtins.len}. */
+	private static final String BUILTINS_MODULE_NAME = "builtins";
+
 	/** The keyword through which {@code min}, {@code max}, {@code sorted} and {@code list.sort} take a function to call. */
 	private static final String KEY_KEYWORD = "key";
 
@@ -657,6 +663,27 @@ public class Util {
 		// any other call, and one with no target is already counted by the target-less check.
 		String summary = BUILTIN_PRELUDE_TYPE_NAME_PREFIX + name;
 		return !targets.isEmpty() && targets.stream().allMatch(t -> t.getMethod().getDeclaringClass().getName().toString().equals(summary));
+	}
+
+	/**
+	 * True iff {@code invoke} calls only the Python builtin {@code name}: the call has one target, which isn't program code
+	 * ({@link CallTargets#isProgramCode}), the engine names {@code builtins.name} as the only API the call invokes
+	 * ({@link TensorFlowApis}), and the call is not of a name the script rebinds, which Ariadne may resolve to the builtin too
+	 * ({@link #callsRebindingOfBuiltin}).
+	 *
+	 * @param builder The call-graph builder, which the engine asks for the APIs the call invokes.
+	 * @param node The node whose IR holds {@code invoke}.
+	 * @param invoke The call.
+	 * @param name The builtin's name, such as {@code len}.
+	 * @return True iff the builtin {@code name} is the only callee of {@code invoke}.
+	 */
+	static boolean callsBuiltin(PropagationCallGraphBuilder builder, CGNode node, PythonInvokeInstruction invoke, String name) {
+		CallGraph callGraph = builder.getCallGraph();
+		Set<CGNode> targets = callGraph.getPossibleTargets(node, invoke.getCallSite());
+		// One target: the engine's names don't say that a call reaches nothing else, since a target it can't name adds no name.
+		return targets.size() == 1 && targets.stream().noneMatch(CallTargets::isProgramCode)
+				&& TensorFlowApis.of(builder, node, invoke).equals(Set.of(BUILTINS_MODULE_NAME + "." + name))
+				&& !callsRebindingOfBuiltin(node, invoke, node.getDU(), callGraph);
 	}
 
 	/**
