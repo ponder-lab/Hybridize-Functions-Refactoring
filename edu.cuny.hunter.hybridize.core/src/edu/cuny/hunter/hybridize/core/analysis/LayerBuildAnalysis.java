@@ -4,6 +4,7 @@ import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.KERAS_LAYER_TYPE
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.KERAS_MODEL_TYPE;
 import static com.ibm.wala.cast.python.util.Util.allocatedClass;
 import static com.ibm.wala.cast.python.util.Util.findAllocationSiteInNode;
+import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 import static org.eclipse.core.runtime.Platform.getLog;
 
 import java.util.ArrayDeque;
@@ -82,14 +83,19 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * or of a program function it reaches, that is control dependent, transitively, on a branch or loop condition that can differ between
  * traces, and the branch decides whether the callee is first called: a trace can reach the branch without calling the callee, and an arm of
  * it leads to the exit without calling it either. The calls of one callee object are taken together, so a layer called on both arms of a
- * branch, or before it, isn't first called under it. Only the paths that return normally count, since a trace that raises keeps no graph.
- * The condition takes the same path on every trace only on an engine fact: its points-to set is one constant, the same in every context, as
- * a literal or a module constant is, or the engine types it as a tensor, whose branch AutoGraph traces both arms of, so the first trace
- * makes the first call. Anything else, such as a parameter or field that may hold two values, an iterator over {@code self.blocks}, or a
- * value whose points-to set is empty, may vary, and the method is refused; whether a condition is fixed at every call is a fact the engine
- * doesn't publish yet (wala/ML#1230). A layer chosen by data rather than by control counts too: a call whose callee value may be more than
- * one layer is refused unless a phi merges them under branches that are fixed so, as {@code (self.a if flag else self.b)(x)} is refused for
- * a parameter {@code flag}. One layer through a local alias is one value.</li>
+ * branch, or before it, isn't first called under it. Only the paths that return normally count, since a trace that raises keeps no graph;
+ * but a call in an exception handler that returns normally is refused, since a retrace whose protected code raises first calls it. The
+ * condition takes the same path on every trace only on an engine fact: its points-to set is one constant, the same in every context, as a
+ * literal or a module constant is, or the engine types it as a tensor, and no Python value, in every context, whose branch AutoGraph traces
+ * both arms of, so the first trace makes the first call. A tensor in one context or call and a Python value in another is a mix, which
+ * varies. Anything else, such as a parameter or field that may hold two values, an iterator over {@code self.blocks}, or a value whose
+ * points-to set is empty, may vary, and the method is refused; whether a condition is fixed at every call is a fact the engine doesn't
+ * publish yet (wala/ML#1230). A layer chosen by data rather than by control counts too: a call whose callee value may be more than one
+ * layer is refused unless a phi merges them under branches that are fixed so, as {@code (self.a if flag else self.b)(x)} is refused for a
+ * parameter {@code flag}. One layer through a local alias is one value. In the method's own body, one allocation that may make several
+ * layers, as a comprehension does, counts as several unless a fixed key selects one, as in {@code self.blocks[0]}; {@code self.blocks[i]}
+ * for a parameter {@code i} is refused. The receiver choosing, as {@code self.d} does in a class constructed twice, is fixed, since each
+ * instance traces its own function.</li>
  * <li>{@link LayerBuildShape#COLLIDING_NAMES}: decorating the method names the variables built in its trace without the scopes of the
  * receiver and the layers enclosing it, so two sublayers that carry the same name build variables with the same names, and a save keyed by
  * name, such as to HDF5, fails or mixes weights (issue 1172). The sublayers are the layer objects reachable from the receiver through
@@ -101,11 +107,15 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * one in a loop or a comprehension, in a function invoked from two sites that one program run reaches, or in the {@code build} of a layer
  * that has more than one instance. A name that is not one constant string, such as {@code "h{}".format(i)}, may collide with any other and
  * refuses. A sublayer constructed without a name, or with {@code None}, gets a unique one from Keras and never collides. The front end
- * reads an f-string as the one constant string of its source text, so an f-string name counts as that constant.</li>
+ * reads an f-string as the one constant string of its source text, opening quote included, which counts as computed until the engine reads
+ * it so (wala/ML#1231). A constructing call or a base's {@code __init__} call that unpacks {@code **} keywords, as
+ * {@code super().__init__(**kwargs)} does, may pass any name, which counts as computed too.</li>
  * </ol>
- * A Keras model's {@code call} is exempt: decorating it drops the enclosing scopes from its weights' names too, but the save succeeds,
- * whether or not the model is nested in another one. So is a function that is no method, such as a training step: it runs inside no layer's
- * name scope, and a model it calls enters its own scope inside the trace.
+ * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
+ * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
+ * {@code call} is exempt: decorating it drops the enclosing scopes from its weights' names too, but the save succeeds, whether or not the
+ * model is nested in another one. So is a function that is no method, such as a training step: it runs inside no layer's name scope, and a
+ * model it calls enters its own scope inside the trace.
  * <p>
  * Every type fact comes from the engine. {@link TensorFlowApis} names the call of {@code tensorflow.keras.layers.Layer.add_weight} both in
  * a program layer's {@code build} and in the engine's summary of a built-in layer's first call (wala/ML#1145). The latter lies inside a
@@ -149,6 +159,9 @@ class LayerBuildAnalysis {
 	/** The fully-qualified name of {@code Layer.add_weight}, as the engine names it ({@link TensorFlowApis}). */
 	private static final String ADD_WEIGHT_API = "tensorflow.keras.layers.Layer.add_weight";
 
+	/** The keyword the front end gives a {@code **} argument of a call, the string of its missing keyword name. */
+	private static final String UNPACKED_KEYWORDS = String.valueOf((Object) null);
+
 	/** The keyword of a layer's name. */
 	private static final String NAME_KEYWORD = "name";
 
@@ -169,6 +182,9 @@ class LayerBuildAnalysis {
 
 	/** The call-graph builder, which the engine asks for the APIs a call invokes, the receiver's objects and the class hierarchy. */
 	private final PythonSSAPropagationCallGraphBuilder builder;
+
+	/** The nodes of the method being checked, set by {@link #getShape(Set)}. */
+	private Set<CGNode> methodNodes = Collections.emptySet();
 
 	/** Whether each node may reach {@code Layer.add_weight}, memoized. */
 	private final Map<CGNode, Boolean> reachesAddWeight = new HashMap<>();
@@ -278,6 +294,7 @@ class LayerBuildAnalysis {
 	 * @return The first shape that holds, with where it occurs, or empty if none does.
 	 */
 	Optional<Verdict> getShape(Set<CGNode> nodes) {
+		this.methodNodes = nodes;
 		Set<CGNode> traced = this.getTracedNodes(nodes);
 		Optional<Verdict> ret = this.findConstruction(traced);
 
@@ -331,8 +348,10 @@ class LayerBuildAnalysis {
 					InstanceKey instanceKey = this.getPointerAnalysis().getHeapModel().getInstanceKeyForAllocation(node,
 							allocation.getNewSite());
 
+					// An allocation whose object the engine doesn't name may be a layer.
 					if (instanceKey == null)
-						continue;
+						return Optional.of(new Verdict(LayerBuildShape.CONSTRUCTED_IN_BODY,
+								"an object it allocates in `" + getFunctionName(node) + "` can't be determined"));
 
 					Optional<IClass> allocatedClass = allocatedClass(instanceKey);
 
@@ -396,9 +415,16 @@ class LayerBuildAnalysis {
 				for (SSAAbstractInvokeInstruction call : ir.getCalls(site)) {
 					ISSABasicBlock block = ir.getControlFlowGraph().getBlockForInstruction(call.iIndex());
 
-					// A call on no path that returns normally builds nothing a trace keeps.
-					if (!cfg.containsNode(block))
+					// A call on no path that returns normally builds nothing a trace keeps. A call in an exception handler that returns
+					// normally does: a retrace whose protected code raises, as a layer does for an input it wasn't built for, first calls
+					// it.
+					if (!cfg.containsNode(block)) {
+						if (reachesExitNormally(ir.getControlFlowGraph(), block))
+							return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE, "its call at "
+									+ describePosition(node, call) + " runs in an exception handler, which a retrace may reach"));
+
 						continue;
+					}
 
 					// A callee chosen among several layers by a value that may differ between traces may first call one on a retrace.
 					if (!this.isSelectedFixedly(node, call.getUse(0), ir, cfg, controlDependence, new HashSet<>()))
@@ -453,6 +479,7 @@ class LayerBuildAnalysis {
 			return true;
 
 		Set<CGNode> allocators = new HashSet<>();
+		boolean several = false;
 
 		for (InstanceKey instanceKey : this.getPointerAnalysis()
 				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, callee))) {
@@ -466,14 +493,17 @@ class LayerBuildAnalysis {
 					return false;
 
 				allocators.add(site.getNode());
+				several |= this.mayBeSeveral(instanceKey);
 			}
 		}
 
-		if (allocators.size() <= 1)
+		// One layer. One allocation that may make several, as a comprehension does, stands for one only in a callee the method reaches,
+		// whose receiver, and so the layer it reads, the method's own data chooses.
+		if (allocators.isEmpty() || allocators.size() == 1 && (!several || !this.methodNodes.contains(node)))
 			return true;
 
 		if (!(node.getDU().getDef(callee) instanceof SSAPhiInstruction phi))
-			return false;
+			return allocators.size() == 1 && this.isReadFixedly(node, callee);
 
 		ISSABasicBlock merge = null;
 
@@ -505,6 +535,61 @@ class LayerBuildAnalysis {
 				return false;
 
 		return true;
+	}
+
+	/**
+	 * True iff {@code value} of one of the method's own nodes reads one layer of an allocation that makes several by a fixed selection: the
+	 * method's receiver, since each instance traces its own function, or a field or element of a value read so, under a key that is a
+	 * literal or fixed ({@link #isFixed(CGNode, int)}). {@code self.blocks[i]} for a parameter {@code i} isn't; {@code self.d} is.
+	 *
+	 * @param node One of the method's nodes.
+	 * @param value A value number of {@code node}.
+	 * @return True iff the value's selection is fixed across traces.
+	 */
+	private boolean isReadFixedly(CGNode node, int value) {
+		SymbolTable symbolTable = node.getIR().getSymbolTable();
+		int[] parameters = symbolTable.getParameterValueNumbers();
+
+		// The receiver chooses: each instance traces its own function, so each first calls its own layer on its first trace.
+		if (parameters.length > 1 && parameters[1] == value && this.getDeclaringClass(node).isPresent())
+			return true;
+
+		SSAInstruction def = node.getDU().getDef(value);
+
+		if (def instanceof SSAGetInstruction get && !get.isStatic())
+			return this.isReadFixedly(node, get.getRef());
+
+		if (def instanceof AstPropertyRead read)
+			return (symbolTable.isConstant(read.getMemberRef()) || this.isFixed(node, read.getMemberRef()))
+					&& this.isReadFixedly(node, read.getObjectRef());
+
+		return false;
+	}
+
+	/**
+	 * True iff the exit of {@code cfg} is reachable from {@code block} along normal edges: a block reached only through an exception, such
+	 * as a handler's, may still return normally.
+	 *
+	 * @param cfg A control-flow graph, with its exceptional edges.
+	 * @param block One of its blocks.
+	 * @return True iff a path of normal edges leads from {@code block} to the exit.
+	 */
+	private static boolean reachesExitNormally(SSACFG cfg, ISSABasicBlock block) {
+		Set<ISSABasicBlock> seen = new HashSet<>(List.of(block));
+		Deque<ISSABasicBlock> worklist = new ArrayDeque<>(List.of(block));
+
+		while (!worklist.isEmpty()) {
+			ISSABasicBlock current = worklist.remove();
+
+			if (current.equals(cfg.exit()))
+				return true;
+
+			for (ISSABasicBlock next : cfg.getNormalSuccessors(current))
+				if (seen.add(next))
+					worklist.add(next);
+		}
+
+		return false;
 	}
 
 	/**
@@ -633,32 +718,39 @@ class LayerBuildAnalysis {
 	/**
 	 * True iff the engine shows that {@code value}, a branch's condition, takes the same path on every trace: its points-to set is one
 	 * constant, the same in every context of the node's function, so it is one literal or module constant whatever the call, or the engine
-	 * types it as a tensor, whose branch AutoGraph traces both arms of, so the first trace makes the first call. Anything else, including a
-	 * value whose points-to set is empty or holds two constants, may vary.
+	 * types it as a tensor, and no Python value, in every context, whose branch AutoGraph traces both arms of, so the first trace makes the
+	 * first call. Anything else may vary: a value whose points-to set is empty or holds two constants, and a mix, such as a tensor in one
+	 * context or call and {@code None} or a Python {@code bool} in another, which takes a Python branch on one trace and a tensor branch on
+	 * another.
 	 *
 	 * @param node The node of {@code value}.
 	 * @param value A value number of {@code node}.
 	 * @return True iff the value is fixed across traces on an engine fact.
 	 */
 	private boolean isFixed(CGNode node, int value) {
-		Set<InstanceKey> pointsTo = new HashSet<>();
+		boolean anyTensor = false;
+		Set<InstanceKey> constants = new HashSet<>();
 
 		for (CGNode context : this.callGraph.getNodes(node.getMethod().getReference())) {
 			PointerKey pointerKey = this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(context, value);
+			OrdinalSet<InstanceKey> pointsTo = this.getPointerAnalysis().getPointsToSet(pointerKey);
+			boolean pythonValue = false;
 
-			if (this.tensorTypedKeys.containsKey(pointerKey))
-				return true;
+			for (InstanceKey instanceKey : pointsTo)
+				if (instanceKey instanceof ConstantKey<?> || isPythonScalarKey(instanceKey))
+					pythonValue = true;
 
-			OrdinalSet<InstanceKey> contextPointsTo = this.getPointerAnalysis().getPointsToSet(pointerKey);
-
-			// Empty in a context is unknown there.
-			if (contextPointsTo.isEmpty())
+			if (this.tensorTypedKeys.containsKey(pointerKey) && !pythonValue)
+				anyTensor = true;
+			else if (pointsTo.size() == 1 && pointsTo.iterator().next() instanceof ConstantKey<?> constant)
+				constants.add(constant);
+			else
+				// Empty in a context is unknown there; a tensor alongside a Python value is a mix.
 				return false;
-
-			contextPointsTo.forEach(pointsTo::add);
 		}
 
-		return pointsTo.size() == 1 && pointsTo.iterator().next() instanceof ConstantKey<?>;
+		// Every context a tensor, or every context the same one constant.
+		return anyTensor ? constants.isEmpty() : constants.size() == 1;
 	}
 
 	/**
@@ -844,6 +936,9 @@ class LayerBuildAnalysis {
 							if (site == null)
 								return null;
 
+							// A layer of the receiver's own class that the receiver's allocator also builds, as a recursive layer's
+							// children are,
+							// is left out with it, and so are its children's names. It's rare.
 							if (!receiverAllocators.contains(site.getNode()))
 								ret.computeIfAbsent(site.getNode(), k -> new HashSet<>()).add(value);
 						}
@@ -883,20 +978,27 @@ class LayerBuildAnalysis {
 		Set<String> constants = new TreeSet<>();
 		boolean computed = false;
 
-		// The calls constructing it.
+		// The calls constructing it. One unpacking keywords, as `Dense(**config)` does, may pass any name.
 		for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator)))
 			for (CallSiteReference callSite : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, allocator)))
 				for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(callSite))
-					if (call instanceof PythonInvokeInstruction invoke && invoke.getUse(NAME_KEYWORD) >= 0)
-						computed |= addNames(caller, invoke.getUse(NAME_KEYWORD), constants);
+					if (call instanceof PythonInvokeInstruction invoke)
+						if (unpacksKeywords(invoke))
+							computed = true;
+						else if (invoke.getUse(NAME_KEYWORD) >= 0)
+							computed |= addNames(caller, invoke.getUse(NAME_KEYWORD), constants);
 
-		// The `__init__` calls of its class's `__init__`, for a program class.
+		// The `__init__` calls of its class's `__init__`, for a program class. One unpacking keywords, as `super().__init__(**kwargs)`
+		// does,
+		// may pass any name.
 		if (allocator.getMethod() instanceof PythonConstructorFunction)
 			for (CGNode init : this.getInitializers(allocator, objects))
 				for (SSAInstruction instruction : init.getIR().getInstructions())
-					if (instruction instanceof PythonInvokeInstruction invoke && invoke.getUse(NAME_KEYWORD) >= 0
-							&& callsInit(init, invoke))
-						computed |= addNames(init, invoke.getUse(NAME_KEYWORD), constants);
+					if (instruction instanceof PythonInvokeInstruction invoke && callsInit(init, invoke))
+						if (unpacksKeywords(invoke))
+							computed = true;
+						else if (invoke.getUse(NAME_KEYWORD) >= 0)
+							computed |= addNames(init, invoke.getUse(NAME_KEYWORD), constants);
 
 		return new Names(constants, computed);
 	}
@@ -928,6 +1030,17 @@ class LayerBuildAnalysis {
 			}
 
 		return ret;
+	}
+
+	/**
+	 * True iff {@code invoke} unpacks a mapping into its keyword arguments, {@code **kwargs}, whose keys, a {@code name} among them, it
+	 * doesn't show. The front end lowers such an argument as a keyword whose name is the string of a missing one.
+	 *
+	 * @param invoke A call.
+	 * @return True iff the call has a {@code **} argument.
+	 */
+	private static boolean unpacksKeywords(PythonInvokeInstruction invoke) {
+		return invoke.getKeywords().contains(UNPACKED_KEYWORDS);
 	}
 
 	/**
@@ -965,10 +1078,8 @@ class LayerBuildAnalysis {
 	private boolean addNames(CGNode node, int value, Set<String> constants) {
 		SymbolTable symbolTable = node.getIR().getSymbolTable();
 
-		if (symbolTable.isStringConstant(value)) {
-			constants.add(symbolTable.getStringValue(value));
-			return false;
-		}
+		if (symbolTable.isStringConstant(value))
+			return addName(symbolTable.getStringValue(value), constants);
 
 		if (symbolTable.isNullConstant(value))
 			return false;
@@ -983,11 +1094,29 @@ class LayerBuildAnalysis {
 
 		for (InstanceKey instanceKey : pointsToSet)
 			if (instanceKey instanceof ConstantKey<?> constant && constant.getValue() instanceof String string)
-				constants.add(string);
+				ret |= addName(string, constants);
 			else if (!(instanceKey instanceof ConstantKey<?> constant && constant.getValue() == null))
 				ret = true;
 
 		return ret;
+	}
+
+	/**
+	 * Adds {@code name}, a constant string the engine publishes, to {@code constants}, unless it is the source text of an f-string, which
+	 * the front end leaves as a constant starting with the opening quote, and whose value is computed.
+	 *
+	 * @param name A constant string.
+	 * @param constants The constant names, added to.
+	 * @return True iff the name is computed.
+	 */
+	private static boolean addName(String name, Set<String> constants) {
+		// TODO: Read an f-string's value as computed from the engine once it stops lowering it to its source text
+		// (https://github.com/wala/ML/issues/1231).
+		if (name.startsWith("\"") || name.startsWith("'"))
+			return true;
+
+		constants.add(name);
+		return false;
 	}
 
 	/**

@@ -18350,13 +18350,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sublayers whose names are computed in a
 	 * comprehension, {@code "g{}".format(i)} in {@code Formatted} and {@code f"h{i}"} in {@code Stack}. A computed name may collide with
 	 * any other, so {@code Formatted.call} is refused for the colliding names, the conservative side: measured on TensorFlow 2.9.3, the
-	 * names are distinct and the save succeeds. {@code Stack.call} is refused too, but not for a computed name: the front end reads an
-	 * f-string as the one constant string of its source text, so the engine publishes {@code "h{i}} as the name, and the comprehension
-	 * constructs more than one layer with it. Each method calls its sublayers by index rather than in a loop, so no loop's condition
-	 * refuses it first.
-	 * <p>
-	 * TODO: The front end reads an f-string as one {@code ConstantKey} holding its raw source text, opening quote included
-	 * (https://github.com/wala/ML/issues/1231). Once it doesn't, the f-string's name is computed as {@code Formatted}'s is.
+	 * names are distinct and the save succeeds. {@code Stack.call} is refused for a computed name too: the front end reads an f-string as
+	 * one {@code ConstantKey} holding its raw source text, opening quote included, {@code "h{i}}, which counts as computed until the engine
+	 * reads it so (https://github.com/wala/ML/issues/1231). Each method calls its sublayers by fixed index rather than in a loop, so no
+	 * loop's condition refuses it first.
 	 */
 	@Test
 	public void testMayBuildLayersComputedNames() throws Exception {
@@ -18367,10 +18364,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
 						.contains("computed"));
 		assertMayBuildLayers(functions, "Stack.call", true, false, COLLIDING_NAMES);
-		assertTrue("`Stack.call` is refused for the f-string's source text, read as a constant.",
+		assertTrue("`Stack.call` is refused for the f-string's computed name.",
 				findFunction(functions, "Stack.call").getStatus()
 						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
-						.contains("named `\"h{i}`"));
+						.contains("computed"));
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
@@ -18380,14 +18377,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * the first trace, and a retrace builds nothing, so {@code Encoder.call} isn't refused; measured on TensorFlow 2.9.3, decorating it
 	 * keeps the weights' names distinct across two traces. Two of the three {@code Encoder}s are named {@code encoder}, one each in
 	 * {@code Left} and {@code Right}, but a receiver's own name is dropped with its scope, so it collides with nothing in its trace.
-	 * Neither {@code Left.call} nor {@code Right.call} reaches more than one sublayer with a name, so neither is refused.
+	 * {@code Left.call} and {@code Right.call} each reach one {@code Encoder}, whose {@code __init__} passes its name through
+	 * {@code super().__init__(**kwargs)}, which may pass any name and counts as computed, so each is refused for colliding names: the
+	 * conservative side, since measured on TensorFlow 2.9.3, decorating {@code Left.call} keeps the names distinct.
 	 */
 	@Test
 	public void testMayBuildLayersBuiltSublayers() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Encoder.call", true, false, null);
-		assertMayBuildLayers(functions, "Left.call", true, false, null);
-		assertMayBuildLayers(functions, "Right.call", true, false, null);
+		assertMayBuildLayers(functions, "Left.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Right.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
@@ -18398,7 +18397,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * retraces without error, but a loop's condition tests an iterator, not a constant, and the engine doesn't show it fixed, so each is
 	 * refused for a first call on a retrace, the conservative side until the engine publishes the fact
 	 * (https://github.com/wala/ML/issues/1230). {@code Block.call}, whose {@code Dense} has no name and is called unconditionally, isn't
-	 * refused.
+	 * refused: an allocation in a comprehension stands for several blocks' {@code Dense}s, but the receiver chooses among them, and each
+	 * instance traces its own function; measured on TensorFlow 2.9.3, decorating {@code Block.call} retraces without error.
 	 */
 	@Test
 	public void testMayBuildLayersBlockLoop() throws Exception {
@@ -18443,6 +18443,98 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Chosen.call", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "Aliased.call", true, false, null);
 		assertMayBuildLayers(functions, "Configured.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a branch on a parameter passed {@code None} by
+	 * one call and a tensor by another, {@code if mode: x = self.extra(x)}. The engine types the condition as a tensor, but a Python value
+	 * reaches it too, a mix: measured on TensorFlow 2.9.3, decorating {@code Gated.call} raises "tf.function only supports singleton
+	 * tf.Variables created on the first call" when the tensor's trace, whose AutoGraph branch traces {@code extra}, follows the
+	 * {@code None}'s. It is refused for a first call on a retrace.
+	 */
+	@Test
+	public void testMayBuildLayersMixedTensorCondition() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Gated.call", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a call in an exception handler that returns
+	 * normally: {@code try: return self.fast(x)}, then {@code except Exception: return self.slow(x)} in {@code Broad.call} and
+	 * {@code except ValueError: return self.slow(x)} in {@code Fallback.call}. Measured on TensorFlow 2.9.3, decorating either raises
+	 * "tf.function only supports singleton tf.Variables created on the first call" on a retrace with an input {@code fast} wasn't built
+	 * for: {@code fast} raises, and the handler first calls {@code slow}. {@code Broad.call} is refused for a first call on a retrace.
+	 * <p>
+	 * TODO: Engine issue to be filed: the front end gives a call in a {@code try} an exceptional edge only to a handler of
+	 * {@code Exception}, so the IR of {@code Fallback.call} has no {@code except ValueError} handler, and its call of {@code slow} is
+	 * invisible. {@code Fallback.call} is a missed refusal until the engine wires a typed handler.
+	 */
+	@Test
+	public void testMayBuildLayersExceptionHandler() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Broad.call", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "Fallback.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sibling sublayers named by f-strings,
+	 * {@code f"{a}"} and {@code f"{b}"}, whose values are both {@code dense}. Measured on TensorFlow 2.9.3, decorating {@code Pair.call}
+	 * names both kernels {@code dense/kernel:0}, and the HDF5 save fails. The front end reads each as the raw source text, opening quote
+	 * included, which counts as computed (https://github.com/wala/ML/issues/1231), so {@code Pair.call} is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersFormattedNames() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Pair.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sibling sublayers constructed by unpacking one
+	 * configuration, {@code Dense(**CONFIG)}, whose {@code name} is {@code dense}. Measured on TensorFlow 2.9.3, decorating
+	 * {@code Pair.call} names both kernels {@code dense/kernel:0}, and the HDF5 save fails. A {@code **} argument may pass any name, which
+	 * counts as computed, so {@code Pair.call} is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersUnpackedNames() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Pair.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with one allocation, in a comprehension, standing for
+	 * several layers. {@code Indexed.call} calls {@code self.blocks[self.choice](x)}, whose index {@code select} rebinds from {@code 0} to
+	 * {@code 1}: measured on TensorFlow 2.9.3, decorating it raises "tf.function only supports singleton tf.Variables created on the first
+	 * call" on a retrace after the rebinding. It has the shape of a first call on a retrace, and it is refused first for reading the
+	 * rebound field ({@link PreconditionFailure#HAS_REBOUND_STATE_READS}), which precedes it. (A parameter index would be refused first as
+	 * a primitive parameter, before the shape is checked.) {@code Single.call} calls its one {@code Dense} and isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersIndexedLayer() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function indexed = findFunction(functions, "Indexed.call");
+		assertEquals("`Indexed.call` may first call another block on a retrace.", FIRST_CALL_ON_RETRACE, indexed.getLayerBuildShape());
+		assertNull("`Indexed.call` is refused.", indexed.getPassingPrecondition());
+		assertMayBuildLayers(functions, "Single.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a layer class constructed at two sites, whose
+	 * {@code call} reads {@code self.d}. Each instance traces its own function, so each first calls its own {@code Dense} on its first
+	 * trace; measured on TensorFlow 2.9.3, decorating {@code Unit.call} retraces without error. It isn't refused. The engine allocates each
+	 * instance's {@code Dense} in its own context, so {@code self.d} is one layer in each and the receiver needn't choose. One allocation
+	 * standing for several layers that the receiver chooses among is pinned by {@code Block.call} in
+	 * {@link #testMayBuildLayersBlockLoop()}.
+	 */
+	@Test
+	public void testMayBuildLayersTwoSiteReceiver() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Unit.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
