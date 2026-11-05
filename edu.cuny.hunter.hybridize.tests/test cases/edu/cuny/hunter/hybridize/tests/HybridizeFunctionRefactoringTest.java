@@ -17216,8 +17216,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * {@code consume} receives each row of each window of a dataset of float32 vectors of four, by iterating the window. The engine types a
-	 * window as a tensor of its receiver's element, so a row read from it loses a dimension.
+	 * {@code consume} receives each row of each window of a dataset of float32 vectors of four, by iterating the window. The engine models
+	 * a window as a dataset of its receiver's elements (wala/ML#1201), so a row read from it is the receiver's element.
 	 */
 	@Test
 	public void testInferInputSignatureIteratedDatasetWindowRow() throws Exception {
@@ -17226,19 +17226,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function consume = findFunction(this.getFunctions(), "consume");
 		Parameter row = consume.getParameters().get(0);
 
-		// TODO: https://github.com/wala/ML/issues/1201. Each row is a float32 vector of four, so the specification should be
-		// [tf.TensorSpec(shape=(4,), dtype=tf.float32)]. Flip to it once the engine models a window as a dataset of its receiver's
-		// elements.
 		assertEquals("The row is read as a tensor.", TensorClassificationBasis.TENSOR_ANALYSIS, row.getTensorClassificationBasis());
-		assertEquals("The engine drops the row's dimension.", "FLOAT32[scalar]", row.getRenderedTensorTypes());
-		assertEquals("`consume` gets a scalar specification.", "[tf.TensorSpec(shape=(), dtype=tf.float32)]",
+		assertEquals("The row keeps its dimension.", "FLOAT32[Constant,4]", row.getRenderedTensorTypes());
+		assertEquals("`consume` gets the row's specification.", "[tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
 				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
 	 * {@code consume} receives each row of the first component's window of a dataset of pairs, a float32 vector of four and an int32 vector
-	 * of three, by unpacking each window into its components and iterating the first. As in
-	 * {@link #testInferInputSignatureIteratedDatasetWindowRow()}, the row loses a dimension.
+	 * of three, by unpacking each window into its components and iterating the first. The engine models a window of pairs as a pair of
+	 * windows, one per component (wala/ML#1201), so the row is the first component, as in
+	 * {@link #testInferInputSignatureIteratedDatasetWindowRow()}.
 	 */
 	@Test
 	public void testInferInputSignatureIteratedDatasetWindowTupleRow() throws Exception {
@@ -17247,17 +17245,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function consume = findFunction(this.getFunctions(), "consume");
 		Parameter row = consume.getParameters().get(0);
 
-		// TODO: https://github.com/wala/ML/issues/1201. Each row is a float32 vector of four, so the specification should be
-		// [tf.TensorSpec(shape=(4,), dtype=tf.float32)]. Flip to it once the engine unpacks a window of pairs into a window per component.
 		assertEquals("The row is read as a tensor.", TensorClassificationBasis.TENSOR_ANALYSIS, row.getTensorClassificationBasis());
-		assertEquals("The engine drops the row's dimension.", "FLOAT32[scalar]", row.getRenderedTensorTypes());
-		assertEquals("`consume` gets a scalar specification.", "[tf.TensorSpec(shape=(), dtype=tf.float32)]",
+		assertEquals("The row is the first component's.", "FLOAT32[Constant,4]", row.getRenderedTensorTypes());
+		assertEquals("`consume` gets the row's specification.", "[tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
 				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
 	 * {@code consume} receives each batch of two rows of each window of three rows of a dataset of float32 vectors of four. The engine
-	 * gives a window's batch no value, so the batch reads as no tensor.
+	 * models a window as a dataset (wala/ML#1201) whose size it doesn't know, so a batch of it is full or short, and the specification
+	 * widens the batch's dimension.
 	 */
 	@Test
 	public void testInferInputSignatureIteratedDatasetWindowBatch() throws Exception {
@@ -17266,15 +17263,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function consume = findFunction(this.getFunctions(), "consume");
 		Parameter batch = consume.getParameters().get(0);
 
-		// TODO: https://github.com/wala/ML/issues/1201. Each batch holds two rows, or one at the end of a window, so the
-		// specification should be [tf.TensorSpec(shape=(None, 4), dtype=tf.float32)]. Flip to it once the engine models a window as a
-		// dataset.
-		assertEquals("The batch has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE, batch.getTensorClassificationBasis());
-
-		InferenceResult result = consume.inferInputSignature();
-		assertFalse("No specification is written.", result.signature().isPresent());
-		assertEquals("The batch reads as no tensor.", Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER),
-				result.absenceReason());
+		assertEquals("The batch is read as a tensor.", TensorClassificationBasis.TENSOR_ANALYSIS, batch.getTensorClassificationBasis());
+		assertEquals("The batch is full or short.", "FLOAT32[Constant,2; Constant,4] | FLOAT32[Symbolic,?; Constant,4]",
+				batch.getRenderedTensorTypes());
+		assertEquals("`consume` gets the widened specification.", "[tf.TensorSpec(shape=(None, 4), dtype=tf.float32)]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
