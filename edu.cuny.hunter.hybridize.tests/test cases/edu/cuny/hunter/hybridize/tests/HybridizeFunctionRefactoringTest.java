@@ -18185,4 +18185,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("No specification is written.", result.signature().isPresent());
 		assertEquals("The dtypes differ.", Optional.of(InferenceResult.AbsenceReason.HETEROGENEOUS_DTYPE), result.absenceReason());
 	}
+
+	/**
+	 * {@code consume} receives the first member of each batch of {@code zip((floats, ints)).batch(2)}, where both datasets have eight rows.
+	 * The zip's size is known, and two divides it, so every batch is full (wala/ML#1203). The member is read as a float32 batch of two
+	 * vectors of four, with no partial batch of unknown size, and the specification fixes the batch dimension.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetZipBatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter a = consume.getParameters().get(0);
+
+		assertEquals("Every batch is full.", "FLOAT32[Constant,2; Constant,4]", a.getRenderedTensorTypes());
+		assertEquals("`consume` receives full batches.", "[tf.TensorSpec(shape=(2, 4), dtype=tf.float32)]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
 }
