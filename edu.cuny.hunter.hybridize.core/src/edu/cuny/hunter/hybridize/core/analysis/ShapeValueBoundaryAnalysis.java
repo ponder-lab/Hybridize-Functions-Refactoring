@@ -83,7 +83,7 @@ import edu.cuny.hunter.hybridize.core.analysis.StaticShapeReadAnalysis.ShapeArgu
  * extent is required. An index operand passes its colors on, since a gather's result takes its static dimensions from its indices' shape.
  * <p>
  * TODO: The walk is flow-insensitive, so a call in a branch that is never taken colors as one that is. Skip a branch the analysis decides
- * is dead once the engine publishes which branches it decides (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225).
+ * is dead once the engine publishes which branches it decides (https://github.com/wala/ML/issues/1229).
  */
 class ShapeValueBoundaryAnalysis {
 
