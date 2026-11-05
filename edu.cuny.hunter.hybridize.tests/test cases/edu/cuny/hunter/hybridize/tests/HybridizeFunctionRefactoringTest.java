@@ -16007,6 +16007,50 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: a parameter that only Python scalars reach is not a
+	 * shape value, since {@code tf.function} keeps a Python scalar's value in its trace key. {@code resize} passes its Python {@code int}
+	 * parameters to {@code tf.image.resize}'s {@code size} and returns the result, and is not refused. {@code reshape_by} reshapes by a
+	 * {@code tf.shape} tensor it is passed, and is refused.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryPythonScalars() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		Function resize = findFunction(functions, "resize");
+		assertFalse("`resize` passes no shape value across its boundary.", resize.getPassesShapeValueAcrossBoundary());
+		assertNull("`resize` doesn't fail with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", resize.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+		assertEquals("`resize` hybridizes (P1).", P1, resize.getPassingPrecondition());
+
+		assertPassesShapeValueAcrossBoundary(functions, "reshape_by");
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225: {@code len} of a tensor reads its static first
+	 * dimension into a Python {@code int}, so it launders a parameter's value. {@code counted} passes {@code len} of its parameter to
+	 * {@code tf.range}, and {@code propagate} passes it to {@code add_self_loops}, which passes it to {@code tf.range} and uses the result
+	 * as gather indices; neither is refused. {@code add_self_loops} receives a Python {@code int} of unknown value, a primitive parameter,
+	 * so the check isn't run on it.
+	 */
+	@Test
+	public void testShapeValueAcrossBoundaryLen() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("propagate", "counted")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` passes no shape value across its boundary.", function.getPassesShapeValueAcrossBoundary());
+			assertNull("`" + identifier + "` doesn't fail with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+		}
+
+		Function addSelfLoops = findFunction(functions, "add_self_loops");
+		assertTrue("`add_self_loops` has a primitive parameter.", addSelfLoops.getHasPrimitiveParameter());
+		assertNull("The check isn't run on `add_self_loops`.", addSelfLoops.getPassesShapeValueAcrossBoundary());
+		assertNull("`add_self_loops` doesn't fail with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", addSelfLoops.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076: a read of a tensor held in a field that another
 	 * method rebinds on every call. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function} and its state set up
 	 * twice with different tensors, the second call returns the first call's state where the eager reader returns the second's:

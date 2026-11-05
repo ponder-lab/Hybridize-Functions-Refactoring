@@ -3888,7 +3888,8 @@ public class Function {
 		Boolean ret = Boolean.FALSE;
 
 		for (CGNode node : nodes) {
-			Boolean passes = analysis.passesShapeValue(node, this.isMethod());
+			Boolean passes = analysis.passesShapeValue(node, this.isMethod(),
+					this.pythonScalarParameterSlots(node, nodes, callGraph, builder.getPointerAnalysis()));
 
 			if (Boolean.TRUE.equals(passes)) {
 				ret = Boolean.TRUE;
@@ -3911,6 +3912,42 @@ public class Function {
 	 */
 	public Boolean getPassesShapeValueAcrossBoundary() {
 		return this.passesShapeValueAcrossBoundary;
+	}
+
+	/**
+	 * The parameter slots of {@code node} that only Python scalars reach, as {@link #inferPrimitiveParameters} classifies them: the
+	 * parameter's points-to set is non-empty and every value in it is a primitive ({@link #isPrimitiveValue(InstanceKey, boolean)},
+	 * booleans counted), and its argument is aligned at every call site ({@link #isArgumentAlignedAtEveryCallSite}), so that the points-to
+	 * set holds every value it receives. A tensor parameter, and one whose points-to set is empty, are not among them.
+	 *
+	 * @param node The call-graph node whose parameters are examined.
+	 * @param nodes Every call-graph node of this {@link Function}, whose callers are examined for alignment.
+	 * @param callGraph The call graph.
+	 * @param pointerAnalysis The pointer analysis.
+	 * @return The IR parameter slots, past the receiver of a method, that only Python scalars reach.
+	 */
+	private Set<Integer> pythonScalarParameterSlots(CGNode node, Set<CGNode> nodes, CallGraph callGraph,
+			PointerAnalysis<InstanceKey> pointerAnalysis) {
+		Set<Integer> ret = new HashSet<>();
+		IR ir = node.getIR();
+
+		if (ir == null)
+			return ret;
+
+		for (int paramInx = this.isMethod() ? 2 : 1; paramInx < ir.getNumberOfParameters(); paramInx++) {
+			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, ir.getParameter(paramInx));
+			OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
+
+			boolean allInstancesArePrimitive = !pointsToSet.isEmpty();
+
+			for (InstanceKey instanceKey : pointsToSet)
+				allInstancesArePrimitive &= isPrimitiveValue(instanceKey, false);
+
+			if (allInstancesArePrimitive && this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph))
+				ret.add(paramInx);
+		}
+
+		return ret;
 	}
 
 	/**

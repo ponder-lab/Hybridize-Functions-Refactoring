@@ -660,6 +660,23 @@ public class Util {
 	}
 
 	/**
+	 * True iff the call graph resolves {@code invoke} only to the engine's summary of the Python builtin {@code name}, and the call is not
+	 * of a name the script rebinds, which Ariadne may resolve to the builtin too ({@link #callsRebindingOfBuiltin}).
+	 *
+	 * @param node The node whose IR holds {@code invoke}.
+	 * @param invoke The call.
+	 * @param name The builtin's name, such as {@code len}.
+	 * @param callGraph The call graph, which resolves the call's targets.
+	 * @return True iff every target of {@code invoke} is the builtin {@code name}'s summary, and there is at least one.
+	 */
+	static boolean callsBuiltin(CGNode node, PythonInvokeInstruction invoke, String name, CallGraph callGraph) {
+		Set<CGNode> targets = callGraph.getPossibleTargets(node, invoke.getCallSite());
+		String summary = BUILTIN_PRELUDE_TYPE_NAME_PREFIX + name;
+		return !targets.isEmpty() && targets.stream().allMatch(t -> t.getMethod().getDeclaringClass().getName().toString().equals(summary))
+				&& !callsRebindingOfBuiltin(node, invoke, node.getDU(), callGraph);
+	}
+
+	/**
 	 * True iff {@code name}, read in the scope {@code definer}, is a Python builtin that {@code invoke} calls without a function argument:
 	 * the scope is a script's, the script binds no such name at module scope, and a keyed builtin is not given {@code key=}.
 	 */

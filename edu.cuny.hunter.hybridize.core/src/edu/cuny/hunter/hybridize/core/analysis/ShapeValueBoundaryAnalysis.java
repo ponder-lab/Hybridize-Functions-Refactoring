@@ -45,8 +45,12 @@ import edu.cuny.hunter.hybridize.core.analysis.StaticShapeReadAnalysis.ShapeArgu
  * <ul>
  * <li><b>Inbound.</b> A parameter's value flows, through any def-use chain, into the shape operand of an op whose output's static
  * dimensions come from that operand's value ({@link #SHAPE_OPERANDS}), and that op's result reaches a return. The parameter's type alone
- * crosses, so the result's dimensions are lost. A dynamic shape op ({@code tf.shape}, {@code tf.size}, {@code tf.rank}) and a static
- * {@code .shape} or {@code .dtype} read launder the value: they read the parameter's type, which crosses.
+ * crosses, so the result's dimensions are lost. A dynamic shape op ({@code tf.shape}, {@code tf.size}, {@code tf.rank}), a static
+ * {@code .shape} or {@code .dtype} read, and the builtin {@code len}, as the call graph resolves it, launder the value: they read the
+ * parameter's type, which crosses, and {@code len}'s result is a Python {@code int}, which stays a Python value. A parameter that only
+ * Python scalars reach, every value in its points-to set a primitive ({@link Function#isPrimitiveValue(InstanceKey, boolean)}) and its
+ * argument aligned at every call site, is not a source at all: {@code tf.function} keeps a Python scalar's value in its trace key, so the
+ * value crosses. A tensor parameter, and one whose values the analysis doesn't know, are sources.
  * <li><b>Outbound.</b> A returned value, or an element of a returned list, tuple or dictionary, derives from a dynamic shape op, or from
  * slicing, concatenating, or computing over one. The caller then receives the shape's type but not its value. A value computed from a shape
  * value together with a tensor that is not one, such as a loss divided by a batch size, is data, not a shape, and is not followed; so is a
@@ -74,7 +78,10 @@ import edu.cuny.hunter.hybridize.core.analysis.StaticShapeReadAnalysis.ShapeArgu
  * Conservative by design: either direction refuses without proving that a static read of the lost dimensions exists downstream, so a
  * function whose caller never reads them statically, or reads them eagerly, where the returned tensor carries its value, is refused too.
  * Future work: refine the refusal on the caller side, refusing only when a caller, itself traced, consumes the crossed shape where a static
- * extent is required.
+ * extent is required. An index operand passes its colors on, since a gather's result takes its static dimensions from its indices' shape.
+ * <p>
+ * TODO: The walk is flow-insensitive, so a call in a branch that is never taken colors as one that is. Skip a branch the analysis decides
+ * is dead once the engine publishes which branches it decides (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1225).
  */
 class ShapeValueBoundaryAnalysis {
 
@@ -144,6 +151,9 @@ class ShapeValueBoundaryAnalysis {
 	 */
 	private static final Set<String> COMPARISON_OP_FQNS = Set.of("tensorflow.equal", "tensorflow.not_equal", "tensorflow.less",
 			"tensorflow.less_equal", "tensorflow.greater", "tensorflow.greater_equal");
+
+	/** The Python builtin reading a value's length, which for a tensor is its static first dimension. */
+	private static final String LEN_BUILTIN_NAME = "len";
 
 	/** The method fixing its receiver's static shape, whose receiver, not its result, takes the shape operand's dimensions. */
 	private static final String SET_SHAPE_OP_FQN = "tensorflow.Tensor.set_shape";
@@ -281,9 +291,11 @@ class ShapeValueBoundaryAnalysis {
 	 *
 	 * @param node The function's call-graph node.
 	 * @param method True iff the function is an instance method, whose receiver slot is not a source.
+	 * @param pythonScalarSlots The parameter slots of {@code node} that only Python scalars reach, which are not sources, since
+	 *        {@code tf.function} keeps their values in its trace key.
 	 * @return {@code TRUE} if a shape value crosses, {@code FALSE} if none does, or {@code null} if the node has no IR.
 	 */
-	Boolean passesShapeValue(CGNode node, boolean method) {
+	Boolean passesShapeValue(CGNode node, boolean method, Set<Integer> pythonScalarSlots) {
 		IR ir = node.getIR();
 
 		if (ir == null)
@@ -292,12 +304,14 @@ class ShapeValueBoundaryAnalysis {
 		if (this.returned(node, Direction.OUTBOUND, Map.of()).all().contains(Color.SHAPE))
 			return Boolean.TRUE;
 
-		// Slot 0 is the function object itself; slot 1 is the receiver of an instance method.
+		// Slot 0 is the function object itself; slot 1 is the receiver of an instance method. A Python scalar's value crosses in the
+		// trace key, so it is not a source.
 		int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
 		Map<Integer, Set<Color>> seed = new TreeMap<>();
 
 		for (int i = method ? 2 : 1; i < parameters.length; i++)
-			seed.put(i, EnumSet.of(Color.PARAMETER));
+			if (!pythonScalarSlots.contains(i))
+				seed.put(i, EnumSet.of(Color.PARAMETER));
 
 		return this.returned(node, Direction.INBOUND, seed).all().contains(Color.SHAPED_BY_PARAMETER);
 	}
@@ -436,6 +450,10 @@ class ShapeValueBoundaryAnalysis {
 
 		// A dynamic shape op reads its argument's type: inbound it launders, and outbound its result is already a source.
 		if (ops.stream().anyMatch(StaticShapeReadAnalysis.DYNAMIC_SHAPE_OP_FQNS::contains))
+			return;
+
+		// `len` reads its argument's static length, part of its type, into a Python int, which stays a Python value: it launders.
+		if (Util.callsBuiltin(node, invoke, LEN_BUILTIN_NAME, this.builder.getCallGraph()))
 			return;
 
 		// Outbound, a comparison of a shape value is a boolean, not a shape.
