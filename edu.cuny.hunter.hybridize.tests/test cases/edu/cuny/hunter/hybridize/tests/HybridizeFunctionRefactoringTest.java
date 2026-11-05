@@ -17216,6 +17216,114 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * {@code consume} receives each row of each window of a dataset of float32 vectors of four, by iterating the window. The engine types a
+	 * window as a tensor of its receiver's element, so a row read from it loses a dimension.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetWindowRow() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter row = consume.getParameters().get(0);
+
+		// TODO: https://github.com/wala/ML/issues/1201. Each row is a float32 vector of four, so the specification should be
+		// [tf.TensorSpec(shape=(4,), dtype=tf.float32)]. Flip to it once the engine models a window as a dataset of its receiver's
+		// elements.
+		assertEquals("The row is read as a tensor.", TensorClassificationBasis.TENSOR_ANALYSIS, row.getTensorClassificationBasis());
+		assertEquals("The engine drops the row's dimension.", "FLOAT32[scalar]", row.getRenderedTensorTypes());
+		assertEquals("`consume` gets a scalar specification.", "[tf.TensorSpec(shape=(), dtype=tf.float32)]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * {@code consume} receives each row of the first component's window of a dataset of pairs, a float32 vector of four and an int32 vector
+	 * of three, by unpacking each window into its components and iterating the first. As in
+	 * {@link #testInferInputSignatureIteratedDatasetWindowRow()}, the row loses a dimension.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetWindowTupleRow() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter row = consume.getParameters().get(0);
+
+		// TODO: https://github.com/wala/ML/issues/1201. Each row is a float32 vector of four, so the specification should be
+		// [tf.TensorSpec(shape=(4,), dtype=tf.float32)]. Flip to it once the engine unpacks a window of pairs into a window per component.
+		assertEquals("The row is read as a tensor.", TensorClassificationBasis.TENSOR_ANALYSIS, row.getTensorClassificationBasis());
+		assertEquals("The engine drops the row's dimension.", "FLOAT32[scalar]", row.getRenderedTensorTypes());
+		assertEquals("`consume` gets a scalar specification.", "[tf.TensorSpec(shape=(), dtype=tf.float32)]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * {@code consume} receives each batch of two rows of each window of three rows of a dataset of float32 vectors of four. The engine
+	 * gives a window's batch no value, so the batch reads as no tensor.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetWindowBatch() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter batch = consume.getParameters().get(0);
+
+		// TODO: https://github.com/wala/ML/issues/1201. Each batch holds two rows, or one at the end of a window, so the
+		// specification should be [tf.TensorSpec(shape=(None, 4), dtype=tf.float32)]. Flip to it once the engine models a window as a
+		// dataset.
+		assertEquals("The batch has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE, batch.getTensorClassificationBasis());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The batch reads as no tensor.", Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER),
+				result.absenceReason());
+	}
+
+	/**
+	 * {@code consume} receives each element of a dataset flat-mapped from a dataset of pairs, a float32 vector of four and an int32 vector
+	 * of three. The engine has no summary for {@code flat_map}, so its element has no value and reads as no tensor.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetFlatMap() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		// TODO: https://github.com/wala/ML/issues/1214. The element is the pair the mapped function's dataset holds, so the
+		// specification should be [[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]. Flip to it
+		// once the engine models `flat_map`.
+		assertEquals("The element has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
+				element.getTensorClassificationBasis());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The element reads as no tensor.", Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER),
+				result.absenceReason());
+	}
+
+	/**
+	 * {@code consume} receives each element of a dataset interleaved from a dataset of pairs, as in
+	 * {@link #testInferInputSignatureIteratedDatasetFlatMap()}. The engine has no summary for {@code interleave} either.
+	 */
+	@Test
+	public void testInferInputSignatureIteratedDatasetInterleave() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function consume = findFunction(this.getFunctions(), "consume");
+		Parameter element = consume.getParameters().get(0);
+
+		// TODO: https://github.com/wala/ML/issues/1214. As for `flat_map`, the specification should be
+		// [[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]. Flip to it once the engine models
+		// `interleave`.
+		assertEquals("The element has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
+				element.getTensorClassificationBasis());
+
+		InferenceResult result = consume.inferInputSignature();
+		assertFalse("No specification is written.", result.signature().isPresent());
+		assertEquals("The element reads as no tensor.", Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER),
+				result.absenceReason());
+	}
+
+	/**
 	 * {@code consume} receives each element of two batched datasets zipped together, a float32 and an int32 tensor. The engine models the
 	 * zipped element as a tuple instance whose members are the elements of the zipped datasets (wala/ML#166), so the parameter is read as a
 	 * container through what it points to, as in {@link #testInferInputSignatureIteratedDatasetTuple()}.
