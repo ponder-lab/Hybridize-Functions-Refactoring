@@ -487,13 +487,12 @@ class LayerBuildAnalysis {
 			AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
 
 			if (site == null) {
-				Optional<IClass> allocatedClass = allocatedClass(instanceKey);
+				// A constant or a Python scalar has no allocation and holds no layer. Any other object whose allocation the engine
+				// doesn't place can't be told apart from the others.
+				if (instanceKey instanceof ConstantKey<?> || isPythonScalarKey(instanceKey))
+					continue;
 
-				// A layer whose allocation the engine doesn't place can't be told apart from the others; a constant has no allocation.
-				if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference()))
-					return false;
-
-				continue;
+				return false;
 			}
 
 			allocators.add(site.getNode());
