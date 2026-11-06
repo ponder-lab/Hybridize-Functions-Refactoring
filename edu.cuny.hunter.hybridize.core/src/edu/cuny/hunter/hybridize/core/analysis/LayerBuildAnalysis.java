@@ -36,6 +36,7 @@ import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuild
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
 import com.ibm.wala.cast.python.loader.IPythonClass;
 import com.ibm.wala.cast.python.loader.StarFormalDeclaration;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
 import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
@@ -553,8 +554,9 @@ class LayerBuildAnalysis {
 	 * an instance of the method's own class ({@link #receivesOwnInstances(CGNode)}), and only {@code __init__} or {@code build} writes that
 	 * field ({@link ReboundStateReadAnalysis#readsSetUpStateOnly(CGNode, SSAInstruction)}). However many layers the field may hold, an
 	 * instance holds one of them from its construction on, and each instance traces its own function, so each first calls it on its first
-	 * trace: {@code self.embedding}, set in either arm of a branch in {@code __init__}, is. A method called unbound on another class's
-	 * object, as {@code Block.project(net, x)}, shares one function among its receivers, so its field isn't.
+	 * trace: {@code self.embedding}, set in either arm of a branch in {@code __init__}, is. That holds only for calls bound to their
+	 * receiver ({@link #isCalledBound(CGNode)}): a method called through its class, as {@code Embedded.project(a, x)}, shares one function
+	 * among its receivers, whatever their class, so its field isn't.
 	 *
 	 * @param node A program node the method's trace runs.
 	 * @param value A value number of {@code node}.
@@ -572,8 +574,32 @@ class LayerBuildAnalysis {
 			return false;
 
 		int[] parameters = node.getIR().getSymbolTable().getParameterValueNumbers();
-		return parameters.length > 1 && parameters[1] == object && this.receivesOwnInstances(node)
+		return parameters.length > 1 && parameters[1] == object && this.receivesOwnInstances(node) && this.isCalledBound(node)
 				&& this.getReboundState().readsSetUpStateOnly(node, def);
+	}
+
+	/**
+	 * True iff every call of {@code node} from program code binds its receiver, as {@code a.project(x)} does, rather than passing it
+	 * through the class, as {@code Embedded.project(a, x)} does, which the engine publishes per call
+	 * ({@link CallTargets#parameterBoundTargets}). A call from the engine's summaries, such as a layer's {@code __call__} calling its
+	 * {@code call}, binds it.
+	 *
+	 * @param node A method's node.
+	 * @return True iff each call of the node from program code is bound to its receiver.
+	 */
+	private boolean isCalledBound(CGNode node) {
+		for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(node))) {
+			if (!CallTargets.isProgramCode(caller))
+				continue;
+
+			for (CallSiteReference site : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, node)))
+				for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(site))
+					if (!(call instanceof PythonInvokeInstruction invoke)
+							|| !Boolean.TRUE.equals(CallTargets.parameterBoundTargets(this.builder, caller, invoke).get(node)))
+						return false;
+		}
+
+		return true;
 	}
 
 	/**

@@ -18452,7 +18452,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * and it isn't refused. {@code Swapped.call} calls the same kind of field, which {@code swap} rebinds: measured on TensorFlow 2.9.3,
 	 * decorating it raises "tf.function only supports singleton tf.Variables created on the first call" on the retrace after the rebinding,
 	 * so it has the shape of a first call on a retrace. {@code Block.project} in {@link #testMayBuildLayersMixedReceivers()}, whose
-	 * receiver may be another class's object, is refused, since its receivers share one function.
+	 * receiver may be another class's object, is refused, since its receivers share one function. So is {@code Unbound.project}, the same
+	 * choice called through its class, {@code Unbound.project(a, x)}, on two instances: its receivers share one function, and measured on
+	 * TensorFlow 2.9.3, decorated, it raises "tf.function only supports singleton tf.Variables created on the first call".
 	 */
 	@Test
 	public void testMayBuildLayersSetUpChoice() throws Exception {
@@ -18461,6 +18463,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function swapped = findFunction(functions, "Swapped.call");
 		assertEquals("`Swapped.call` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE, swapped.getLayerBuildShape());
 		assertNull("`Swapped.call` is refused.", swapped.getPassingPrecondition());
+		Function unbound = findFunction(functions, "Unbound.project");
+		assertEquals("`Unbound.project` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE, unbound.getLayerBuildShape());
+		assertNull("`Unbound.project` is refused.", unbound.getPassingPrecondition());
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
