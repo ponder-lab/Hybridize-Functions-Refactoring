@@ -110,6 +110,9 @@ class EagerCoercionAnalysis {
 	 * {@code einsum} leads with its equation string and then takes any number of operands, so its two-operand form is not its only form.
 	 * The rest declare trailing arguments that are not operands and that may be passed positionally: {@code tensordot}'s contraction axes,
 	 * and the transposition and sparsity flags of the two matrix products. None of them changes the dtype an operand is read at.
+	 * <p>
+	 * Like {@link #COERCING_MEMBER_NAMES}, the shapes' canonical home is upstream (wala/ML#837); they live here only while the declaration
+	 * does not cover the call spellings.
 	 */
 	private static final Map<String, OperandShape> OPERAND_SHAPES = Map.of("einsum",
 			new OperandShape(2, true, 0, Set.of("name", "optimize")), "tensordot", new OperandShape(1, false, 2, Set.of("name", "axes")),
