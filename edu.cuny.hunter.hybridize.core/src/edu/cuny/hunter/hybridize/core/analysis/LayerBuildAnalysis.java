@@ -33,6 +33,7 @@ import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
 import com.ibm.wala.cast.python.loader.IPythonClass;
+import com.ibm.wala.cast.python.loader.StarFormalDeclaration;
 import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
@@ -108,8 +109,9 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * that has more than one instance. A name that is not one constant string, such as {@code "h{}".format(i)}, may collide with any other and
  * refuses. A sublayer constructed without a name, or with {@code None}, gets a unique one from Keras and never collides. The front end
  * reads an f-string as the one constant string of its source text, opening quote included, which counts as computed until the engine reads
- * it so (wala/ML#1231). A constructing call or a base's {@code __init__} call that unpacks {@code **} keywords, as
- * {@code super().__init__(**kwargs)} does, may pass any name, which counts as computed too.</li>
+ * it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which
+ * counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own
+ * {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed, which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
@@ -988,17 +990,19 @@ class LayerBuildAnalysis {
 						else if (invoke.getUse(NAME_KEYWORD) >= 0)
 							computed |= addNames(caller, invoke.getUse(NAME_KEYWORD), constants);
 
-		// The `__init__` calls of its class's `__init__`, for a program class. One unpacking keywords, as `super().__init__(**kwargs)`
-		// does,
-		// may pass any name.
+		// The `__init__` calls of its class's `__init__`, for a program class. One unpacking keywords may pass any name, unless it
+		// unpacks the `__init__`'s own `**kwargs`, as `super().__init__(**kwargs)` does: that forwards only the keywords the constructing
+		// calls passed, read above, and the forwarding chain's own, read here.
 		if (allocator.getMethod() instanceof PythonConstructorFunction)
 			for (CGNode init : this.getInitializers(allocator, objects))
 				for (SSAInstruction instruction : init.getIR().getInstructions())
-					if (instruction instanceof PythonInvokeInstruction invoke && callsInit(init, invoke))
-						if (unpacksKeywords(invoke))
+					if (instruction instanceof PythonInvokeInstruction invoke && callsInit(init, invoke)) {
+						if (unpacksKeywords(invoke) && !forwardsOwnKeywords(init, invoke))
 							computed = true;
-						else if (invoke.getUse(NAME_KEYWORD) >= 0)
+
+						if (invoke.getUse(NAME_KEYWORD) >= 0)
 							computed |= addNames(init, invoke.getUse(NAME_KEYWORD), constants);
+					}
 
 		return new Names(constants, computed);
 	}
@@ -1040,7 +1044,25 @@ class LayerBuildAnalysis {
 	 * @return True iff the call has a {@code **} argument.
 	 */
 	private static boolean unpacksKeywords(PythonInvokeInstruction invoke) {
+		// TODO: This reads the front end's lowering of `**`; an engine query for whether a call unpacks `**` would retire it.
 		return invoke.getKeywords().contains(UNPACKED_KEYWORDS);
+	}
+
+	/**
+	 * True iff the {@code **} argument of {@code invoke} is the variable-keyword parameter, {@code **kwargs}, of {@code node}'s own
+	 * function, as the engine declares it ({@link StarFormalDeclaration#getKeywordsParameter()}).
+	 *
+	 * @param node The node of {@code invoke}.
+	 * @param invoke A call unpacking keywords ({@link #unpacksKeywords(PythonInvokeInstruction)}).
+	 * @return True iff the call forwards the function's own {@code **kwargs}.
+	 */
+	private static boolean forwardsOwnKeywords(CGNode node, PythonInvokeInstruction invoke) {
+		if (!(node.getMethod() instanceof StarFormalDeclaration declaration) || declaration.getKeywordsParameter() < 0)
+			return false;
+
+		int[] parameters = node.getIR().getSymbolTable().getParameterValueNumbers();
+		int index = declaration.getKeywordsParameter();
+		return index < parameters.length && invoke.getUse(UNPACKED_KEYWORDS) == parameters[index];
 	}
 
 	/**

@@ -18377,16 +18377,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * the first trace, and a retrace builds nothing, so {@code Encoder.call} isn't refused; measured on TensorFlow 2.9.3, decorating it
 	 * keeps the weights' names distinct across two traces. Two of the three {@code Encoder}s are named {@code encoder}, one each in
 	 * {@code Left} and {@code Right}, but a receiver's own name is dropped with its scope, so it collides with nothing in its trace.
-	 * {@code Left.call} and {@code Right.call} each reach one {@code Encoder}, whose {@code __init__} passes its name through
-	 * {@code super().__init__(**kwargs)}, which may pass any name and counts as computed, so each is refused for colliding names: the
-	 * conservative side, since measured on TensorFlow 2.9.3, decorating {@code Left.call} keeps the names distinct.
+	 * {@code Left.call} and {@code Right.call} each reach one {@code Encoder}, whose {@code __init__} forwards its own {@code **kwargs}
+	 * through {@code super().__init__(**kwargs)}: that passes only the constructing call's {@code name="encoder"}, so neither is refused.
 	 */
 	@Test
 	public void testMayBuildLayersBuiltSublayers() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Encoder.call", true, false, null);
-		assertMayBuildLayers(functions, "Left.call", true, false, COLLIDING_NAMES);
-		assertMayBuildLayers(functions, "Right.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Left.call", true, false, null);
+		assertMayBuildLayers(functions, "Right.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
@@ -18467,9 +18466,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * "tf.function only supports singleton tf.Variables created on the first call" on a retrace with an input {@code fast} wasn't built
 	 * for: {@code fast} raises, and the handler first calls {@code slow}. {@code Broad.call} is refused for a first call on a retrace.
 	 * <p>
-	 * TODO: Engine issue to be filed: the front end gives a call in a {@code try} an exceptional edge only to a handler of
-	 * {@code Exception}, so the IR of {@code Fallback.call} has no {@code except ValueError} handler, and its call of {@code slow} is
-	 * invisible. {@code Fallback.call} is a missed refusal until the engine wires a typed handler.
+	 * TODO: A typed handler, such as {@code except ValueError:}, one with {@code as e}, or a tuple of types, leaves its callee with no
+	 * call-graph node, while {@code except Exception:} and a bare {@code except:} reach it (https://github.com/wala/ML/issues/1005), so
+	 * {@code Fallback.call}'s call of {@code slow} is invisible. {@code Fallback.call} is a missed refusal until the engine reaches it.
 	 */
 	@Test
 	public void testMayBuildLayersExceptionHandler() throws Exception {
@@ -18496,12 +18495,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sibling sublayers constructed by unpacking one
 	 * configuration, {@code Dense(**CONFIG)}, whose {@code name} is {@code dense}. Measured on TensorFlow 2.9.3, decorating
 	 * {@code Pair.call} names both kernels {@code dense/kernel:0}, and the HDF5 save fails. A {@code **} argument may pass any name, which
-	 * counts as computed, so {@code Pair.call} is refused for the colliding names.
+	 * counts as computed, so {@code Pair.call} is refused for the colliding names. {@code Twins} constructs two {@code Named}s with
+	 * {@code Named(**NAMED)}, and {@code Named.__init__} forwards its own {@code **kwargs} to {@code super().__init__}: the constructing
+	 * call's {@code **} may pass any name, so {@code Twins.call} is refused for the colliding names, the conservative side, since measured
+	 * on TensorFlow 2.9.3 alone, decorating it keeps the names distinct. {@code Named.call} reaches only an unnamed {@code Dense} and isn't
+	 * refused.
 	 */
 	@Test
 	public void testMayBuildLayersUnpackedNames() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Pair.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Twins.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Named.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
