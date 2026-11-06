@@ -2816,6 +2816,8 @@ public class Function {
 	 * @param classType The type of the class to start from.
 	 * @return The type names of the class and its transitive bases.
 	 */
+	// TODO: Ask the class hierarchy whether a class is a subclass of a base once a class with several bases is a subtype of each
+	// (https://github.com/wala/ML/issues/1171), instead of walking its declared bases here.
 	static Set<TypeName> getClassAndBaseNames(IClassHierarchy classHierarchy, TypeReference classType) {
 		Set<TypeName> ret = new HashSet<>();
 		Set<TypeName> seen = new HashSet<>();
