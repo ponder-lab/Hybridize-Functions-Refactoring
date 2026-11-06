@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -111,10 +112,11 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * when they may carry the same constant name, whatever their classes: two allocations, or one that may run more than once in a run, such as
  * one in a loop or a comprehension, in a function invoked from two sites that one program run reaches, or in the {@code build} of a layer
  * that has more than one instance. A name that is not one constant string, such as {@code "h{}".format(i)}, may collide with any other and
- * refuses. A sublayer constructed without a name, or with {@code None}, gets a unique one from Keras and never collides. The front end
- * reads an f-string as the one constant string of its source text, opening quote included, which counts as computed until the engine reads
- * it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which
- * counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own
+ * refuses. A sublayer constructed without a name, or with {@code None}, gets a unique one from Keras, counted per graph, so one constructed
+ * during the trace, as a sublayer's lazily run {@code build} does, may take the name of one constructed before it, which refuses. The front
+ * end reads an f-string as the one constant string of its source text, opening quote included, which counts as computed until the engine
+ * reads it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name,
+ * which counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own
  * {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed, which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
@@ -1042,14 +1044,24 @@ class LayerBuildAnalysis {
 
 		Map<String, CGNode> named = new HashMap<>();
 
+		// Keras counts the names it makes per graph, so an unnamed sublayer constructed during the trace, as one a sublayer's `build` makes
+		// when the method first calls it, restarts the count and may take the name of one constructed before the trace. The receiver's
+		// own `build` runs before the trace.
+		Set<CGNode> traced = this.getReachable(nodes);
+		Set<String> generatedInTrace = new TreeSet<>();
+		Set<String> generatedOutside = new TreeSet<>();
+
 		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.entrySet()) {
 			CGNode allocator = sublayer.getKey();
 			Names names = this.getNames(allocator, sublayer.getValue());
+			String className = getSimpleName(allocatedClass(sublayer.getValue().iterator().next()).orElseThrow().getName());
 
 			if (names.computed())
-				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
-						"a `" + getSimpleName(allocatedClass(sublayer.getValue().iterator().next()).orElseThrow().getName())
-								+ "` sublayer's name is computed"));
+				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "a `" + className + "` sublayer's name is computed"));
+
+			if (names.constants().isEmpty())
+				for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator)))
+					(traced.contains(caller) ? generatedInTrace : generatedOutside).add(toSnakeCase(className));
 
 			for (String name : names.constants()) {
 				CGNode other = named.putIfAbsent(name, allocator);
@@ -1060,7 +1072,47 @@ class LayerBuildAnalysis {
 			}
 		}
 
+		for (String generated : generatedInTrace)
+			if (generatedOutside.contains(generated))
+				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
+						"unnamed sublayers constructed during the trace and before it may both be named `" + generated + "`"));
+
 		return Optional.empty();
+	}
+
+	/**
+	 * The nodes {@code nodes} reach in the call graph, themselves included.
+	 *
+	 * @param nodes Nodes of the call graph.
+	 * @return The nodes reachable from them.
+	 */
+	private Set<CGNode> getReachable(Set<CGNode> nodes) {
+		Set<CGNode> ret = new HashSet<>(nodes);
+		Deque<CGNode> worklist = new ArrayDeque<>(nodes);
+
+		while (!worklist.isEmpty())
+			for (Iterator<CGNode> succNodes = this.callGraph.getSuccNodes(worklist.remove()); succNodes.hasNext();) {
+				CGNode next = succNodes.next();
+
+				if (ret.add(next))
+					worklist.add(next);
+			}
+
+		return ret;
+	}
+
+	/**
+	 * The name Keras makes for an unnamed layer of the class {@code className}, before any {@code _<n>} it appends to tell layers apart, as
+	 * its {@code to_snake_case} makes it: an underscore before each capitalized word, lower-cased, and {@code private} before a leading
+	 * underscore. {@code Dense} is {@code dense}, {@code LayerNormalization} {@code layer_normalization}.
+	 *
+	 * @param className A layer class's simple name.
+	 * @return The name Keras generates from it.
+	 */
+	private static String toSnakeCase(String className) {
+		String intermediate = className.replaceAll("(.)([A-Z][a-z0-9]+)", "$1_$2");
+		String insecure = intermediate.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
+		return insecure.startsWith("_") ? "private" + insecure : insecure;
 	}
 
 	/**

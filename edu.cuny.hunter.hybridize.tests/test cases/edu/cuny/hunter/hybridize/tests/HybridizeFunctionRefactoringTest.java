@@ -18347,6 +18347,37 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with unnamed sublayers constructed on both sides of a
+	 * trace. Keras counts the names it makes per graph, so a layer constructed during the trace restarts the count. Each {@code Block}
+	 * constructs a {@code Dense} in {@code __init__}, before the trace, and another in {@code build}, which runs when {@code Top.call}
+	 * first calls the block, during the trace. Measured on TensorFlow 2.9.3, decorating {@code Top.call} names both of {@code h0}'s
+	 * {@code h0/dense/kernel:0}, and the HDF5 save fails, so it is refused for the colliding names. {@code LazyTop.call} constructs both of
+	 * its block's {@code Dense}s during the trace, and {@code Block.call} constructs none, since a layer's own {@code build} runs before
+	 * its trace; decorated, each keeps its variables' names distinct, and neither is refused.
+	 */
+	@Test
+	public void testMayBuildLayersTraceCounter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Top.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "LazyTop.call", true, false, null);
+		assertMayBuildLayers(functions, "Block.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a layer constructing one unnamed {@code Dense}
+	 * in {@code __init__} and another in its own {@code build}. Keras runs a layer's {@code build} before tracing its {@code call}, so both
+	 * are constructed before the trace: measured on TensorFlow 2.9.3, decorating {@code Mixed.call} names them {@code dense} and
+	 * {@code dense_1}, and it isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersTraceCounterOwnBuild() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Mixed.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sublayers whose names are computed in a
 	 * comprehension, {@code "g{}".format(i)} in {@code Formatted} and {@code f"h{i}"} in {@code Stack}. A computed name may collide with
 	 * any other, so {@code Formatted.call} is refused for the colliding names, the conservative side: measured on TensorFlow 2.9.3, the
@@ -18378,14 +18409,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * keeps the weights' names distinct across two traces. Two of the three {@code Encoder}s are named {@code encoder}, one each in
 	 * {@code Left} and {@code Right}, but a receiver's own name is dropped with its scope, so it collides with nothing in its trace.
 	 * {@code Left.call} and {@code Right.call} each reach one {@code Encoder}, whose {@code __init__} forwards its own {@code **kwargs}
-	 * through {@code super().__init__(**kwargs)}: that passes only the constructing call's {@code name="encoder"}, so neither is refused.
+	 * through {@code super().__init__(**kwargs)}: that passes only the constructing call's {@code name="encoder"}. But their
+	 * {@code Encoder} constructs its second {@code Dense} in {@code build}, which runs during their trace, where Keras restarts its count
+	 * of the names it makes, and its first before it, so both may be named {@code dense}: measured on TensorFlow 2.9.3, with {@code Left}
+	 * constructed first, decorating {@code Left.call} names both {@code encoder/dense/kernel:0}. Whether they collide depends on how many
+	 * unnamed {@code Dense}s precede, so each is refused for the colliding names.
 	 */
 	@Test
 	public void testMayBuildLayersBuiltSublayers() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Encoder.call", true, false, null);
-		assertMayBuildLayers(functions, "Left.call", true, false, null);
-		assertMayBuildLayers(functions, "Right.call", true, false, null);
+		assertMayBuildLayers(functions, "Left.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Right.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
