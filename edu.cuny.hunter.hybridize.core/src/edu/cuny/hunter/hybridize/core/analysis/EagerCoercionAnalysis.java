@@ -59,7 +59,8 @@ class EagerCoercionAnalysis {
 	 * of the very same operations are unaccounted on both sides: {@code V * x} is covered where {@code tf.multiply(V, x)} is not (#907).
 	 * Matching on the member name covers the {@code tf.math} aliases with the plain ones.
 	 * <p>
-	 * The list's canonical home is upstream (wala/ML#837); it lives here only while the declaration does not cover the call spellings.
+	 * The list's canonical home is upstream (wala/ML#837); it lives here only while the declaration does not cover the call spellings
+	 * (<a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1234">Issue 1234</a>).
 	 */
 	private static final Set<String> COERCING_MEMBER_NAMES = Set.of("matmul", "einsum", "add", "subtract", "multiply", "divide", "truediv",
 			"floordiv", "mod", "floormod", "divide_no_nan", "multiply_no_nan", "pow", "maximum", "minimum", "squared_difference");
@@ -73,6 +74,9 @@ class EagerCoercionAnalysis {
 	 * carried a mismatch through one of these, because the mismatch raises eagerly, so the operand's eager-effective dtype at that consumer
 	 * <em>equals</em> the partner's and imposing it is sound. Leaving them unaccounted instead would be worse than either: it would make
 	 * the whole parameter indeterminate and discard the coercions its other consumers did impose.
+	 * <p>
+	 * Like {@link #COERCING_MEMBER_NAMES}, the list lives here only while the upstream declaration does not cover the call spellings
+	 * (<a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1234">Issue 1234</a>).
 	 */
 	private static final Set<String> EQUALITY_ENFORCING_MEMBER_NAMES = Set.of("tensordot", "matvec");
 
@@ -110,6 +114,10 @@ class EagerCoercionAnalysis {
 	 * {@code einsum} leads with its equation string and then takes any number of operands, so its two-operand form is not its only form.
 	 * The rest declare trailing arguments that are not operands and that may be passed positionally: {@code tensordot}'s contraction axes,
 	 * and the transposition and sparsity flags of the two matrix products. None of them changes the dtype an operand is read at.
+	 * <p>
+	 * Like {@link #COERCING_MEMBER_NAMES}, the shapes' canonical home is upstream
+	 * (<a href="https://github.com/wala/ML/issues/837">wala/ML#837</a>); they live here only while the declaration does not cover the call
+	 * spellings (<a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1234">Issue 1234</a>).
 	 */
 	private static final Map<String, OperandShape> OPERAND_SHAPES = Map.of("einsum",
 			new OperandShape(2, true, 0, Set.of("name", "optimize")), "tensordot", new OperandShape(1, false, 2, Set.of("name", "axes")),
