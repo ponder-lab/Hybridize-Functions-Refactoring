@@ -18347,6 +18347,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with an unnamed sublayer beside one given the name
+	 * Keras would generate for it. Keras names an unnamed layer after its class in snake case, {@code dense} or {@code dense_<n>}, counting
+	 * only the names it makes, so {@code Dense(4)} beside {@code Dense(4, name="dense")} in {@code Pair} are both named {@code dense}, and
+	 * so are {@code Normalized}'s two {@code LayerNormalization}s as {@code layer_normalization}: measured on TensorFlow 2.9.3, their
+	 * variables collide even undecorated, and each is refused for the colliding names. {@code Apart} names its second {@code Dense}
+	 * {@code proj}, which Keras never generates for a {@code Dense}: decorated, its variables' names stay distinct, and it isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersUnnamedBesideNamed() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Pair.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Normalized.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Apart.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sublayers whose names are computed in a
 	 * comprehension, {@code "g{}".format(i)} in {@code Formatted} and {@code f"h{i}"} in {@code Stack}. A computed name may collide with
 	 * any other, so {@code Formatted.call} is refused for the colliding names, the conservative side: measured on TensorFlow 2.9.3, the

@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -111,11 +112,13 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * when they may carry the same constant name, whatever their classes: two allocations, or one that may run more than once in a run, such as
  * one in a loop or a comprehension, in a function invoked from two sites that one program run reaches, or in the {@code build} of a layer
  * that has more than one instance. A name that is not one constant string, such as {@code "h{}".format(i)}, may collide with any other and
- * refuses. A sublayer constructed without a name, or with {@code None}, gets a unique one from Keras and never collides. The front end
- * reads an f-string as the one constant string of its source text, opening quote included, which counts as computed until the engine reads
- * it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which
- * counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own
- * {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed, which are read there.</li>
+ * refuses. A sublayer constructed without a name, or with {@code None}, gets one from Keras, its class's in snake case, as {@code dense},
+ * or that with {@code _<n>} appended; Keras counts only the names it makes, so another sublayer's constant name may be one of them, which
+ * refuses. The front end reads an f-string as the one constant string of its source text, opening quote included, which counts as computed
+ * until the engine reads it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may
+ * pass any name, which counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling
+ * {@code __init__}'s own {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed,
+ * which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
@@ -1042,14 +1045,19 @@ class LayerBuildAnalysis {
 
 		Map<String, CGNode> named = new HashMap<>();
 
+		// The classes of the sublayers constructed without a name, which Keras names after their class.
+		Set<String> unnamedClasses = new TreeSet<>();
+
 		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.entrySet()) {
 			CGNode allocator = sublayer.getKey();
 			Names names = this.getNames(allocator, sublayer.getValue());
+			String className = getSimpleName(allocatedClass(sublayer.getValue().iterator().next()).orElseThrow().getName());
 
 			if (names.computed())
-				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
-						"a `" + getSimpleName(allocatedClass(sublayer.getValue().iterator().next()).orElseThrow().getName())
-								+ "` sublayer's name is computed"));
+				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "a `" + className + "` sublayer's name is computed"));
+
+			if (names.constants().isEmpty())
+				unnamedClasses.add(className);
 
 			for (String name : names.constants()) {
 				CGNode other = named.putIfAbsent(name, allocator);
@@ -1060,7 +1068,33 @@ class LayerBuildAnalysis {
 			}
 		}
 
+		// Keras names an unnamed layer after its class, `dense` or `dense_<n>`, counting only the names it makes, so a constant name may be
+		// one of them.
+		for (String className : unnamedClasses) {
+			String generated = toSnakeCase(className);
+
+			for (String name : named.keySet())
+				if (name.equals(generated) || name.startsWith(generated + "_") && !name.substring(generated.length() + 1).isEmpty()
+						&& name.substring(generated.length() + 1).chars().allMatch(Character::isDigit))
+					return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
+							"an unnamed `" + className + "` sublayer may be named `" + name + "`, as another is"));
+		}
+
 		return Optional.empty();
+	}
+
+	/**
+	 * The name Keras makes for an unnamed layer of the class {@code className}, before any {@code _<n>} it appends to tell layers apart, as
+	 * its {@code to_snake_case} makes it: an underscore before each capitalized word, lower-cased, and {@code private} before a leading
+	 * underscore. {@code Dense} is {@code dense}, {@code LayerNormalization} {@code layer_normalization}.
+	 *
+	 * @param className A layer class's simple name.
+	 * @return The name Keras generates from it.
+	 */
+	private static String toSnakeCase(String className) {
+		String intermediate = className.replaceAll("(.)([A-Z][a-z0-9]+)", "$1_$2");
+		String insecure = intermediate.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
+		return insecure.startsWith("_") ? "private" + insecure : insecure;
 	}
 
 	/**
