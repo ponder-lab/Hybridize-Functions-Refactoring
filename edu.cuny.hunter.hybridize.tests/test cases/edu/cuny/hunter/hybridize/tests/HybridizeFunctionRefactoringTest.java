@@ -18180,14 +18180,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * building it inside the trace. Measured on TensorFlow 2.9.3, decorating {@code step} keeps every weight's name distinct, such as
 	 * {@code net/stack/inner/dense/kernel:0}, since the model's own {@code __call__} enters its scope inside the trace, and the HDF5 save
 	 * succeeds. A function that is no method runs inside no layer's scope, so {@code step} is not refused, though it has no receiver.
-	 * {@code Inner.call} and {@code Stack.call} are layers' and are refused; {@code Net.call} is a model's and is not.
+	 * {@code Inner.call} is a layer's and is refused: decorated, both instances name their kernels {@code dense/kernel:0}.
+	 * {@code Stack.call} isn't: its {@code Inner}s carry no name, so Keras names them apart, and measured on TensorFlow 2.9.3, decorating
+	 * it names the kernels {@code inner/dense/kernel:0} and {@code inner_1/dense/kernel:0}, and the save succeeds. {@code Net.call} is a
+	 * model's and is not refused.
 	 */
 	@Test
 	public void testMayBuildLayersFreeFunction() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "step", true, null, null);
 		assertMayBuildLayers(functions, "Inner.call", true, false, COLLIDING_NAMES);
-		assertMayBuildLayers(functions, "Stack.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Stack.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
@@ -18335,14 +18338,69 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code Dense(4, name="c_fc")}, of which a comprehension constructs three, reducing NLPGNN's {@code MLP}. Measured on TensorFlow
 	 * 2.9.3, decorating {@code Block.call} names every block's kernel {@code c_fc/kernel:0}, and the HDF5 save fails. One allocation site
 	 * stands for every block's {@code c_fc}, and it may run more than once, so {@code Block.call} is refused for the colliding names.
-	 * {@code Stack.call} reaches the same sublayers, and its loop over {@code self.blocks}, set only in {@code __init__}, takes the same
-	 * path on every trace, so it is refused for the colliding names too. {@code Net.call} is a model's and is not refused.
+	 * {@code Stack.call} reaches the same sublayers, but each {@code c_fc} is built once per block, under its block's scope, and the blocks
+	 * carry no name, so Keras names them apart: measured on TensorFlow 2.9.3, decorating {@code Stack.call} names the kernels
+	 * {@code block/c_fc/kernel:0}, {@code block_1/c_fc/kernel:0} and {@code block_2/c_fc/kernel:0}, and the save succeeds. It isn't
+	 * refused. {@code Net.call} is a model's and is not refused.
 	 */
 	@Test
 	public void testMayBuildLayersNameAcrossInstances() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Block.call", true, false, COLLIDING_NAMES);
-		assertMayBuildLayers(functions, "Stack.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Stack.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with blocks named from a loop's index, reducing
+	 * NLPGNN's {@code GPT2}: {@code Indexed.build} constructs {@code Block(name="h{}".format(i))} for {@code i in range(self.n)}, and each
+	 * {@code Block} builds {@code ln_1}, an {@code Attention} and an {@code MLP}, whose {@code c_proj}s share a name under different
+	 * parents. Decorating a method drops its receiver's scope and those above it, so only names relative to it may collide. Measured on
+	 * TensorFlow 2.9.3, decorating {@code Indexed.call} names its variables {@code h0/...}, {@code h1/...} and {@code h2/...}, all
+	 * distinct, and it isn't refused. Each of the following is refused for the colliding names:
+	 * <ul>
+	 * <li>{@code Constant.call}: its blocks are all named {@code h}, which collide even undecorated.</li>
+	 * <li>{@code TwoLoops.call}: two loops each fill {@code "h{}"}, which collide even undecorated.</li>
+	 * <li>{@code Block.call}: decorated, every block names its variables {@code ln_1/...}, {@code attn/...} and {@code mlp/...}.</li>
+	 * <li>{@code MLP.call} and {@code Attention.call}: decorated, every block's names its {@code c_fc} or {@code c_attn} alike.</li>
+	 * <li>{@code Formatted.call}: its names are {@code f"h{i}"}, distinct when measured, but the front end reads an f-string as the
+	 * constant of its source text, which counts as computed until the engine reads it (https://github.com/wala/ML/issues/1231).</li>
+	 * <li>{@code Nested.call}: an inner loop constructs two blocks per index, which collide even undecorated.</li>
+	 * <li>{@code Shadowed.call}: a sibling named {@code h1} beside the loop's names, which collide even undecorated.</li>
+	 * <li>{@code Restarted.call}: its index is {@code next(iter(range(n)))} made anew on every iteration, so every block is named
+	 * {@code h0}, which collide even undecorated.</li>
+	 * </ul>
+	 * {@code Block.__init__} forwards its own {@code name} parameter to its base's, as NLPGNN's {@code GPT2Transformer} does, which carries
+	 * the name its constructing call passes.
+	 */
+	@Test
+	public void testMayBuildLayersIndexedNames() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Indexed.call", true, false, null);
+		assertMayBuildLayers(functions, "Constant.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "TwoLoops.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Block.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "MLP.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Attention.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Formatted.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Nested.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Shadowed.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Restarted.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with two instances of a layer whose blocks are named
+	 * from a loop's index, {@code Block(name="h{}".format(i))}. Measured on TensorFlow 2.9.3, decorating {@code Indexed.call} names both
+	 * instances' variables {@code h0/dense/kernel:0} and {@code h1/dense/kernel:0}, since each drops its own scope. An HDF5 save groups the
+	 * weights by top-level layer and succeeds, but the names collide across the instances, so {@code Indexed.call} is refused for the
+	 * colliding names, the conservative side.
+	 */
+	@Test
+	public void testMayBuildLayersIndexedNamesTwoInstances() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Indexed.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Block.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 

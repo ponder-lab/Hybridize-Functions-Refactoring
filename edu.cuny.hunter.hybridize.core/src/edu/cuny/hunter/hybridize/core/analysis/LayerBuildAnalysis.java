@@ -107,15 +107,20 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * fields, at any depth, told apart by the node allocating them, a constructor or a summary in its context, since the engine allocates a
  * program layer's bound methods in its constructor too. The receiver's own allocation is left out: its name is dropped with its scope. A
  * sublayer's name is the {@code name} argument of the call constructing it, or of the {@code __init__} call of a base that its class's
- * {@code __init__} makes, read as the constant strings of its points-to set, which holds a parameter's default too. Two sublayers collide
- * when they may carry the same constant name, whatever their classes: two allocations, or one that may run more than once in a run, such as
- * one in a loop or a comprehension, in a function invoked from two sites that one program run reaches, or in the {@code build} of a layer
- * that has more than one instance. A name that is not one constant string, such as {@code "h{}".format(i)}, may collide with any other and
- * refuses. A sublayer constructed without a name, or with {@code None}, gets a unique one from Keras and never collides. The front end
- * reads an f-string as the one constant string of its source text, opening quote included, which counts as computed until the engine reads
- * it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which
- * counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own
- * {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed, which are read there.</li>
+ * {@code __init__} makes, read as the constant strings of its points-to set, which holds a parameter's default too, unless that
+ * {@code __init__} forwards its own {@code name} parameter and every constructing call passes one. A sublayer's variables are named under
+ * its parent's scope, the nearest layer holding it, so only siblings may collide: two allocations under one parent that may carry the same
+ * constant name, whatever their classes, or one allocation that may run more than once in a run, such as one in a loop or a comprehension,
+ * in a function invoked from two sites that one program run reaches, or in the {@code build} of a layer that has more than one instance,
+ * unless each run is named apart. A run is named apart when its one constructing call runs once per iteration of the one loop whose index
+ * fills its name, {@code "h{}".format(i)} for {@code i in range(n)}, or once per run of a parent's {@code __init__} or {@code build} whose
+ * layers are named apart in turn or carry unique names from Keras. The receiver must be one object: decorating the method drops its scope,
+ * so two receivers' sublayers collide. Any other name that is not one constant string may collide with any other and refuses. A sublayer
+ * constructed without a name, or with {@code None}, gets a unique one from Keras and never collides. The front end reads an f-string as the
+ * one constant string of its source text, opening quote included, which counts as computed until the engine reads it so (wala/ML#1231). A
+ * constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which counts as computed too, and
+ * so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own {@code **kwargs}:
+ * {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed, which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
@@ -149,9 +154,38 @@ class LayerBuildAnalysis {
 	 * The names a sublayer may carry.
 	 *
 	 * @param constants The constant names it may carry.
-	 * @param computed True iff it may carry a name that isn't one constant string.
+	 * @param templates The templates of the names it may carry that a loop's index fills ({@link #getIndexedName(CGNode, int)}).
+	 * @param computed True iff it may carry a name that is neither one constant string nor filled from a loop's index.
 	 */
-	private record Names(Set<String> constants, boolean computed) {
+	private record Names(Set<String> constants, Set<String> templates, boolean computed) {
+
+		/**
+		 * True iff the sublayer may carry a name at all, rather than one Keras makes unique.
+		 *
+		 * @return True iff a constant or indexed name may be given.
+		 */
+		boolean named() {
+			return !this.constants.isEmpty() || !this.templates.isEmpty();
+		}
+	}
+
+	/**
+	 * A name filled from a loop's index, as {@code "h{}".format(i)} in {@code for i in range(n)} is.
+	 *
+	 * @param template The string constant formatted, with one {@code {}} field.
+	 * @param index The {@code next} call defining the loop's index.
+	 */
+	private record IndexedName(String template, PythonInvokeInstruction index) {
+	}
+
+	/**
+	 * The layers reachable from a method's receiver through fields, by the node allocating them, and the parent of each: the nearest layer
+	 * holding it, by its allocating node, or {@code null} for the receiver, whose own scope a decorated method drops.
+	 *
+	 * @param objects The sublayers' objects by the node allocating them.
+	 * @param parents The parents of each sublayer, by the node allocating it.
+	 */
+	private record Sublayers(Map<CGNode, Set<InstanceKey>> objects, Map<CGNode, Set<CGNode>> parents) {
 	}
 
 	private static final ILog LOG = getLog(LayerBuildAnalysis.class);
@@ -169,6 +203,9 @@ class LayerBuildAnalysis {
 
 	/** The keyword of a layer's name. */
 	private static final String NAME_KEYWORD = "name";
+
+	/** The string method that fills a template's fields, as {@code "h{}".format(i)} does. */
+	private static final String FORMAT_METHOD_NAME = "format";
 
 	/** The builtins whose result is the same on every trace when their arguments are, including those a {@code for} loop is lowered to. */
 	private static final Set<String> FIXED_BUILTIN_NAMES = Set.of("iter", "len", "next", "range");
@@ -1034,43 +1071,315 @@ class LayerBuildAnalysis {
 						.forEach(receivers::add);
 		}
 
-		Map<CGNode, Set<InstanceKey>> sublayers = this.getSublayers(receivers);
+		Sublayers sublayers = this.getSublayers(receivers);
 
 		if (sublayers == null)
 			return Optional
 					.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "a sublayer's allocation, and so its name, can't be determined"));
 
-		Map<String, CGNode> named = new HashMap<>();
+		Map<CGNode, Names> names = new HashMap<>();
 
-		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.entrySet()) {
-			CGNode allocator = sublayer.getKey();
-			Names names = this.getNames(allocator, sublayer.getValue());
+		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.objects().entrySet()) {
+			Names sublayerNames = this.getNames(sublayer.getKey(), sublayer.getValue());
 
-			if (names.computed())
+			if (sublayerNames.computed())
 				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
 						"a `" + getSimpleName(allocatedClass(sublayer.getValue().iterator().next()).orElseThrow().getName())
 								+ "` sublayer's name is computed"));
 
-			for (String name : names.constants()) {
-				CGNode other = named.putIfAbsent(name, allocator);
-
-				// Two allocations collide; one allocator stands for several layers when one of its objects may be several.
-				if (other != null && !other.equals(allocator) || sublayer.getValue().stream().anyMatch(this::mayBeSeveral))
-					return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "several sublayers may be named `" + name + "`"));
-			}
+			names.put(sublayer.getKey(), sublayerNames);
 		}
+
+		// A sublayer's variables are named under its parent's scope, the receiver's dropped, so only siblings may collide.
+		Map<CGNode, Map<String, CGNode>> constantsByParent = new HashMap<>();
+		Map<CGNode, Map<String, CGNode>> templatesByParent = new HashMap<>();
+
+		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.objects().entrySet()) {
+			CGNode allocator = sublayer.getKey();
+			Names sublayerNames = names.get(allocator);
+
+			for (CGNode parent : sublayers.parents().get(allocator)) {
+				Map<String, CGNode> constants = constantsByParent.computeIfAbsent(parent, k -> new HashMap<>());
+				Map<String, CGNode> templates = templatesByParent.computeIfAbsent(parent, k -> new HashMap<>());
+
+				for (String name : sublayerNames.constants()) {
+					CGNode other = constants.putIfAbsent(name, allocator);
+
+					if (other != null && !other.equals(allocator))
+						return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "several sublayers may be named `" + name + "`"));
+				}
+
+				for (String template : sublayerNames.templates()) {
+					CGNode other = templates.putIfAbsent(template, allocator);
+
+					if (other != null && !other.equals(allocator))
+						return Optional
+								.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "several sublayers may be named `" + template + "`"));
+				}
+			}
+
+			// One allocator stands for several layers when one of its objects may be several, which collide unless each is named apart.
+			if (sublayerNames.named() && sublayer.getValue().stream().anyMatch(this::mayBeSeveral)
+					&& !this.isNamedApartPerRun(allocator, sublayers, names, new HashSet<>()))
+				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "several sublayers may be named `"
+						+ (sublayerNames.constants().isEmpty() ? sublayerNames.templates() : sublayerNames.constants()).iterator().next()
+						+ "`"));
+		}
+
+		// A template a loop's index fills may produce a sibling's constant name.
+		for (Map.Entry<CGNode, Map<String, CGNode>> parent : templatesByParent.entrySet())
+			for (String template : parent.getValue().keySet())
+				for (String constant : constantsByParent.getOrDefault(parent.getKey(), Collections.emptyMap()).keySet())
+					if (fills(template, constant))
+						return Optional
+								.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "several sublayers may be named `" + constant + "`"));
 
 		return Optional.empty();
 	}
 
 	/**
-	 * The layers and models reachable from {@code receivers} through fields, at any depth, by the node allocating them, in a stable order.
-	 * The node allocating a receiver is left out.
+	 * True iff each layer {@code allocator} allocates is named apart from the others it allocates: its one constructing call runs once per
+	 * iteration of the one loop whose index fills its name ({@link #getIndexedName(CGNode, int)}), or once per run of a node that runs
+	 * once, or once per run of a layer's {@code __init__} or {@code build}, which runs once per layer, every one of whose layers is a
+	 * sublayer named apart in turn or carrying a unique name Keras makes. The receiver isn't such a layer: decorating the method drops its
+	 * scope, so when it may be several objects, their sublayers collide.
+	 *
+	 * @param allocator The node allocating a sublayer.
+	 * @param sublayers The receiver's sublayers.
+	 * @param names The names each sublayer may carry, by its allocating node.
+	 * @param seen The allocators already visited, along a cycle.
+	 * @return True iff the allocator's layers are named apart.
+	 */
+	private boolean isNamedApartPerRun(CGNode allocator, Sublayers sublayers, Map<CGNode, Names> names, Set<CGNode> seen) {
+		if (!seen.add(allocator))
+			return false;
+
+		List<CGNode> callers = new ArrayList<>();
+		List<PythonInvokeInstruction> calls = new ArrayList<>();
+
+		for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator)))
+			for (CallSiteReference site : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, allocator)))
+				for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(site))
+					if (call instanceof PythonInvokeInstruction invoke) {
+						callers.add(caller);
+						calls.add(invoke);
+					} else
+						return false;
+
+		if (calls.size() != 1 || calls.get(0).isComprehension())
+			return false;
+
+		CGNode caller = callers.get(0);
+		PythonInvokeInstruction call = calls.get(0);
+
+		// In a loop, the name must be filled from that loop's index, and the call must lie in no other loop.
+		if (isInLoop(caller.getIR(), call.iIndex())) {
+			Optional<IndexedName> indexed = call.getUse(NAME_KEYWORD) < 0 ? Optional.empty()
+					: this.getIndexedName(caller, call.getUse(NAME_KEYWORD));
+
+			if (indexed.isEmpty() || !names.get(allocator).constants().isEmpty()
+					|| !isInOnlyLoopOf(caller.getIR(), call, indexed.get().index()))
+				return false;
+		}
+
+		if (!this.mayRunMoreThanOnce(caller))
+			return true;
+
+		// A layer's set-up runs once per layer, each of which must be a sublayer named apart, or one Keras names uniquely.
+		if (!this.isLayerSetUp(caller))
+			return false;
+
+		for (InstanceKey layer : this.getPointerAnalysis().getPointsToSet(
+				this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(caller, caller.getIR().getSymbolTable().getParameter(1)))) {
+			AllocationSiteInNode site = findAllocationSiteInNode(layer);
+
+			if (site == null || !sublayers.objects().containsKey(site.getNode()))
+				return false;
+
+			if (names.get(site.getNode()).named() && !this.isNamedApartPerRun(site.getNode(), sublayers, names, seen))
+				return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * The name {@code value} of {@code node} if a loop's index fills it: {@code template.format(i)}, a call of the {@code format} attribute
+	 * of a string constant with one {@code {}} field and no other brace, with {@code i} its only argument, the {@code next} of an
+	 * {@code iter} of a {@code range}, as the front end lowers {@code for i in range(n)}. Distinct values of {@code i} fill distinct names.
+	 * A reassigned index, an {@code enumerate}, or an f-string, which the front end reads as the constant of its source text, isn't
+	 * matched.
+	 *
+	 * @param node The node of {@code value}.
+	 * @param value A value number of {@code node}, a {@code name} argument.
+	 * @return The indexed name, or empty if the name isn't filled from a loop's index.
+	 */
+	private Optional<IndexedName> getIndexedName(CGNode node, int value) {
+		SymbolTable symbolTable = node.getIR().getSymbolTable();
+
+		if (!(node.getDU().getDef(value) instanceof PythonInvokeInstruction format) || !format.getKeywords().isEmpty()
+				|| format.getNumberOfPositionalParameters() != 2)
+			return Optional.empty();
+
+		if (!(node.getDU().getDef(format.getUse(0)) instanceof AstPropertyRead read) || !symbolTable.isStringConstant(read.getMemberRef())
+				|| !symbolTable.getStringValue(read.getMemberRef()).equals(FORMAT_METHOD_NAME)
+				|| !symbolTable.isStringConstant(read.getObjectRef()))
+			return Optional.empty();
+
+		String template = symbolTable.getStringValue(read.getObjectRef());
+
+		if (!template.replaceFirst("\\{\\}", "").chars().noneMatch(c -> c == '{' || c == '}') || !template.contains("{}"))
+			return Optional.empty();
+
+		if (!(node.getDU().getDef(format.getUse(1)) instanceof PythonInvokeInstruction next) || !this.callsBuiltinOnly(node, next, "next")
+				|| !(node.getDU().getDef(next.getUse(1)) instanceof PythonInvokeInstruction iter)
+				|| !this.callsBuiltinOnly(node, iter, "iter")
+				|| !(node.getDU().getDef(iter.getUse(1)) instanceof PythonInvokeInstruction range)
+				|| !this.callsBuiltinOnly(node, range, "range"))
+			return Optional.empty();
+
+		// The iterator must be made once, outside the loop, so each `next` advances it.
+		if (isInLoop(node.getIR(), iter.iIndex()) && sameCycle(node.getIR(), iter.iIndex(), next.iIndex()))
+			return Optional.empty();
+
+		return Optional.of(new IndexedName(template, next));
+	}
+
+	/**
+	 * True iff {@code invoke} calls the builtin {@code name} with one argument and no keywords.
+	 *
+	 * @param node The node of {@code invoke}.
+	 * @param invoke A call.
+	 * @param name The builtin's name.
+	 * @return True iff the call is {@code name(x)}.
+	 */
+	private boolean callsBuiltinOnly(CGNode node, PythonInvokeInstruction invoke, String name) {
+		return invoke.getKeywords().isEmpty() && invoke.getNumberOfPositionalParameters() == 2
+				&& Util.callsBuiltin(this.builder, node, invoke, name);
+	}
+
+	/**
+	 * True iff {@code name} is a name {@code template} may be filled into: the template's text around its one {@code {}} field, with any
+	 * text between.
+	 *
+	 * @param template A template with one {@code {}} field.
+	 * @param name A constant name.
+	 * @return True iff the name may be one the template produces.
+	 */
+	private static boolean fills(String template, String name) {
+		int field = template.indexOf("{}");
+		String prefix = template.substring(0, field);
+		String suffix = template.substring(field + 2);
+		return name.length() >= prefix.length() + suffix.length() && name.startsWith(prefix) && name.endsWith(suffix);
+	}
+
+	/**
+	 * True iff {@code call} lies in the loop of {@code index}, the {@code next} defining a loop's index, and in no other: the blocks on a
+	 * cycle through the index's block hold the call's, and, without the loop's one entry, hold no cycle.
+	 *
+	 * @param ir An IR.
+	 * @param call A call of {@code ir}.
+	 * @param index The {@code next} call of {@code ir} defining a loop's index.
+	 * @return True iff the call runs once per iteration of that loop alone.
+	 */
+	private static boolean isInOnlyLoopOf(IR ir, SSAInstruction call, SSAInstruction index) {
+		SSACFG cfg = ir.getControlFlowGraph();
+		Set<ISSABasicBlock> loop = getCycle(cfg, cfg.getBlockForInstruction(index.iIndex()));
+
+		if (!loop.contains(cfg.getBlockForInstruction(call.iIndex())))
+			return false;
+
+		// The loop's entries: its blocks with a predecessor outside it.
+		Set<ISSABasicBlock> entries = new HashSet<>();
+
+		for (ISSABasicBlock block : loop)
+			for (Iterator<ISSABasicBlock> preds = cfg.getPredNodes(block); preds.hasNext();)
+				if (!loop.contains(preds.next()))
+					entries.add(block);
+
+		if (entries.size() != 1)
+			return false;
+
+		// Without its entry, the loop holds another loop iff a cycle remains.
+		ISSABasicBlock entry = entries.iterator().next();
+
+		for (ISSABasicBlock block : loop)
+			if (!block.equals(entry)) {
+				Set<ISSABasicBlock> seen = new HashSet<>();
+				Deque<ISSABasicBlock> worklist = new ArrayDeque<>();
+				cfg.getSuccNodes(block).forEachRemaining(worklist::add);
+
+				while (!worklist.isEmpty()) {
+					ISSABasicBlock next = worklist.remove();
+
+					if (next.equals(block))
+						return false;
+
+					if (!next.equals(entry) && loop.contains(next) && seen.add(next))
+						cfg.getSuccNodes(next).forEachRemaining(worklist::add);
+				}
+			}
+
+		return true;
+	}
+
+	/**
+	 * True iff the instructions at {@code first} and {@code second} of {@code ir} lie on one cycle.
+	 *
+	 * @param ir An IR.
+	 * @param first An instruction index.
+	 * @param second An instruction index.
+	 * @return True iff some cycle holds both instructions' blocks.
+	 */
+	private static boolean sameCycle(IR ir, int first, int second) {
+		SSACFG cfg = ir.getControlFlowGraph();
+		return getCycle(cfg, cfg.getBlockForInstruction(first)).contains(cfg.getBlockForInstruction(second));
+	}
+
+	/**
+	 * The blocks of {@code cfg} on a cycle through {@code block}: those it reaches that reach it.
+	 *
+	 * @param cfg A control-flow graph.
+	 * @param block One of its blocks.
+	 * @return The blocks of the strongly connected component holding {@code block}, empty if it lies on no cycle.
+	 */
+	private static Set<ISSABasicBlock> getCycle(SSACFG cfg, ISSABasicBlock block) {
+		Set<ISSABasicBlock> forward = new HashSet<>();
+		Deque<ISSABasicBlock> worklist = new ArrayDeque<>();
+		cfg.getSuccNodes(block).forEachRemaining(worklist::add);
+
+		while (!worklist.isEmpty()) {
+			ISSABasicBlock next = worklist.remove();
+
+			if (forward.add(next))
+				cfg.getSuccNodes(next).forEachRemaining(worklist::add);
+		}
+
+		if (!forward.contains(block))
+			return Collections.emptySet();
+
+		Set<ISSABasicBlock> backward = new HashSet<>();
+		cfg.getPredNodes(block).forEachRemaining(worklist::add);
+
+		while (!worklist.isEmpty()) {
+			ISSABasicBlock next = worklist.remove();
+
+			if (backward.add(next))
+				cfg.getPredNodes(next).forEachRemaining(worklist::add);
+		}
+
+		forward.retainAll(backward);
+		return forward;
+	}
+
+	/**
+	 * The layers and models reachable from {@code receivers} through fields, at any depth, by the node allocating them, in a stable order,
+	 * with the parent of each: the nearest layer holding it, or {@code null} for the receiver. The node allocating a receiver is left out.
 	 *
 	 * @param receivers The objects the receiver may be.
-	 * @return The sublayers' objects by the node allocating them, or {@code null} if the engine doesn't place a sublayer's allocation.
+	 * @return The sublayers, or {@code null} if the engine doesn't place a sublayer's allocation.
 	 */
-	private Map<CGNode, Set<InstanceKey>> getSublayers(Set<InstanceKey> receivers) {
+	private Sublayers getSublayers(Set<InstanceKey> receivers) {
 		Map<InstanceKey, Set<InstanceFieldPointerKey>> fields = getFieldIndex(this.getPointerAnalysis());
 		Set<CGNode> receiverAllocators = new HashSet<>();
 
@@ -1081,33 +1390,55 @@ class LayerBuildAnalysis {
 				receiverAllocators.add(site.getNode());
 		}
 
-		Set<InstanceKey> seen = new HashSet<>(receivers);
-		Deque<InstanceKey> worklist = new ArrayDeque<>(receivers);
-		Map<CGNode, Set<InstanceKey>> ret = new TreeMap<>(Comparator.comparing(Object::toString));
+		// The nearest layers holding each object reached, by their allocating nodes; null is the receiver.
+		Map<InstanceKey, Set<CGNode>> holders = new HashMap<>();
+		Deque<InstanceKey> worklist = new ArrayDeque<>();
 
-		while (!worklist.isEmpty())
-			for (InstanceFieldPointerKey field : fields.getOrDefault(worklist.remove(), Collections.emptySet()))
-				for (InstanceKey value : this.getPointerAnalysis().getPointsToSet(field))
-					if (seen.add(value)) {
-						worklist.add(value);
-						Optional<IClass> allocatedClass = allocatedClass(value);
+		for (InstanceKey receiver : receivers) {
+			holders.computeIfAbsent(receiver, k -> new HashSet<>()).add(null);
+			worklist.add(receiver);
+		}
 
-						if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference())) {
-							AllocationSiteInNode site = findAllocationSiteInNode(value);
+		Map<CGNode, Set<InstanceKey>> objects = new TreeMap<>(Comparator.comparing(Object::toString));
+		Map<CGNode, Set<CGNode>> parents = new HashMap<>();
 
-							// A sublayer whose allocation the engine doesn't place has names that can't be read.
-							if (site == null)
-								return null;
+		while (!worklist.isEmpty()) {
+			InstanceKey holder = worklist.remove();
 
-							// A layer of the receiver's own class that the receiver's allocator also builds, as a recursive layer's
-							// children are,
-							// is left out with it, and so are its children's names. It's rare.
-							if (!receiverAllocators.contains(site.getNode()))
-								ret.computeIfAbsent(site.getNode(), k -> new HashSet<>()).add(value);
+			// What a sublayer holds is under its scope; what any other object holds is under its holders'.
+			Set<CGNode> scopes = holders.get(holder);
+			AllocationSiteInNode holderSite = findAllocationSiteInNode(holder);
+
+			if (holderSite != null && objects.containsKey(holderSite.getNode()))
+				scopes = Collections.singleton(holderSite.getNode());
+
+			for (InstanceFieldPointerKey field : fields.getOrDefault(holder, Collections.emptySet()))
+				for (InstanceKey value : this.getPointerAnalysis().getPointsToSet(field)) {
+					Optional<IClass> allocatedClass = allocatedClass(value);
+					boolean isLayer = allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference());
+
+					if (isLayer) {
+						AllocationSiteInNode site = findAllocationSiteInNode(value);
+
+						// A sublayer whose allocation the engine doesn't place has names that can't be read.
+						if (site == null)
+							return null;
+
+						// A layer of the receiver's own class that the receiver's allocator also builds, as a recursive layer's
+						// children are, is left out with it, and so are its children's names. It's rare.
+						if (!receiverAllocators.contains(site.getNode())) {
+							objects.computeIfAbsent(site.getNode(), k -> new HashSet<>()).add(value);
+							parents.computeIfAbsent(site.getNode(), k -> new HashSet<>()).addAll(scopes);
 						}
 					}
 
-		return ret;
+					// An object is revisited only when it gains a holder; a sublayer's own fields are under its scope whatever holds it.
+					if (holders.computeIfAbsent(value, k -> new HashSet<>()).addAll(scopes))
+						worklist.add(value);
+				}
+		}
+
+		return new Sublayers(objects, parents);
 	}
 
 	/**
@@ -1139,17 +1470,31 @@ class LayerBuildAnalysis {
 	 */
 	private Names getNames(CGNode allocator, Set<InstanceKey> objects) {
 		Set<String> constants = new TreeSet<>();
+		Set<String> templates = new TreeSet<>();
 		boolean computed = false;
+
+		// Whether every call constructing it passes its name, which an `__init__` forwarding its own `name` parameter then carries.
+		boolean everyCallNames = true;
 
 		// The calls constructing it. One unpacking keywords, as `Dense(**config)` does, may pass any name.
 		for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator)))
 			for (CallSiteReference callSite : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, allocator)))
 				for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(callSite))
 					if (call instanceof PythonInvokeInstruction invoke)
-						if (unpacksKeywords(invoke))
+						if (unpacksKeywords(invoke)) {
 							computed = true;
-						else if (invoke.getUse(NAME_KEYWORD) >= 0)
-							computed |= addNames(caller, invoke.getUse(NAME_KEYWORD), constants);
+							everyCallNames = false;
+						} else if (invoke.getUse(NAME_KEYWORD) >= 0) {
+							Optional<IndexedName> indexed = this.getIndexedName(caller, invoke.getUse(NAME_KEYWORD));
+
+							if (indexed.isPresent())
+								templates.add(indexed.get().template());
+							else
+								computed |= addNames(caller, invoke.getUse(NAME_KEYWORD), constants);
+						} else
+							everyCallNames = false;
+					else
+						everyCallNames = false;
 
 		// The `__init__` calls of its class's `__init__`, for a program class. One unpacking keywords may pass any name, unless it
 		// unpacks the `__init__`'s own `**kwargs`, as `super().__init__(**kwargs)` does: that forwards only the keywords the constructing
@@ -1161,11 +1506,29 @@ class LayerBuildAnalysis {
 						if (unpacksKeywords(invoke) && !forwardsOwnKeywords(init, invoke))
 							computed = true;
 
-						if (invoke.getUse(NAME_KEYWORD) >= 0)
+						// An `__init__` forwarding its own `name` parameter carries what the constructing calls pass, read above.
+						if (invoke.getUse(NAME_KEYWORD) >= 0 && !(everyCallNames && forwardsOwnName(init, invoke.getUse(NAME_KEYWORD))))
 							computed |= addNames(init, invoke.getUse(NAME_KEYWORD), constants);
 					}
 
-		return new Names(constants, computed);
+		return new Names(constants, templates, computed);
+	}
+
+	/**
+	 * True iff {@code value} of {@code node} is the function's own parameter named {@code name}.
+	 *
+	 * @param node An {@code __init__} node.
+	 * @param value A value number of {@code node}, a {@code name} argument it passes.
+	 * @return True iff the value is the {@code name} parameter.
+	 */
+	private static boolean forwardsOwnName(CGNode node, int value) {
+		IR ir = node.getIR();
+
+		if (!ir.getSymbolTable().isParameter(value))
+			return false;
+
+		String[] localNames = ir.getLocalNames(0, value);
+		return localNames != null && List.of(localNames).contains(NAME_KEYWORD);
 	}
 
 	/**
