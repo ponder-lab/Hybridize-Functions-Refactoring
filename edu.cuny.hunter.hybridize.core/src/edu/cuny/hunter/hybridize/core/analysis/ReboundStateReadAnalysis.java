@@ -104,6 +104,9 @@ class ReboundStateReadAnalysis {
 	/** The set-up method types of each class, by the class's type name (see {@link #getSetUpMethodTypes(InstanceKey)}). */
 	private final Map<TypeName, Set<TypeReference>> setUpMethodTypes = new HashMap<>();
 
+	/** The fields some node writes outside the methods setting their objects up, over the whole program; computed on first use. */
+	private Set<InstanceFieldPointerKey> reboundFields;
+
 	/**
 	 * Creates the analysis.
 	 *
@@ -217,6 +220,38 @@ class ReboundStateReadAnalysis {
 						return Optional.of(new ReboundWrite(field, node, this.getWritePosition(node, field)));
 
 		return Optional.empty();
+	}
+
+	/**
+	 * True iff {@code read}, a field read of {@code node}, reads only fields that nothing writes outside the methods setting their objects
+	 * up ({@link #setsUp(CGNode, InstanceFieldPointerKey)}): each object's field then holds one value for the object's life. A read whose
+	 * fields the heap model doesn't name, or that reads a container's element, isn't.
+	 *
+	 * @param node The node of {@code read}.
+	 * @param read A field read of {@code node}.
+	 * @return True iff {@code read} reads at least one field, and every field it reads is written only while its object is set up.
+	 */
+	boolean readsSetUpStateOnly(CGNode node, SSAInstruction read) {
+		if (this.reboundFields == null) {
+			this.reboundFields = new HashSet<>();
+
+			for (CGNode writer : this.callGraph)
+				for (PointerKey written : Function.getDirectMod(writer, this.modRef, this.heapModel, this.pointerAnalysis))
+					if (written instanceof InstanceFieldPointerKey field && !this.setsUp(writer, field))
+						this.reboundFields.add(field);
+		}
+
+		boolean any = false;
+
+		for (PointerKey pointerKey : this.modRef.getRef(node, this.heapModel, this.pointerAnalysis, read, null)) {
+			if (!(pointerKey instanceof InstanceFieldPointerKey field)
+					|| Util.isContainerType(field.getInstanceKey().concreteType().getReference()) || this.reboundFields.contains(field))
+				return false;
+
+			any = true;
+		}
+
+		return any;
 	}
 
 	/**
