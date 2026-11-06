@@ -18464,14 +18464,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code Dense(4, name="c_fc")}, of which a comprehension constructs three, reducing NLPGNN's {@code MLP}. Measured on TensorFlow
 	 * 2.9.3, decorating {@code Block.call} names every block's kernel {@code c_fc/kernel:0}, and the HDF5 save fails. One allocation site
 	 * stands for every block's {@code c_fc}, and it may run more than once, so {@code Block.call} is refused for the colliding names.
-	 * {@code Stack.call} reaches the same sublayers, but it is refused first for its loop over {@code self.blocks}, whose condition tests
-	 * an iterator the engine doesn't show fixed. {@code Net.call} is a model's and is not refused.
+	 * {@code Stack.call} reaches the same sublayers, and its loop over {@code self.blocks}, set only in {@code __init__}, takes the same
+	 * path on every trace, so it is refused for the colliding names too. {@code Net.call} is a model's and is not refused.
 	 */
 	@Test
 	public void testMayBuildLayersNameAcrossInstances() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Block.call", true, false, COLLIDING_NAMES);
-		assertMayBuildLayers(functions, "Stack.call", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "Stack.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
@@ -18521,18 +18521,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with loops over blocks constructed in
 	 * {@code __init__} without names: {@code for block in self.blocks} in {@code Stack.call} and {@code for i in range(self.n)} in
-	 * {@code Indexed.call}. Each loop takes the same path on every trace, and measured on TensorFlow 2.9.3, decorating either method
-	 * retraces without error, but a loop's condition tests an iterator, not a constant, and the engine doesn't show it fixed, so each is
-	 * refused for a first call on a retrace, the conservative side until the engine publishes the fact
-	 * (https://github.com/wala/ML/issues/1230). {@code Block.call}, whose {@code Dense} has no name and is called unconditionally, isn't
-	 * refused: an allocation in a comprehension stands for several blocks' {@code Dense}s, but the receiver chooses among them, and each
-	 * instance traces its own function; measured on TensorFlow 2.9.3, decorating {@code Block.call} retraces without error.
+	 * {@code Indexed.call}. Each loop iterates over receiver state set only in {@code __init__}, so it takes the same path on every trace,
+	 * and measured on TensorFlow 2.9.3, decorating either method retraces without error: neither is refused. {@code Block.call}, whose
+	 * {@code Dense} has no name and is called unconditionally, isn't refused: an allocation in a comprehension stands for several blocks'
+	 * {@code Dense}s, but the receiver chooses among them, and each instance traces its own function; measured on TensorFlow 2.9.3,
+	 * decorating {@code Block.call} retraces without error.
 	 */
 	@Test
 	public void testMayBuildLayersBlockLoop() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		assertMayBuildLayers(functions, "Stack.call", true, false, FIRST_CALL_ON_RETRACE);
-		assertMayBuildLayers(functions, "Indexed.call", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "Stack.call", true, false, null);
+		assertMayBuildLayers(functions, "Indexed.call", true, false, null);
 		assertMayBuildLayers(functions, "Block.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}

@@ -29,6 +29,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.core.runtime.ILog;
 
 import com.ibm.wala.cast.ir.ssa.AstPropertyRead;
+import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
+import com.ibm.wala.cast.ir.ssa.EachElementHasNextInstruction;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
@@ -56,6 +58,7 @@ import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.ISSABasicBlock;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
+import com.ibm.wala.ssa.SSABinaryOpInstruction;
 import com.ibm.wala.ssa.SSACFG;
 import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAGetInstruction;
@@ -63,6 +66,7 @@ import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.ssa.SSAPhiInstruction;
 import com.ibm.wala.ssa.SSASwitchInstruction;
+import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
@@ -86,17 +90,17 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * it leads to the exit without calling it either. The calls of one callee object are taken together, so a layer called on both arms of a
  * branch, or before it, isn't first called under it. Only the paths that return normally count, since a trace that raises keeps no graph;
  * but a call in an exception handler that returns normally is refused, since a retrace whose protected code raises first calls it. The
- * condition takes the same path on every trace only on an engine fact: its points-to set is one constant, the same in every context, as a
- * literal or a module constant is, or the engine types it as a tensor, and no Python value, in every context, whose branch AutoGraph traces
- * both arms of, so the first trace makes the first call. A tensor in one context or call and a Python value in another is a mix, which
- * varies. Anything else, such as a parameter or field that may hold two values, an iterator over {@code self.blocks}, or a value whose
- * points-to set is empty, may vary, and the method is refused; whether a condition is fixed at every call is a fact the engine doesn't
- * publish yet (wala/ML#1230). A layer chosen by data rather than by control counts too: a call whose callee value may be more than one
- * layer is refused unless a phi merges them under branches that are fixed so, as {@code (self.a if flag else self.b)(x)} is refused for a
- * parameter {@code flag}. One layer through a local alias is one value. One allocation that may make several layers, as a comprehension
- * does, counts as several unless a fixed key selects one, as in {@code self.blocks[0]}; {@code self.blocks[i]} for a varying {@code i} is
- * refused, in the method or in a function it calls. The receiver choosing, as {@code self.d} does in a class constructed twice, is fixed,
- * since each instance traces its own function.</li>
+ * condition takes the same path on every trace when the engine shows it, as one constant in every context or a tensor in every context
+ * (AutoGraph traces both arms of a tensor's branch), or when it is built only from constants, the receiver, fields written only while their
+ * objects are set up in {@code __init__} or a layer's {@code build}, operators over these, a loop over such an iterable, such as
+ * {@code self.blocks}, and {@code range} or {@code len} of them, followed back through the IR's def-use chains. A tensor in one context or
+ * call and a Python value in another is a mix, which varies. Anything else, such as a parameter, a field another method rebinds, another
+ * call's result, or a value the walk can't trace, may vary, and the method is refused. A layer chosen by data rather than by control counts
+ * too: a call whose callee value may be more than one layer is refused unless a phi merges them under branches that are fixed so, as
+ * {@code (self.a if flag else self.b)(x)} is refused for a parameter {@code flag}. One layer through a local alias is one value. One
+ * allocation that may make several layers, as a comprehension does, counts as several unless a fixed key selects one, as in
+ * {@code self.blocks[0]}; {@code self.blocks[i]} for a varying {@code i} is refused, in the method or in a function it calls. The receiver
+ * choosing, as {@code self.d} does in a class constructed twice, is fixed, since each instance traces its own function.</li>
  * <li>{@link LayerBuildShape#COLLIDING_NAMES}: decorating the method names the variables built in its trace without the scopes of the
  * receiver and the layers enclosing it, so two sublayers that carry the same name build variables with the same names, and a save keyed by
  * name, such as to HDF5, fails or mixes weights (issue 1172). The sublayers are the layer objects reachable from the receiver through
@@ -167,6 +171,9 @@ class LayerBuildAnalysis {
 	/** The keyword of a layer's name. */
 	private static final String NAME_KEYWORD = "name";
 
+	/** The builtins whose result is the same on every trace when their arguments are, including those a {@code for} loop is lowered to. */
+	private static final Set<String> FIXED_BUILTIN_NAMES = Set.of("iter", "len", "next", "range");
+
 	/**
 	 * The fields of each object, by object, of each pointer analysis. Built once per pointer analysis, since every method's sublayer walk
 	 * reads it; concurrent because functions may be processed in parallel.
@@ -193,6 +200,9 @@ class LayerBuildAnalysis {
 
 	/** The pointer keys the tensor-type analysis types as tensors, which the engine publishes ({@link Util#computeTensorTypedOrigins}). */
 	private final Map<PointerKey, Set<TensorOrigin>> tensorTypedKeys;
+
+	/** Which fields are written only while their objects are set up, for {@link #isFixed(CGNode, int)}; created on first use. */
+	private ReboundStateReadAnalysis reboundState;
 
 	/**
 	 * Creates the analysis.
@@ -542,9 +552,10 @@ class LayerBuildAnalysis {
 	/**
 	 * True iff {@code value} of a program node reads one layer of an allocation that makes several by a fixed selection: the node's
 	 * receiver, since each instance of the method traces its own function, and a callee's receiver is the callee value of a call checked so
-	 * in its caller, or a field or element of a value read so, under a key that is a literal or fixed ({@link #isFixed(CGNode, int)}).
-	 * {@code self.blocks[i]} for a varying {@code i} isn't, in the method or in a function it calls; {@code self.d} and
-	 * {@code self.blocks[0]} are.
+	 * in its caller, a field or element of a value read so, under a key that is a literal or fixed ({@link #isFixed(CGNode, int)}), or the
+	 * element of a loop over a fixed iterable. {@code self.blocks[i]} for a varying {@code i} isn't, in the method or in a function it
+	 * calls; {@code self.d}, {@code self.blocks[0]}, {@code block} in {@code for block in self.blocks} and {@code self.blocks[i]} in
+	 * {@code for i in range(self.n)} are.
 	 *
 	 * @param node A program node the method's trace runs.
 	 * @param value A value number of {@code node}.
@@ -567,7 +578,25 @@ class LayerBuildAnalysis {
 			return (symbolTable.isConstant(read.getMemberRef()) || this.isFixed(node, read.getMemberRef()))
 					&& this.isReadFixedly(node, read.getObjectRef());
 
+		// A loop over a fixed iterable, `next` of `iter` of it, calls every element in the same order on every trace, so each first call is
+		// on the first trace.
+		if (def instanceof PythonInvokeInstruction invoke && invoke.getKeywords().isEmpty() && this.callsFixedBuiltin(node, invoke))
+			return this.isFixed(node, value);
+
 		return false;
+	}
+
+	/**
+	 * True iff {@code invoke} calls one of the builtins whose result is the same on every trace when its arguments are:
+	 * {@link #FIXED_BUILTIN_NAMES}, through which the front end also lowers a {@code for} loop, as {@code next} of {@code iter} of the
+	 * iterable.
+	 *
+	 * @param node The node of {@code invoke}.
+	 * @param invoke A call.
+	 * @return True iff the call's only callee is one of those builtins.
+	 */
+	private boolean callsFixedBuiltin(CGNode node, PythonInvokeInstruction invoke) {
+		return FIXED_BUILTIN_NAMES.stream().anyMatch(name -> Util.callsBuiltin(this.builder, node, invoke, name));
 	}
 
 	/**
@@ -689,8 +718,7 @@ class LayerBuildAnalysis {
 	/**
 	 * True iff {@code controller} ends in a branch whose condition may differ between traces. A block that ends otherwise, such as one
 	 * ending in a call that may raise, decides nothing a retrace changes. The branch's literal operands, the constants of the IR it
-	 * compares against, are fixed; each other operand, the condition value, is fixed only on an engine fact
-	 * ({@link #isFixed(CGNode, int)}).
+	 * compares against, are fixed; each other operand, the condition value, is fixed when {@link #isFixed(CGNode, int)} shows it.
 	 *
 	 * @param node The node of {@code controller}.
 	 * @param controller A block a call is control dependent on.
@@ -711,12 +739,144 @@ class LayerBuildAnalysis {
 		for (int i = 0; i < instruction.getNumberOfUses(); i++) {
 			int value = instruction.getUse(i);
 
-			// TODO: Read whether the condition is fixed at every call from the engine (https://github.com/wala/ML/issues/1230).
 			if (!ir.getSymbolTable().isConstant(value) && !this.isFixed(node, value))
 				return true;
 		}
 
 		return false;
+	}
+
+	/**
+	 * True iff {@code value} of {@code node} is the same on every trace of the function: the engine shows it
+	 * ({@link #isFixedByEngine(CGNode, int)}), or it is built only from constants, the method's receiver, fields of fixed objects that are
+	 * written only while their objects are set up, in {@code __init__} or a layer's {@code build}, operators over fixed operands, and
+	 * {@code range}, {@code len}, {@code iter} or {@code next} of fixed arguments, the last two being how a loop over a fixed iterable
+	 * steps, following the value back through the IR's def-use chains. A parameter other than the receiver, a field another method rebinds,
+	 * any other call, a merge of values at a phi, and a value the walk can't trace may vary.
+	 *
+	 * @param node The node of {@code value}.
+	 * @param value A value number of {@code node}.
+	 * @return True iff the value is the same on every trace.
+	 */
+	private boolean isFixed(CGNode node, int value) {
+		return this.isFixed(node, value, new HashSet<>());
+	}
+
+	/**
+	 * Decides {@link #isFixed(CGNode, int)}.
+	 *
+	 * @param node The node of {@code value}.
+	 * @param value A value number of {@code node}.
+	 * @param seen The values already being decided, along a cycle of definitions, which is taken to vary.
+	 * @return True iff the value is the same on every trace.
+	 */
+	private boolean isFixed(CGNode node, int value, Set<Integer> seen) {
+		if (this.isFixedByEngine(node, value))
+			return true;
+
+		IR ir = node.getIR();
+
+		if (ir == null || !seen.add(value))
+			return false;
+
+		SymbolTable symbolTable = ir.getSymbolTable();
+
+		if (symbolTable.isConstant(value))
+			return true;
+
+		int[] parameters = symbolTable.getParameterValueNumbers();
+
+		for (int i = 0; i < parameters.length; i++)
+			if (parameters[i] == value)
+				// Slot 1 of a method is its receiver, the same object on every trace of its own traced function.
+				return i == 1 && this.isReceiver(node, value);
+
+		SSAInstruction def = node.getDU().getDef(value);
+
+		if (def instanceof AstPropertyRead read)
+			return this.isFixed(node, read.getObjectRef(), seen)
+					&& (symbolTable.isConstant(read.getMemberRef()) || this.isFixed(node, read.getMemberRef(), seen))
+					&& this.getReboundState().readsSetUpStateOnly(node, read);
+
+		if (def instanceof SSAGetInstruction get)
+			return !get.isStatic() && this.isFixed(node, get.getRef(), seen) && this.getReboundState().readsSetUpStateOnly(node, get);
+
+		if (def instanceof SSABinaryOpInstruction || def instanceof SSAUnaryOpInstruction)
+			return this.usesAreFixed(node, def, seen);
+
+		// A loop's test reads the next element of its iterable, which is the same sequence on every trace when the iterable is fixed.
+		if (def instanceof EachElementGetInstruction || def instanceof EachElementHasNextInstruction)
+			return this.isFixed(node, def.getUse(0), seen);
+
+		if (def instanceof PythonInvokeInstruction invoke && invoke.getKeywords().isEmpty() && this.callsFixedBuiltin(node, invoke)) {
+			for (int i = 1; i < invoke.getNumberOfPositionalParameters(); i++)
+				if (!this.isFixed(node, invoke.getUse(i), seen))
+					return false;
+
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff every operand of {@code instruction} is fixed ({@link #isFixed(CGNode, int, Set)}).
+	 *
+	 * @param node The node of {@code instruction}.
+	 * @param instruction An instruction of {@code node}.
+	 * @param seen The values already being decided.
+	 * @return True iff each use of {@code instruction} is fixed.
+	 */
+	private boolean usesAreFixed(CGNode node, SSAInstruction instruction, Set<Integer> seen) {
+		for (int i = 0; i < instruction.getNumberOfUses(); i++)
+			if (!this.isFixed(node, instruction.getUse(i), seen))
+				return false;
+
+		return true;
+	}
+
+	/**
+	 * True iff {@code value}, the second parameter slot of {@code node}, is the receiver of a method: the function is declared in a class,
+	 * and every object the slot may be is an instance of that class or a subclass, per the engine's allocated classes and their bases.
+	 *
+	 * @param node A node.
+	 * @param value The value number of {@code node}'s second parameter slot.
+	 * @return True iff the slot holds the method's receiver.
+	 */
+	private boolean isReceiver(CGNode node, int value) {
+		Optional<TypeName> declaringClass = this.getDeclaringClass(node);
+
+		if (declaringClass.isEmpty())
+			return false;
+
+		OrdinalSet<InstanceKey> receivers = this.getPointerAnalysis()
+				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, value));
+
+		if (receivers.isEmpty())
+			return false;
+
+		for (InstanceKey receiver : receivers) {
+			Optional<IClass> allocatedClass = allocatedClass(receiver);
+
+			if (allocatedClass.isEmpty()
+					|| !Function.getClassAndBaseNames(this.builder.getClassHierarchy(), allocatedClass.get().getReference())
+							.contains(declaringClass.get()))
+				return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * The analysis of which fields are written outside their objects' set-up methods, created on first use.
+	 *
+	 * @return The rebound-state analysis over this call graph.
+	 */
+	private ReboundStateReadAnalysis getReboundState() {
+		if (this.reboundState == null)
+			this.reboundState = new ReboundStateReadAnalysis(this.callGraph, this.getPointerAnalysis(), this.tensorTypedKeys);
+
+		return this.reboundState;
 	}
 
 	/**
@@ -730,9 +890,9 @@ class LayerBuildAnalysis {
 	 *
 	 * @param node The node of {@code value}.
 	 * @param value A value number of {@code node}.
-	 * @return True iff the value is fixed across traces on an engine fact.
+	 * @return True iff the engine shows the value fixed across traces.
 	 */
-	private boolean isFixed(CGNode node, int value) {
+	private boolean isFixedByEngine(CGNode node, int value) {
 		boolean anyTensor = false;
 		Set<InstanceKey> constants = new HashSet<>();
 

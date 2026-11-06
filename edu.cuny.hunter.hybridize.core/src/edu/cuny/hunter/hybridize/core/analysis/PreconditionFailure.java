@@ -440,8 +440,8 @@ public enum PreconditionFailure {
 	 * <li>{@link LayerBuildShape#CONSTRUCTED_IN_BODY}: it, or a function it calls other than a layer's {@code __init__} or {@code build},
 	 * constructs a layer, so each trace creates new variables, and the second raises.</li>
 	 * <li>{@link LayerBuildShape#FIRST_CALL_ON_RETRACE}: it, or a function it calls, may first call a layer under a branch or loop whose
-	 * condition may differ between traces: the engine shows neither that the condition is one constant in every context nor that it is a
-	 * tensor, whose branch AutoGraph traces both arms of. A retrace then creates the layer's variables and raises.</li>
+	 * condition may differ between traces, such as one depending on a parameter, on a field another method rebinds, or on a value whose
+	 * source can't be shown. A retrace then creates the layer's variables and raises.</li>
 	 * <li>{@link LayerBuildShape#COLLIDING_NAMES}: two sublayers reachable from its receiver may carry the same constant name, or one
 	 * carries a computed name. The build runs inside the trace, outside the name scopes of the layers that enclose it, so their variables
 	 * may get the same names, such as {@code dense/kernel:0}, and saving the weights by name, such as to HDF5, fails with
