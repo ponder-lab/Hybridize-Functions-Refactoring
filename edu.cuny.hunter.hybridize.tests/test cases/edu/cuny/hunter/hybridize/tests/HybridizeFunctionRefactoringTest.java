@@ -18358,7 +18358,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * of its bases below {@code Layer}, which would refuse it.
 	 * <p>
 	 * TODO: The engine models no object for a {@code Convolution2D} construction (https://github.com/wala/ML/issues/1236), so the sublayer
-	 * is invisible and {@code Aliased.call} is a missed refusal until the engine models it.
+	 * is invisible and {@code Aliased.call} is a missed refusal until the engine models it. {@code SeparableConvolution1D} and
+	 * {@code SeparableConvolution2D}, which Keras names {@code separable_conv1d} and {@code separable_conv2d}, are declared but not modeled
+	 * either; should the engine model one as the class it allocates, as it does {@code MaxPool2D} for {@code MaxPooling2D}, its generated
+	 * name must come from its target too.
 	 */
 	@Test
 	public void testMayBuildLayersUnnamedBesideNamed() throws Exception {
