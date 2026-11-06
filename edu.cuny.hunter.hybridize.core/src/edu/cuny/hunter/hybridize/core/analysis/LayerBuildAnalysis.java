@@ -115,12 +115,15 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * unless each run is named apart. A run is named apart when its one constructing call runs once per iteration of the one loop whose index
  * fills its name, {@code "h{}".format(i)} for {@code i in range(n)}, or once per run of a parent's {@code __init__} or {@code build} whose
  * layers are named apart in turn or carry unique names from Keras. The receiver must be one object: decorating the method drops its scope,
- * so two receivers' sublayers collide. Any other name that is not one constant string may collide with any other and refuses. A sublayer
- * constructed without a name, or with {@code None}, gets a unique one from Keras and never collides. The front end reads an f-string as the
- * one constant string of its source text, opening quote included, which counts as computed until the engine reads it so (wala/ML#1231). A
- * constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which counts as computed too, and
- * so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own {@code **kwargs}:
- * {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed, which are read there.</li>
+ * so two receivers' sublayers collide. Two templates under one parent may fill a name alike, as {@code "h{}"} and {@code "h1{}"} do with
+ * {@code h10}, and refuse. A sublayer's parent is the layer holding it; Keras scopes it under the layer whose {@code __call__} first builds
+ * it, which is the same whenever a layer is called by its holder, but not for a layer passed to another's {@code call} and built there. Any
+ * other name that is not one constant string may collide with any other and refuses. A sublayer constructed without a name, or with
+ * {@code None}, gets a unique one from Keras and never collides. The front end reads an f-string as the one constant string of its source
+ * text, opening quote included, which counts as computed until the engine reads it so (wala/ML#1231). A constructing call that unpacks
+ * {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which counts as computed too, and so does a base's
+ * {@code __init__} call unpacking anything but the calling {@code __init__}'s own {@code **kwargs}: {@code super().__init__(**kwargs)}
+ * forwards only the keywords the constructing call passed, which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
@@ -1126,13 +1129,22 @@ class LayerBuildAnalysis {
 						+ "`"));
 		}
 
-		// A template a loop's index fills may produce a sibling's constant name.
-		for (Map.Entry<CGNode, Map<String, CGNode>> parent : templatesByParent.entrySet())
-			for (String template : parent.getValue().keySet())
+		// A template a loop's index fills may produce a sibling's constant name, or a name another template fills.
+		for (Map.Entry<CGNode, Map<String, CGNode>> parent : templatesByParent.entrySet()) {
+			List<String> templates = new ArrayList<>(parent.getValue().keySet());
+
+			for (String template : templates)
 				for (String constant : constantsByParent.getOrDefault(parent.getKey(), Collections.emptyMap()).keySet())
 					if (fills(template, constant))
 						return Optional
 								.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "several sublayers may be named `" + constant + "`"));
+
+			for (int i = 0; i < templates.size(); i++)
+				for (int j = i + 1; j < templates.size(); j++)
+					if (mayFillAlike(templates.get(i), templates.get(j)))
+						return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
+								"sublayers named `" + templates.get(i) + "` and `" + templates.get(j) + "` may share a name"));
+		}
 
 		return Optional.empty();
 	}
@@ -1243,6 +1255,27 @@ class LayerBuildAnalysis {
 			return Optional.empty();
 
 		return Optional.of(new IndexedName(template, next));
+	}
+
+	/**
+	 * True iff two templates, each with one {@code {}} field a loop's index fills, may fill the same name, as {@code "h{}"} with {@code 10}
+	 * and {@code "h1{}"} with {@code 0} both fill {@code h10}. A fill is the string of an integer, so a shared name requires one template's
+	 * text before its field to start the other's, and one's text after its field to end the other's. Templates failing either, as
+	 * {@code "h{}"} and {@code "ln_{}"} do, never share a name.
+	 *
+	 * @param first A template with one {@code {}} field.
+	 * @param second Another template with one {@code {}} field.
+	 * @return True iff the templates may fill the same name.
+	 */
+	private static boolean mayFillAlike(String first, String second) {
+		int firstField = first.indexOf("{}");
+		int secondField = second.indexOf("{}");
+		String firstPrefix = first.substring(0, firstField);
+		String secondPrefix = second.substring(0, secondField);
+		String firstSuffix = first.substring(firstField + 2);
+		String secondSuffix = second.substring(secondField + 2);
+		return (firstPrefix.startsWith(secondPrefix) || secondPrefix.startsWith(firstPrefix))
+				&& (firstSuffix.endsWith(secondSuffix) || secondSuffix.endsWith(firstSuffix));
 	}
 
 	/**

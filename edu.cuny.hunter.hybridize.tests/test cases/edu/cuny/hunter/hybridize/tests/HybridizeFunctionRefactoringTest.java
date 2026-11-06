@@ -18369,9 +18369,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * <li>{@code Shadowed.call}: a sibling named {@code h1} beside the loop's names, which collide even undecorated.</li>
 	 * <li>{@code Restarted.call}: its index is {@code next(iter(range(n)))} made anew on every iteration, so every block is named
 	 * {@code h0}, which collide even undecorated.</li>
+	 * <li>{@code Overlapping.call}: one loop fills {@code "h{}"} over {@code range(11)} and another {@code "h1{}"}, both reaching
+	 * {@code h10}, which collide even undecorated.</li>
 	 * </ul>
-	 * {@code Block.__init__} forwards its own {@code name} parameter to its base's, as NLPGNN's {@code GPT2Transformer} does, which carries
-	 * the name its constructing call passes.
+	 * {@code Disjoint.call} fills {@code "h{}"} and {@code "ln_{}"}, which never share a name: measured on TensorFlow 2.9.3, decorating it
+	 * keeps its variables' names distinct, and it isn't refused. {@code Block.__init__} forwards its own {@code name} parameter to its
+	 * base's, as NLPGNN's {@code GPT2Transformer} does, which carries the name its constructing call passes.
 	 */
 	@Test
 	public void testMayBuildLayersIndexedNames() throws Exception {
@@ -18386,6 +18389,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Nested.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Shadowed.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Restarted.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Overlapping.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Disjoint.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 

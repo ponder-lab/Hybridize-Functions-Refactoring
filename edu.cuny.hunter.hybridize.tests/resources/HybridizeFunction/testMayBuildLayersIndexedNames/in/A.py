@@ -162,6 +162,42 @@ class Restarted(tf.keras.layers.Layer):
         return x
 
 
+class Overlapping(tf.keras.layers.Layer):
+
+    def build(self, input_shape):
+        self.first = []
+        for i in range(11):
+            self.first.append(tf.keras.layers.Dense(4, name="h{}".format(i)))
+        self.second = []
+        for i in range(1):
+            self.second.append(tf.keras.layers.Dense(4, name="h1{}".format(i)))
+
+    def call(self, x):
+        for dense in self.first:
+            x = dense(x)
+        for dense in self.second:
+            x = dense(x)
+        return x
+
+
+class Disjoint(tf.keras.layers.Layer):
+
+    def build(self, input_shape):
+        self.first = []
+        for i in range(3):
+            self.first.append(tf.keras.layers.Dense(4, name="h{}".format(i)))
+        self.second = []
+        for i in range(3):
+            self.second.append(tf.keras.layers.Dense(4, name="ln_{}".format(i)))
+
+    def call(self, x):
+        for dense in self.first:
+            x = dense(x)
+        for dense in self.second:
+            x = dense(x)
+        return x
+
+
 class Net(tf.keras.Model):
 
     def __init__(self):
@@ -173,10 +209,13 @@ class Net(tf.keras.Model):
         self.nested = Nested(2, name="nested")
         self.shadowed = Shadowed(3, name="shadowed")
         self.restarted = Restarted(2, name="restarted")
+        self.overlapping = Overlapping(name="overlapping")
+        self.disjoint = Disjoint(name="disjoint")
 
     def call(self, x):
         x = self.formatted(self.two_loops(self.constant(self.indexed(x))))
-        return self.restarted(self.shadowed(self.nested(x)))
+        x = self.restarted(self.shadowed(self.nested(x)))
+        return self.disjoint(self.overlapping(x))
 
 
 model = Net()
