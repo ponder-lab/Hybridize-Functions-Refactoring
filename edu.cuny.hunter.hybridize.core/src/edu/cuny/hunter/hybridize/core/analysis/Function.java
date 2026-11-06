@@ -3983,8 +3983,6 @@ public class Function {
 	 */
 	private boolean isArgumentKnownAtEveryCallSite(int irParamIndex, Set<CGNode> nodes, CallGraph callGraph,
 			PythonSSAPropagationCallGraphBuilder builder) {
-		// TODO: Read whether the argument's value set is complete from the engine once it publishes a scalar argument's value set at each
-		// call (https://github.com/wala/ML/issues/1224, Fact 1), instead of walking merges here.
 		return isArgumentKnownAtEveryCallSite(nodes, irParamIndex, this.getParameters().get(irParamIndex - 1).getName(), callGraph, builder,
 				new HashSet<>());
 	}
