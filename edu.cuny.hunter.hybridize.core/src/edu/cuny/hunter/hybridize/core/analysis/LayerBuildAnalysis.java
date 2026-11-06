@@ -1045,19 +1045,20 @@ class LayerBuildAnalysis {
 
 		Map<String, CGNode> named = new HashMap<>();
 
-		// The classes of the sublayers constructed without a name, which Keras names after their class.
-		Set<String> unnamedClasses = new TreeSet<>();
+		// The classes Keras may name each unnamed sublayer after, by the sublayer's own class.
+		Map<String, Set<String>> unnamedClasses = new TreeMap<>();
 
 		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.entrySet()) {
 			CGNode allocator = sublayer.getKey();
 			Names names = this.getNames(allocator, sublayer.getValue());
-			String className = getSimpleName(allocatedClass(sublayer.getValue().iterator().next()).orElseThrow().getName());
+			IClass allocatedClass = allocatedClass(sublayer.getValue().iterator().next()).orElseThrow();
+			String className = getSimpleName(allocatedClass.getName());
 
 			if (names.computed())
 				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "a `" + className + "` sublayer's name is computed"));
 
 			if (names.constants().isEmpty())
-				unnamedClasses.add(className);
+				unnamedClasses.computeIfAbsent(className, k -> new TreeSet<>()).addAll(this.getNamingClasses(allocatedClass));
 
 			for (String name : names.constants()) {
 				CGNode other = named.putIfAbsent(name, allocator);
@@ -1070,17 +1071,44 @@ class LayerBuildAnalysis {
 
 		// Keras names an unnamed layer after its class, `dense` or `dense_<n>`, counting only the names it makes, so a constant name may be
 		// one of them.
-		for (String className : unnamedClasses) {
-			String generated = toSnakeCase(className);
+		for (Map.Entry<String, Set<String>> unnamed : unnamedClasses.entrySet())
+			for (String namingClass : unnamed.getValue()) {
+				String generated = toSnakeCase(namingClass);
 
-			for (String name : named.keySet())
-				if (name.equals(generated) || name.startsWith(generated + "_") && !name.substring(generated.length() + 1).isEmpty()
-						&& name.substring(generated.length() + 1).chars().allMatch(Character::isDigit))
-					return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
-							"an unnamed `" + className + "` sublayer may be named `" + name + "`, as another is"));
-		}
+				for (String name : named.keySet())
+					if (name.equals(generated) || name.startsWith(generated + "_") && !name.substring(generated.length() + 1).isEmpty()
+							&& name.substring(generated.length() + 1).chars().allMatch(Character::isDigit))
+						return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
+								"an unnamed `" + unnamed.getKey() + "` sublayer may be named `" + name + "`, as another is"));
+			}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * The simple names of the classes Keras may name an unnamed layer of {@code allocatedClass} after: a program class's own, since Keras
+	 * names a layer after {@code type(self).__name__}, and, for a library class, its own and each superclass's below
+	 * {@code tf.keras.layers.Layer}, since the engine models an alias such as {@code Convolution2D} as a subclass of the class it names,
+	 * {@code Conv2D}, after which Keras names it.
+	 *
+	 * @param allocatedClass The class of an unnamed sublayer.
+	 * @return The simple names of the classes it may be named after.
+	 */
+	private Set<String> getNamingClasses(IClass allocatedClass) {
+		Set<String> ret = new LinkedHashSet<>(List.of(getSimpleName(allocatedClass.getName())));
+
+		if (allocatedClass instanceof IPythonClass)
+			return ret;
+
+		// The bases as the engine declares them, by name, without `Layer` and what lies above it.
+		IClassHierarchy classHierarchy = this.builder.getClassHierarchy();
+		Set<TypeName> aboveLayer = Function.getClassAndBaseNames(classHierarchy, KERAS_LAYER_TYPE.getName());
+
+		for (TypeName base : Function.getClassAndBaseNames(classHierarchy, allocatedClass.getReference()))
+			if (!aboveLayer.contains(base))
+				ret.add(getSimpleName(base));
+
+		return ret;
 	}
 
 	/**
