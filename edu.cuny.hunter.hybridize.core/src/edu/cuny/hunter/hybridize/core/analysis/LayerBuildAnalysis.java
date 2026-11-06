@@ -159,7 +159,6 @@ class LayerBuildAnalysis {
 	/**
 	 * The engine's modeled {@code tf.keras.layers.Layer} and {@code tf.keras.Model}, which a layer's class reaches through its bases.
 	 */
-	// TODO: Ask the engine whether a class reaches Model or Layer through any base (https://github.com/wala/ML/issues/1228).
 	private static final Set<TypeName> KERAS_TYPE_NAMES = Set.of(KERAS_LAYER_TYPE.getName(), KERAS_MODEL_TYPE.getName());
 
 	/** The fully-qualified name of {@code Layer.add_weight}, as the engine names it ({@link TensorFlowApis}). */
@@ -270,7 +269,6 @@ class LayerBuildAnalysis {
 		if (classHierarchy.lookupClass(KERAS_MODEL_TYPE) == null)
 			return null;
 
-		// TODO: Ask the engine whether a class reaches Model or Layer through any base (https://github.com/wala/ML/issues/1228).
 		PointerKey receiver = this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, parameters[1]);
 		boolean anyModel = false;
 		boolean anyOther = false;
