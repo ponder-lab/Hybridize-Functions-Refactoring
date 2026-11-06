@@ -18556,6 +18556,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a layer selected through a plain object holding
+	 * it: {@code Head}, no layer, holds a {@code Dense}, and a comprehension constructs three. {@code Selected.call} calls
+	 * {@code self.heads[self.choice].run(x)}, whose index {@code select} rebinds from {@code 0} to {@code 1}: measured on TensorFlow 2.9.3,
+	 * decorating it raises "tf.function only supports singleton tf.Variables created on the first call" on a retrace after the rebinding.
+	 * The bound method {@code run} is one allocation standing for three, selected by a varying key, so it has the shape of a first call on
+	 * a retrace; it is refused first for reading the rebound field ({@link PreconditionFailure#HAS_REBOUND_STATE_READS}).
+	 * {@code First.call} calls {@code self.heads[0].run(x)}, a fixed selection, and it isn't refused; decorated, it retraces without error.
+	 */
+	@Test
+	public void testMayBuildLayersPlainHolder() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function selected = findFunction(functions, "Selected.call");
+		assertEquals("`Selected.call` may first call another head's layer on a retrace.", FIRST_CALL_ON_RETRACE,
+				selected.getLayerBuildShape());
+		assertNull("`Selected.call` is refused.", selected.getPassingPrecondition());
+		assertMayBuildLayers(functions, "First.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
 	@Test
 	public void testMayBuildLayersTwoSiteReceiver() throws Exception {
 		Set<Function> functions = this.getFunctions();

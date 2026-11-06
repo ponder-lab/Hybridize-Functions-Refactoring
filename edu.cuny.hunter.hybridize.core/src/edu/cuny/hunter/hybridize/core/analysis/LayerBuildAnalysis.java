@@ -457,8 +457,9 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code callee}, a call's callee value, calls the same layer on every trace: the engine allocates at most one layer it may
-	 * be, told apart by allocating node, or it merges several at a phi whose choosing branches are fixed
+	 * True iff {@code callee}, a call's callee value, calls the same layer on every trace: the engine allocates at most one object it may
+	 * be, a layer or another, such as a bound method of an object holding one, told apart by allocating node, and not several, or it is
+	 * read by a fixed selection ({@link #isReadFixedly(CGNode, int)}), or it merges several at a phi whose choosing branches are fixed
 	 * ({@link #varies(CGNode, ISSABasicBlock, IR)}) and each of whose operands is selected fixedly in turn. A value that may be several
 	 * layers and that no phi selects, such as a field or an element holding several, has no selecting value the engine shows fixed, so it
 	 * isn't. A single layer called through a local alias is the same value and is.
@@ -479,20 +480,24 @@ class LayerBuildAnalysis {
 		Set<CGNode> allocators = new HashSet<>();
 		boolean several = false;
 
+		// Every object the callee may be, not only a layer: the call reaches `add_weight`, so a bound method of a plain object holding a
+		// layer, such as `self.heads[i].run`, selects the layer as well.
 		for (InstanceKey instanceKey : this.getPointerAnalysis()
 				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, callee))) {
-			Optional<IClass> allocatedClass = allocatedClass(instanceKey);
+			AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
 
-			if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference())) {
-				AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
+			if (site == null) {
+				Optional<IClass> allocatedClass = allocatedClass(instanceKey);
 
-				// A layer whose allocation the engine doesn't place can't be told apart from the others.
-				if (site == null)
+				// A layer whose allocation the engine doesn't place can't be told apart from the others; a constant has no allocation.
+				if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference()))
 					return false;
 
-				allocators.add(site.getNode());
-				several |= this.mayBeSeveral(instanceKey);
+				continue;
 			}
+
+			allocators.add(site.getNode());
+			several |= this.mayBeSeveral(instanceKey);
 		}
 
 		// One layer. One allocation that may make several, as a comprehension does, needs a fixed selection, in a callee too: a
