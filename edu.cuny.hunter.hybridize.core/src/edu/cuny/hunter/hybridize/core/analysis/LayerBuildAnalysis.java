@@ -1046,8 +1046,10 @@ class LayerBuildAnalysis {
 
 		// Keras counts the names it makes per graph, so an unnamed sublayer constructed during the trace, as one a sublayer's `build` makes
 		// when the method first calls it, restarts the count and may take the name of one constructed before the trace. The receiver's
-		// own `build` runs before the trace.
-		Set<CGNode> traced = this.getReachable(nodes);
+		// own `build` runs before the trace. A node may run on both sides, as a helper both `__init__` and a lazily run `build` call does:
+		// it runs during the trace when the method reaches it, and before it when an entry point reaches it without the method.
+		Set<CGNode> traced = this.getReachable(nodes, Collections.emptySet());
+		Set<CGNode> untraced = this.getReachable(Collections.singleton(this.callGraph.getFakeRootNode()), nodes);
 		Set<String> generatedInTrace = new TreeSet<>();
 		Set<String> generatedOutside = new TreeSet<>();
 
@@ -1060,8 +1062,13 @@ class LayerBuildAnalysis {
 				return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES, "a `" + className + "` sublayer's name is computed"));
 
 			if (names.constants().isEmpty())
-				for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator)))
-					(traced.contains(caller) ? generatedInTrace : generatedOutside).add(toSnakeCase(className));
+				for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator))) {
+					if (traced.contains(caller))
+						generatedInTrace.add(toSnakeCase(className));
+
+					if (untraced.contains(caller) || !traced.contains(caller))
+						generatedOutside.add(toSnakeCase(className));
+				}
 
 			for (String name : names.constants()) {
 				CGNode other = named.putIfAbsent(name, allocator);
@@ -1081,20 +1088,21 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * The nodes {@code nodes} reach in the call graph, themselves included.
+	 * The nodes {@code roots} reach in the call graph without passing through {@code avoiding}, the roots included.
 	 *
-	 * @param nodes Nodes of the call graph.
-	 * @return The nodes reachable from them.
+	 * @param roots Nodes of the call graph.
+	 * @param avoiding Nodes not to pass through.
+	 * @return The nodes reachable from the roots.
 	 */
-	private Set<CGNode> getReachable(Set<CGNode> nodes) {
-		Set<CGNode> ret = new HashSet<>(nodes);
-		Deque<CGNode> worklist = new ArrayDeque<>(nodes);
+	private Set<CGNode> getReachable(Set<CGNode> roots, Set<CGNode> avoiding) {
+		Set<CGNode> ret = new HashSet<>(roots);
+		Deque<CGNode> worklist = new ArrayDeque<>(roots);
 
 		while (!worklist.isEmpty())
 			for (Iterator<CGNode> succNodes = this.callGraph.getSuccNodes(worklist.remove()); succNodes.hasNext();) {
 				CGNode next = succNodes.next();
 
-				if (ret.add(next))
+				if (!avoiding.contains(next) && ret.add(next))
 					worklist.add(next);
 			}
 

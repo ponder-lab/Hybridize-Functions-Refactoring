@@ -43,15 +43,43 @@ class LazyTop(tf.keras.layers.Layer):
         return self.block(x)
 
 
+def make_dense():
+    return tf.keras.layers.Dense(4)
+
+
+class HelperBlock(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.eager = make_dense()
+
+    def build(self, input_shape):
+        self.lazy = make_dense()
+
+    def call(self, x):
+        return self.lazy(self.eager(x))
+
+
+class HelperTop(tf.keras.layers.Layer):
+
+    def build(self, input_shape):
+        self.first = HelperBlock(name="h0")
+        self.second = HelperBlock(name="h1")
+
+    def call(self, x):
+        return self.second(self.first(x))
+
+
 class Net(tf.keras.Model):
 
     def __init__(self):
         super().__init__()
         self.top = Top(name="top")
         self.lazy_top = LazyTop(name="lazy_top")
+        self.helper_top = HelperTop(name="helper_top")
 
     def call(self, x):
-        return self.lazy_top(self.top(x))
+        return self.helper_top(self.lazy_top(self.top(x)))
 
 
 model = Net()

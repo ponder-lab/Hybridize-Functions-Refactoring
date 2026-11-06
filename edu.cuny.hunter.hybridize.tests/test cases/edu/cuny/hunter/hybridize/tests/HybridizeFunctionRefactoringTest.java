@@ -18353,13 +18353,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * first calls the block, during the trace. Measured on TensorFlow 2.9.3, decorating {@code Top.call} names both of {@code h0}'s
 	 * {@code h0/dense/kernel:0}, and the HDF5 save fails, so it is refused for the colliding names. {@code LazyTop.call} constructs both of
 	 * its block's {@code Dense}s during the trace, and {@code Block.call} constructs none, since a layer's own {@code build} runs before
-	 * its trace; decorated, each keeps its variables' names distinct, and neither is refused.
+	 * its trace; decorated, each keeps its variables' names distinct, and neither is refused. {@code HelperBlock} constructs both of its
+	 * {@code Dense}s through one helper, {@code make_dense}, called from {@code __init__} and from {@code build}, so the helper runs on
+	 * both sides of the trace: measured on TensorFlow 2.9.3, with nothing unnamed constructed before it, decorating {@code HelperTop.call}
+	 * names both of {@code h0}'s {@code h0/dense/kernel:0}, and it is refused.
 	 */
 	@Test
 	public void testMayBuildLayersTraceCounter() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Top.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "LazyTop.call", true, false, null);
+		assertMayBuildLayers(functions, "HelperTop.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Block.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
