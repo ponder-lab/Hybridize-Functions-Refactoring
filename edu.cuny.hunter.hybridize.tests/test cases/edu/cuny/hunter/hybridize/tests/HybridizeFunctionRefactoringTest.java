@@ -18356,7 +18356,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * its trace; decorated, each keeps its variables' names distinct, and neither is refused. {@code HelperBlock} constructs both of its
 	 * {@code Dense}s through one helper, {@code make_dense}, called from {@code __init__} and from {@code build}, so the helper runs on
 	 * both sides of the trace: measured on TensorFlow 2.9.3, with nothing unnamed constructed before it, decorating {@code HelperTop.call}
-	 * names both of {@code h0}'s {@code h0/dense/kernel:0}, and it is refused.
+	 * names both of {@code h0}'s {@code h0/dense/kernel:0}, and it is refused. {@code WrapTop1} through {@code WrapTop6} call it through
+	 * chains of one to six wrappers; measured on TensorFlow 2.9.3, {@code WrapTop3} alone collides as {@code HelperTop} does, and each is
+	 * refused. Even through six wrappers the analysis keeps a node of {@code make_dense} per call site, so none of these runs one node on
+	 * both sides of the trace, and counting such a node on both sides isn't witnessed here.
 	 */
 	@Test
 	public void testMayBuildLayersTraceCounter() throws Exception {
@@ -18364,6 +18367,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Top.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "LazyTop.call", true, false, null);
 		assertMayBuildLayers(functions, "HelperTop.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop1.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop2.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop3.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop4.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop5.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop6.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Block.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
