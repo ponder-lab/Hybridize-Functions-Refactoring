@@ -93,10 +93,10 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * points-to set is empty, may vary, and the method is refused; whether a condition is fixed at every call is a fact the engine doesn't
  * publish yet (wala/ML#1230). A layer chosen by data rather than by control counts too: a call whose callee value may be more than one
  * layer is refused unless a phi merges them under branches that are fixed so, as {@code (self.a if flag else self.b)(x)} is refused for a
- * parameter {@code flag}. One layer through a local alias is one value. In the method's own body, one allocation that may make several
- * layers, as a comprehension does, counts as several unless a fixed key selects one, as in {@code self.blocks[0]}; {@code self.blocks[i]}
- * for a parameter {@code i} is refused. The receiver choosing, as {@code self.d} does in a class constructed twice, is fixed, since each
- * instance traces its own function.</li>
+ * parameter {@code flag}. One layer through a local alias is one value. One allocation that may make several layers, as a comprehension
+ * does, counts as several unless a fixed key selects one, as in {@code self.blocks[0]}; {@code self.blocks[i]} for a varying {@code i} is
+ * refused, in the method or in a function it calls. The receiver choosing, as {@code self.d} does in a class constructed twice, is fixed,
+ * since each instance traces its own function.</li>
  * <li>{@link LayerBuildShape#COLLIDING_NAMES}: decorating the method names the variables built in its trace without the scopes of the
  * receiver and the layers enclosing it, so two sublayers that carry the same name build variables with the same names, and a save keyed by
  * name, such as to HDF5, fails or mixes weights (issue 1172). The sublayers are the layer objects reachable from the receiver through
@@ -184,9 +184,6 @@ class LayerBuildAnalysis {
 
 	/** The call-graph builder, which the engine asks for the APIs a call invokes, the receiver's objects and the class hierarchy. */
 	private final PythonSSAPropagationCallGraphBuilder builder;
-
-	/** The nodes of the method being checked, set by {@link #getShape(Set)}. */
-	private Set<CGNode> methodNodes = Collections.emptySet();
 
 	/** Whether each node may reach {@code Layer.add_weight}, memoized. */
 	private final Map<CGNode, Boolean> reachesAddWeight = new HashMap<>();
@@ -296,7 +293,6 @@ class LayerBuildAnalysis {
 	 * @return The first shape that holds, with where it occurs, or empty if none does.
 	 */
 	Optional<Verdict> getShape(Set<CGNode> nodes) {
-		this.methodNodes = nodes;
 		Set<CGNode> traced = this.getTracedNodes(nodes);
 		Optional<Verdict> ret = this.findConstruction(traced);
 
@@ -499,9 +495,9 @@ class LayerBuildAnalysis {
 			}
 		}
 
-		// One layer. One allocation that may make several, as a comprehension does, stands for one only in a callee the method reaches,
-		// whose receiver, and so the layer it reads, the method's own data chooses.
-		if (allocators.isEmpty() || allocators.size() == 1 && (!several || !this.methodNodes.contains(node)))
+		// One layer. One allocation that may make several, as a comprehension does, needs a fixed selection, in a callee too: a
+		// callee's receiver is fixed, since the call into it had its own callee value checked so in its caller.
+		if (allocators.isEmpty() || allocators.size() == 1 && !several)
 			return true;
 
 		if (!(node.getDU().getDef(callee) instanceof SSAPhiInstruction phi))
@@ -540,11 +536,13 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code value} of one of the method's own nodes reads one layer of an allocation that makes several by a fixed selection: the
-	 * method's receiver, since each instance traces its own function, or a field or element of a value read so, under a key that is a
-	 * literal or fixed ({@link #isFixed(CGNode, int)}). {@code self.blocks[i]} for a parameter {@code i} isn't; {@code self.d} is.
+	 * True iff {@code value} of a program node reads one layer of an allocation that makes several by a fixed selection: the node's
+	 * receiver, since each instance of the method traces its own function, and a callee's receiver is the callee value of a call checked so
+	 * in its caller, or a field or element of a value read so, under a key that is a literal or fixed ({@link #isFixed(CGNode, int)}).
+	 * {@code self.blocks[i]} for a varying {@code i} isn't, in the method or in a function it calls; {@code self.d} and
+	 * {@code self.blocks[0]} are.
 	 *
-	 * @param node One of the method's nodes.
+	 * @param node A program node the method's trace runs.
 	 * @param value A value number of {@code node}.
 	 * @return True iff the value's selection is fixed across traces.
 	 */
@@ -723,7 +721,8 @@ class LayerBuildAnalysis {
 	 * types it as a tensor, and no Python value, in every context, whose branch AutoGraph traces both arms of, so the first trace makes the
 	 * first call. Anything else may vary: a value whose points-to set is empty or holds two constants, and a mix, such as a tensor in one
 	 * context or call and {@code None} or a Python {@code bool} in another, which takes a Python branch on one trace and a tensor branch on
-	 * another.
+	 * another. A context whose points-to set is empty but which the engine types as a tensor counts as a tensor with no Python value, so a
+	 * Python value the engine doesn't model, merged there, is hidden; that is rare, since a Python {@code bool} mostly has a key.
 	 *
 	 * @param node The node of {@code value}.
 	 * @param value A value number of {@code node}.

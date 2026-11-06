@@ -18536,6 +18536,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * standing for several layers that the receiver chooses among is pinned by {@code Block.call} in
 	 * {@link #testMayBuildLayersBlockLoop()}.
 	 */
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a layer selected by index one call down:
+	 * {@code Indexed.call} passes {@code self.choice}, which {@code select} rebinds from {@code 0} to {@code 1}, to {@code _apply}, which
+	 * calls {@code self.blocks[i](x)} on blocks from one comprehension. Measured on TensorFlow 2.9.3, decorating {@code Indexed.call}
+	 * raises "tf.function only supports singleton tf.Variables created on the first call" on a retrace after the rebinding. It has the
+	 * shape of a first call on a retrace, and it is refused first for reading the rebound field
+	 * ({@link PreconditionFailure#HAS_REBOUND_STATE_READS}), which precedes it; a parameter index would be refused first as a primitive
+	 * parameter. {@code Fixed.call}'s {@code _apply} calls {@code self.blocks[0](x)}, a fixed selection, and it isn't refused; decorated,
+	 * it retraces without error.
+	 */
+	@Test
+	public void testMayBuildLayersIndexedInCallee() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function indexed = findFunction(functions, "Indexed.call");
+		assertEquals("`Indexed.call` may first call another block on a retrace.", FIRST_CALL_ON_RETRACE, indexed.getLayerBuildShape());
+		assertNull("`Indexed.call` is refused.", indexed.getPassingPrecondition());
+		assertMayBuildLayers(functions, "Fixed.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
 	@Test
 	public void testMayBuildLayersTwoSiteReceiver() throws Exception {
 		Set<Function> functions = this.getFunctions();
