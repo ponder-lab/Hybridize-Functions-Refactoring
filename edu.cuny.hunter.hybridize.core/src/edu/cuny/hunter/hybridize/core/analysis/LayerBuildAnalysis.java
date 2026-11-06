@@ -36,6 +36,7 @@ import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuild
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
 import com.ibm.wala.cast.python.loader.IPythonClass;
 import com.ibm.wala.cast.python.loader.StarFormalDeclaration;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
 import com.ibm.wala.cast.python.ml.client.TensorFlowApis;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
@@ -305,6 +306,9 @@ class LayerBuildAnalysis {
 		Optional<Verdict> ret = this.findConstruction(traced);
 
 		if (ret.isEmpty())
+			ret = this.findSharedFunction(nodes);
+
+		if (ret.isEmpty())
 			ret = this.findConditionalBuild(traced);
 
 		if (ret.isEmpty())
@@ -368,6 +372,62 @@ class LayerBuildAnalysis {
 		}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * Finds a method called through its class, as {@code Block.project(a, x)}, on more than one receiver. Each instance traces its own
+	 * function only when the method is called bound to it ({@link #isCalledBound(CGNode)}); called through its class, it shares one
+	 * function among its receivers, so a retrace with another receiver first calls that receiver's layers.
+	 *
+	 * @param nodes The method's nodes.
+	 * @return {@link LayerBuildShape#FIRST_CALL_ON_RETRACE}, or empty if the method is called bound, or on one receiver.
+	 */
+	private Optional<Verdict> findSharedFunction(Set<CGNode> nodes) {
+		if (nodes.stream().allMatch(this::isCalledBound))
+			return Optional.empty();
+
+		Set<InstanceKey> receivers = new HashSet<>();
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (ir != null && ir.getSymbolTable().getParameterValueNumbers().length > 1)
+				this.getPointerAnalysis()
+						.getPointsToSet(
+								this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, ir.getSymbolTable().getParameter(1)))
+						.forEach(receivers::add);
+		}
+
+		if (receivers.size() > 1 || receivers.stream().anyMatch(this::mayBeSeveral))
+			return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE,
+					"it's called through its class on several receivers, which share one function"));
+
+		return Optional.empty();
+	}
+
+	/**
+	 * True iff every call of {@code node} from program code binds its receiver, as {@code a.project(x)} does, rather than passing it
+	 * through the class, as {@code Block.project(a, x)} does, which the engine publishes per call
+	 * ({@link CallTargets#parameterBoundTargets}). A call from the engine's summaries, such as a layer's {@code __call__} calling its
+	 * {@code call}, binds it. That is optimistic for a library function that forwards a method as a plain function, as
+	 * {@code functools.partial} or a {@code Dataset.map} callback may, which passes the receiver unbound.
+	 *
+	 * @param node A method's node.
+	 * @return True iff each call of the node from program code is bound to its receiver.
+	 */
+	private boolean isCalledBound(CGNode node) {
+		for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(node))) {
+			if (!CallTargets.isProgramCode(caller))
+				continue;
+
+			for (CallSiteReference site : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, node)))
+				for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(site))
+					if (!(call instanceof PythonInvokeInstruction invoke)
+							|| !Boolean.TRUE.equals(CallTargets.parameterBoundTargets(this.builder, caller, invoke).get(node)))
+						return false;
+		}
+
+		return true;
 	}
 
 	/**
