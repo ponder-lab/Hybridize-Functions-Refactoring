@@ -37,10 +37,8 @@ public enum TensorClassificationBasis {
 	 * Every phase ran, but the parameter has no abstract value in any of the function's call-graph nodes: its points-to set is empty
 	 * throughout. A value does arrive at run time, but the analysis models none, as when the argument is produced by an op it doesn't model
 	 * ({@code "_%d" % i}, {@code len(...)}, {@code d.get(k)}) or is lost through a forwarder such as {@code wrapper(*args, **kwargs)}. An
-	 * empty tensor-type result then reflects the missing model, not that the argument is not a tensor, so this is not a determination: the
-	 * verdict is left unknown, and the function is reported as having tensor parameters that can't be inferred. See
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997 and
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245.
+	 * empty tensor-type result then reflects the missing model, not that the argument is not a tensor, so this is not a determination. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997.
 	 */
 	NO_ABSTRACT_VALUE,
 
