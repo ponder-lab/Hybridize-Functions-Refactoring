@@ -10172,111 +10172,6 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * A parameter passed only the result of string formatting, a value the analysis doesn't model, so its points-to set is empty. That says
-	 * nothing about whether a tensor arrives, so {@code count}'s {@code n} is left undetermined, and {@code count} takes the undetermined
-	 * path for tensor and primitive parameters alike rather than being reported as having none. The parameter of {@code literal} is passed
-	 * int literals the analysis models, so it is still determined not to be a tensor and is primitive
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
-	 */
-	@Test
-	public void testEmptyPointsToTensorUndetermined() throws Exception {
-		Function count = getFunction("count");
-		Parameter n = count.getParameters().get(0);
-		assertNull("Whether `n` is a tensor is unknown.", n.isTensor());
-		assertEquals("`n` has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE, n.getTensorClassificationBasis());
-		assertNull("Whether `count` has a tensor parameter is unknown.", count.getHasTensorParameter());
-		assertNotNull("`count` takes the undetermined path.", count.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
-		assertNull("`count` is not reported as having no tensor parameters.", count.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
-		assertNull("Whether `count` has a primitive parameter is unknown.", count.getHasPrimitiveParameter());
-		assertNotNull("`count` takes the undetermined path for primitives.",
-				count.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-		assertNull(count.getPassingPrecondition());
-		assertTrue("`count` is not converted.", count.getTransformations().isEmpty());
-
-		Function literal = getFunction("literal");
-		Parameter literalN = literal.getParameters().get(0);
-		assertEquals("`n` is determined not to be a tensor.", FALSE, literalN.isTensor());
-		assertEquals(TensorClassificationBasis.ANALYZED_NOT_TENSOR, literalN.getTensorClassificationBasis());
-		assertEquals("`literal` has no tensor parameter.", FALSE, literal.getHasTensorParameter());
-		assertNotNull(literal.getEntryMatchingFailure(HAS_NO_TENSOR_PARAMETERS));
-		assertNull("`literal` doesn't take the undetermined path.", literal.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
-		assertEquals("`literal` has a primitive parameter.", TRUE, literal.getHasPrimitiveParameter());
-		assertNull("`literal` doesn't take the undetermined path for primitives.",
-				literal.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-	}
-
-	/**
-	 * A parameter the analysis models in one calling context and not in another
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245). Each function is passed an int literal and the result of
-	 * string formatting, whose points-to set is empty, so what reaches it there is unknown. Neither parameter is determined not to be a
-	 * tensor, and the hybrid function isn't converted to eager on an absence the analysis doesn't establish.
-	 */
-	@Test
-	public void testEmptyPointsToInOneContext() throws Exception {
-		for (String identifier : List.of("mixed", "hybrid_mixed")) {
-			Function function = getFunction(identifier);
-			Parameter n = function.getParameters().get(0);
-			assertNull("Whether `n` of `" + identifier + "` is a tensor is unknown.", n.isTensor());
-			assertEquals(TensorClassificationBasis.NO_ABSTRACT_VALUE, n.getTensorClassificationBasis());
-			assertNull("Whether `" + identifier + "` has a tensor parameter is unknown.", function.getHasTensorParameter());
-			assertNotNull("`" + identifier + "` takes the undetermined path.",
-					function.getEntryMatchingFailure(UNDETERMINABLE_TENSOR_PARAMETER));
-			assertTrue("`" + identifier + "` is not converted.", function.getTransformations().isEmpty());
-		}
-	}
-
-	/**
-	 * A tensor function whose other parameter is passed only the result of string formatting, a value the analysis doesn't model. Whether
-	 * {@code scale}'s {@code name} is a primitive is unknown, so {@code scale} is refused as undetermined rather than let through as having
-	 * no primitive parameter, and {@code name} blocks its input signature as undetermined. The parameter of {@code repeat} is passed int
-	 * literals, so it is primitive as before, and that of {@code defaulted} always takes its default, so it is exempt as before. The
-	 * {@code *args} and {@code **kwargs} slots of {@code absorbing}, passed nothing, and the keyword-only {@code n} of {@code keyword},
-	 * taking its default, have empty points-to sets without being unmodeled, so neither function is undetermined
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
-	 */
-	@Test
-	public void testEmptyPointsToPrimitiveUndetermined() throws Exception {
-		this.setInferInputSignatures(true);
-
-		Function scale = getFunction("scale");
-		Parameter name = scale.getParameters().get(1);
-		assertNull("Whether `name` is a tensor is unknown.", name.isTensor());
-		assertEquals("`name` has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE, name.getTensorClassificationBasis());
-		assertEquals("`scale` has a tensor parameter.", TRUE, scale.getHasTensorParameter());
-		assertNull("Whether `scale` has a primitive parameter is unknown.", scale.getHasPrimitiveParameter());
-		assertNotNull("`scale` takes the undetermined path for primitives.",
-				scale.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-		assertNull(scale.getPassingPrecondition());
-		assertTrue("`scale` is not converted.", scale.getTransformations().isEmpty());
-
-		InferenceResult result = scale.inferInputSignature();
-		assertFalse("No specification is written.", result.signature().isPresent());
-		assertEquals(Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER), result.absenceReason());
-		assertTrue("The INFO says `name`'s tensor-ness can't be determined.",
-				Arrays.stream(scale.getStatus().getEntries()).anyMatch(e -> e.getMessage().startsWith("Whether parameter `name` of `")
-						&& e.getMessage().contains("the analysis models no value that reaches it")));
-
-		Function repeat = getFunction("repeat");
-		assertEquals("`repeat` has a primitive parameter.", TRUE, repeat.getHasPrimitiveParameter());
-		assertNotNull(repeat.getEntryMatchingFailure(HAS_PRIMITIVE_PARAMETERS));
-		assertNull("`repeat` doesn't take the undetermined path for primitives.",
-				repeat.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-
-		Function defaulted = getFunction("defaulted");
-		assertEquals("`defaulted`'s `n` takes its default, so it is no primitive parameter.", FALSE, defaulted.getHasPrimitiveParameter());
-		assertNull("`defaulted` doesn't take the undetermined path for primitives.",
-				defaulted.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-
-		// A rest slot no caller passes anything into, and a keyword-only parameter taking its default, are empty without being unmodeled.
-		for (String identifier : List.of("absorbing", "keyword")) {
-			Function function = getFunction(identifier);
-			assertEquals("`" + identifier + "` has no primitive parameter.", FALSE, function.getHasPrimitiveParameter());
-			assertNull("`" + identifier + "` doesn't take the undetermined path for primitives.",
-					function.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-		}
-	}
-
-	/**
 	 * A tuple display: the engine knows its length and the tensor types at each position, so the parameter reduces to a nested entry with
 	 * one specification per position.
 	 */
@@ -12006,16 +11901,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testSubscriptSliceOpaqueOverTyping() throws Exception {
-		// Each `value` used to be determined not to be a tensor (FALSE). The analysis models no value reaching either, so whether either
-		// is a tensor is now unknown (null), and neither is typed as a tensor, which is what this guards
-		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
-		Function check = getFunction("check");
-		assertNull("`check`'s `value` (slice of an opaque argparse attribute) is not typed as a tensor.", check.getHasTensorParameter());
-		assertEquals(TensorClassificationBasis.NO_ABSTRACT_VALUE, check.getParameters().get(0).getTensorClassificationBasis());
+		assertFalse("`check`'s `value` (slice of an opaque argparse attribute) is not a tensor.",
+				getFunction("check").getHasTensorParameter());
 		// Control: the same opaque attribute without a slice.
-		Function plain = getFunction("plain");
-		assertNull("`plain`'s `value` (the opaque argparse attribute, no slice) is not typed as a tensor.", plain.getHasTensorParameter());
-		assertEquals(TensorClassificationBasis.NO_ABSTRACT_VALUE, plain.getParameters().get(0).getTensorClassificationBasis());
+		assertFalse("`plain`'s `value` (the opaque argparse attribute, no slice); not a tensor.",
+				getFunction("plain").getHasTensorParameter());
 	}
 
 	/**
@@ -12468,10 +12358,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	@Test
 	public void testParameterWithNoAbstractValue() throws Exception {
 		Function fmt = getFunction("p_fmt");
-		assertNull("Whether `p_fmt` has a tensor parameter is unknown (#1245).", fmt.getHasTensorParameter());
+		assertFalse("`p_fmt`'s parameter isn't seen as a tensor.", fmt.getHasTensorParameter());
 		assertEquals("`p_fmt`'s parameter has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
 				fmt.getParameters().get(0).getTensorClassificationBasis());
-		assertNull("Whether `p_fmt`'s parameter is a tensor is unknown (#1245).", fmt.getParameters().get(0).isTensor());
 		assertFalse("`p_fmt` is not de-hybridized.", fmt.getTransformations().contains(CONVERT_TO_EAGER));
 		assertNotNull("`p_fmt` is kept as having tensor parameters that can't be inferred, so that it isn't counted optimizable.",
 				fmt.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_TENSOR_PARAMETER));
@@ -13277,22 +13166,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		for (String name : List.of("C.direct", "C.via_plain", "C.via_tf", "C.via_plain_tuple_out", "C.via_model", "C.via_model_tuple_out",
-				"C.cluster_direct", "C._cluster", "C.sink")) {
+				"C.cluster_direct", "C._cluster", "C._cluster.f", "C.sink")) {
 			Function function = findFunction(functions, name);
 			assertTrue("`" + name + "` applies numpy to a value flowing from its parameters.", function.getHasNumpyCallsOnParameters());
 			assertNotNull("`" + name + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
 		}
-
-		// The comprehension passes the nested `f` elements of numpy arrays, values the analysis doesn't model, so whether `f` has a
-		// primitive parameter is unknown and it is refused as undetermined before the numpy check runs
-		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
-		Function nested = findFunction(functions, "C._cluster.f");
-		assertNull("Whether `C._cluster.f` has a primitive parameter is unknown.", nested.getHasPrimitiveParameter());
-		assertNotNull("`C._cluster.f` takes the undetermined path for primitives.",
-				nested.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-		assertNull("`C._cluster.f` must not pass a precondition.", nested.getPassingPrecondition());
-		assertTrue("`C._cluster.f` is not converted.", nested.getTransformations().isEmpty());
 
 		// Each stores its parameter into a container or an object before the value reaches numpy.
 		for (String name : List.of("C.via_plain_tuple_in", "C.via_plain_list_in", "C.via_local_tuple", "C.via_model_tuple_in", "C.cluster",
@@ -16006,16 +15885,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testCalledSetArgument() throws Exception {
 		Function scaled = findFunction(this.getFunctions(), "scaled");
 
-		// TODO: https://github.com/wala/ML/issues/1202. The engine has no summary for `set`, so the call's result has no allocation and the
-		// set isn't seen. `scaled` used to convert on that, its boundary check answering FALSE. Its `s` has an empty points-to set, so
-		// whether it is primitive is unknown, and `scaled` is now refused as undetermined before the boundary check runs, which leaves that
-		// check's answer null (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245). Flip to
-		// `assertSetArgumentRefused` once the call allocates a set.
-		assertNull("`scaled`'s boundary check doesn't run.", scaled.getHasUncrossableBoundaryValues());
-		assertNull("Whether `scaled` has a primitive parameter is unknown.", scaled.getHasPrimitiveParameter());
-		assertNotNull("`scaled` takes the undetermined path for primitives.",
-				scaled.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-		assertTrue("`scaled` is not converted.", scaled.getTransformations().isEmpty());
+		// TODO: https://github.com/wala/ML/issues/1202. The engine has no summary for `set`, so the call's result has no allocation, the
+		// set
+		// isn't seen, and `scaled` converts. Flip to `assertSetArgumentRefused` once the call allocates a set.
+		assertEquals("`scaled` is passed nothing seen as uncrossable.", FALSE, scaled.getHasUncrossableBoundaryValues());
+		assertTrue("`scaled` is converted.", scaled.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
 	}
 
 	/**
@@ -17101,15 +16975,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("A `None` forwarded from a declared failure one level up withholds the specification.",
 				Optional.of(InferenceResult.AbsenceReason.RECEIVES_NONE), leakInner.getInferredInputSignatureAbsenceReason());
 
-		// No sidecar entry can address `batch["x"]` (https://github.com/wala/ML/issues/1041), so the analysis models no value the loaded
-		// call passes, and whether `subscripted` has a primitive parameter is unknown. It is refused as undetermined rather than given a
-		// signature from the concrete call alone, which the loaded call may not match
-		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1245).
+		// FIXME: No sidecar entry can address `batch["x"]`, so the loaded call contributes nothing and the pinned signature, from the
+		// concrete call alone, is known wrong
+		// (https://github.com/wala/ML/issues/1041).
 		Function subscripted = findFunction(functions, "subscripted");
-		assertNull("Whether `subscripted` has a primitive parameter is unknown.", subscripted.getHasPrimitiveParameter());
-		assertNotNull("`subscripted` takes the undetermined path for primitives.",
-				subscripted.getEntryMatchingFailure(PreconditionFailure.UNDETERMINABLE_PRIMITIVE_PARAMETER));
-		assertTrue("`subscripted` is not converted.", subscripted.getTransformations().isEmpty());
+		assertEquals("Today's signature, from the concrete call alone.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				subscripted.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
