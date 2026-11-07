@@ -18347,6 +18347,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a method called through its class on two
+	 * instances, {@code Shared.project(a, x)} and {@code Shared.project(b, x)}, each reading its one {@code Embedding}. Called through its
+	 * class, the method shares one function among its receivers, so a retrace with the second first calls its {@code Embedding}: measured
+	 * on TensorFlow 2.9.3, decorated, it raises "tf.function only supports singleton tf.Variables created on the first call", and it is
+	 * refused for a first call on a retrace. {@code Bound.project}, the same method called bound, {@code a.project(x)}, traces a function
+	 * per instance; decorated, it runs without error, and it isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersUnboundCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function shared = findFunction(functions, "Shared.project");
+		assertEquals("`Shared.project` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE, shared.getLayerBuildShape());
+		assertNull("`Shared.project` is refused.", shared.getPassingPrecondition());
+		assertMayBuildLayers(functions, "Bound.project", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sublayers whose names are computed in a
 	 * comprehension, {@code "g{}".format(i)} in {@code Formatted} and {@code f"h{i}"} in {@code Stack}. A computed name may collide with
 	 * any other, so {@code Formatted.call} is refused for the colliding names, the conservative side: measured on TensorFlow 2.9.3, the
