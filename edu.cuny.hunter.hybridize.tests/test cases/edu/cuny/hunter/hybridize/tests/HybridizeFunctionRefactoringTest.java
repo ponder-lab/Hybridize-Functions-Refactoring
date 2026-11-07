@@ -18410,6 +18410,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a method called through its class on two
+	 * instances, {@code Shared.project(a, x)} and {@code Shared.project(b, x)}, each reading its one {@code Embedding}. Called through its
+	 * class, the method shares one function among its receivers, so a retrace with the second first calls its {@code Embedding}: measured
+	 * on TensorFlow 2.9.3, decorated, it raises "tf.function only supports singleton tf.Variables created on the first call", and it is
+	 * refused for a first call on a retrace. {@code Bound.project}, the same method called bound, {@code a.project(x)}, traces a function
+	 * per instance; decorated, it runs without error, and it isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersUnboundCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		Function shared = findFunction(functions, "Shared.project");
+		assertEquals("`Shared.project` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE, shared.getLayerBuildShape());
+		assertNull("`Shared.project` is refused.", shared.getPassingPrecondition());
+		assertMayBuildLayers(functions, "Bound.project", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sublayers whose names are computed in a
 	 * comprehension, {@code "g{}".format(i)} in {@code Formatted} and {@code f"h{i}"} in {@code Stack}. A computed name may collide with
 	 * any other, so {@code Formatted.call} is refused for the colliding names, the conservative side: measured on TensorFlow 2.9.3, the
@@ -18504,6 +18522,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Chosen.call", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "Aliased.call", true, false, null);
 		assertMayBuildLayers(functions, "Configured.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a layer chosen at construction:
+	 * {@code Embedded.__init__} sets {@code self.embedding} in either arm of {@code if weights is not None}, and {@code Embedded.call}
+	 * calls it. The field may hold either {@code Embedding}, but only {@code __init__} writes it, so each instance holds one from its
+	 * construction on and traces its own function; measured on TensorFlow 2.9.3, decorating {@code Embedded.call} retraces without error,
+	 * and it isn't refused. {@code Swapped.call} calls the same kind of field, which {@code swap} rebinds: measured on TensorFlow 2.9.3,
+	 * decorating it raises "tf.function only supports singleton tf.Variables created on the first call" on the retrace after the rebinding,
+	 * so it has the shape of a first call on a retrace. {@code Block.project} in {@link #testMayBuildLayersMixedReceivers()}, whose
+	 * receiver may be another class's object, is refused, since its receivers share one function. So is {@code Unbound.project}, the same
+	 * choice called through its class, {@code Unbound.project(a, x)}, on two instances: its receivers share one function, and measured on
+	 * TensorFlow 2.9.3, decorated, it raises "tf.function only supports singleton tf.Variables created on the first call".
+	 */
+	@Test
+	public void testMayBuildLayersSetUpChoice() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Embedded.call", true, false, null);
+		Function swapped = findFunction(functions, "Swapped.call");
+		assertEquals("`Swapped.call` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE, swapped.getLayerBuildShape());
+		assertNull("`Swapped.call` is refused.", swapped.getPassingPrecondition());
+		Function unbound = findFunction(functions, "Unbound.project");
+		assertEquals("`Unbound.project` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE, unbound.getLayerBuildShape());
+		assertNull("`Unbound.project` is refused.", unbound.getPassingPrecondition());
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
