@@ -1097,7 +1097,7 @@ class LayerBuildAnalysis {
 	private Set<String> getNamingClasses(IClass allocatedClass) {
 		Set<String> ret = new LinkedHashSet<>(List.of(getSimpleName(allocatedClass.getName())));
 
-		if (allocatedClass instanceof IPythonClass)
+		if (Util.isUserCodeClass(allocatedClass))
 			return ret;
 
 		// The bases as the engine declares them, by name, without `Layer` and what lies above it.

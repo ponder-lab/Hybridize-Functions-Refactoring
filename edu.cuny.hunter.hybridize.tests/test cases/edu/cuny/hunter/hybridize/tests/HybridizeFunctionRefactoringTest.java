@@ -18353,9 +18353,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * so are {@code Normalized}'s two {@code LayerNormalization}s as {@code layer_normalization}: measured on TensorFlow 2.9.3, their
 	 * variables collide even undecorated, and each is refused for the colliding names. {@code Apart} names its second {@code Dense}
 	 * {@code proj}, which Keras never generates for a {@code Dense}: decorated, its variables' names stay distinct, and it isn't refused.
-	 * {@code Aliased} constructs {@code Convolution2D(4, 1)}, an alias Keras names after the class it names, {@code conv2d}, beside
-	 * {@code Conv2D(4, 1, name="conv2d")}: measured, both are named {@code conv2d}, and the save fails. A library alias is named after each
-	 * of its bases below {@code Layer}, which would refuse it.
+	 * {@code Counted} names its third {@code Dense} {@code dense_1}, the name Keras generates for its second, unnamed one: measured, both
+	 * are named {@code dense_1}, and it is refused. {@code Subclassed} constructs a {@code MyDense(4)}, a program subclass of
+	 * {@code Dense}, beside {@code Dense(4, name="dense")}: Keras names a layer after its own class, {@code my_dense}, so measured, the
+	 * names stay distinct, and it isn't refused. {@code Aliased} constructs {@code Convolution2D(4, 1)}, an alias Keras names after the
+	 * class it names, {@code conv2d}, beside {@code Conv2D(4, 1, name="conv2d")}: measured, both are named {@code conv2d}, and the save
+	 * fails. A library alias is named after each of its bases below {@code Layer}, which would refuse it.
 	 * <p>
 	 * TODO: The engine models no object for a {@code Convolution2D} construction (https://github.com/wala/ML/issues/1236), so the sublayer
 	 * is invisible and {@code Aliased.call} is a missed refusal until the engine models it. {@code SeparableConvolution1D} and
@@ -18369,6 +18372,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Pair.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Normalized.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Apart.call", true, false, null);
+		assertMayBuildLayers(functions, "Counted.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Subclassed.call", true, false, null);
 		assertMayBuildLayers(functions, "Aliased.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}

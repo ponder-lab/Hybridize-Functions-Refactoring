@@ -47,6 +47,33 @@ class Aliased(tf.keras.layers.Layer):
         )
 
 
+class Counted(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.first = tf.keras.layers.Dense(4)
+        self.second = tf.keras.layers.Dense(4)
+        self.third = tf.keras.layers.Dense(4, name="dense_1")
+
+    def call(self, x):
+        return self.third(self.second(self.first(x)))
+
+
+class MyDense(tf.keras.layers.Dense):
+    pass
+
+
+class Subclassed(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.first = MyDense(4)
+        self.second = tf.keras.layers.Dense(4, name="dense")
+
+    def call(self, x):
+        return self.second(self.first(x))
+
+
 class Net(tf.keras.Model):
 
     def __init__(self):
@@ -55,9 +82,14 @@ class Net(tf.keras.Model):
         self.normalized = Normalized(name="normalized")
         self.apart = Apart(name="apart")
         self.aliased = Aliased(name="aliased")
+        self.counted = Counted(name="counted")
+        self.subclassed = Subclassed(name="subclassed")
 
     def call(self, x):
-        return self.apart(self.normalized(self.pair(x))), self.aliased(x)
+        return (
+            self.subclassed(self.counted(self.apart(self.normalized(self.pair(x))))),
+            self.aliased(x),
+        )
 
 
 model = Net()
