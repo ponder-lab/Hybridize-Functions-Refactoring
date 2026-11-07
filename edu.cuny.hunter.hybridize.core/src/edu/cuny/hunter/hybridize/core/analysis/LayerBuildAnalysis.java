@@ -922,15 +922,23 @@ class LayerBuildAnalysis {
 
 	/**
 	 * True iff {@code receiver}, a receiver a call passes unbound ({@link #passesReceiverUnbound(CGNode, PythonInvokeInstruction)}), is the
-	 * same object on every trace by how it is read, by a fixed selection ({@link #isReadFixedly(CGNode, int)}), as {@code self.a} is: each
-	 * instance of the caller traces its own function. How few objects its points-to set holds doesn't make it fixed, since the set may not
-	 * hold every object a call outside the analysis passes: {@code self.a if flag else self.b} merges two at a phi no fixed read selects.
+	 * same object on every trace by how it is read: a field of the caller's own receiver written only while it is set up
+	 * ({@link #readsSetUpField(CGNode, int)}), as {@code self.a} is when only {@code __init__} sets it, since each instance of the caller
+	 * traces its own function, or another value read by a fixed selection ({@link #isReadFixedly(CGNode, int)}). How few objects its
+	 * points-to set holds doesn't make it fixed, since the set may not hold every object a call outside the analysis passes:
+	 * {@code self.a if flag else self.b} merges two at a phi no fixed read selects.
 	 *
 	 * @param node The node of the call.
 	 * @param receiver A value number of {@code node}.
 	 * @return True iff the value is one object on every trace.
 	 */
 	private boolean isReceiverSelectedFixedly(CGNode node, int receiver) {
+		// A field another method may rebind can hold another receiver on a retrace.
+		SSAInstruction def = node.getDU().getDef(receiver);
+
+		if (def instanceof SSAGetInstruction || def instanceof AstPropertyRead)
+			return this.readsSetUpField(node, receiver);
+
 		return this.isReadFixedly(node, receiver);
 	}
 

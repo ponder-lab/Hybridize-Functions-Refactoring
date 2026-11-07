@@ -18604,7 +18604,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * each passing its own block, constructed unnamed so that their variables' names stay distinct, as {@code self.a} through the class:
 	 * measured, each retraces on a new shape without error, since each holder traces its own function. Nor is {@code SetUpChosen.run},
 	 * which passes {@code self.a}, set to one of two blocks in either arm of a branch in {@code __init__}, through the class: each instance
-	 * holds one block from its construction on, and measured, each retraces on a new shape without error.
+	 * holds one block from its construction on, and measured, each retraces on a new shape without error. {@code UnboundSwapped.run} passes
+	 * {@code self.a} through the class too, but {@code swap} rebinds it: measured, a retrace after the swap raises, and it is refused.
 	 */
 	@Test
 	public void testMayBuildLayersUnboundReceiver() throws Exception {
@@ -18622,6 +18623,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "HelperFixed.run", true, false, null);
 		assertMayBuildLayers(functions, "TwoHolders.run", true, false, null);
 		assertMayBuildLayers(functions, "SetUpChosen.run", true, false, null);
+		Function swapped = findFunction(functions, "UnboundSwapped.run");
+		assertEquals("`UnboundSwapped.run` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE,
+				swapped.getLayerBuildShape());
+		assertNull("`UnboundSwapped.run` is refused.", swapped.getPassingPrecondition());
 	}
 
 	/**

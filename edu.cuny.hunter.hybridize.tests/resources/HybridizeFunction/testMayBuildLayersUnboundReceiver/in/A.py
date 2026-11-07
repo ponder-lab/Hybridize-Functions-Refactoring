@@ -178,6 +178,19 @@ class StarredPassed(tf.keras.layers.Layer):
         return helper(*(blk, x))
 
 
+class UnboundSwapped(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.a = Block(name="a")
+
+    def swap(self):
+        self.a = Block(name="a2")
+
+    def run(self, x):
+        return Block.project(self.a, x)
+
+
 x = tf.ones([2, 3])
 unbound_varying = UnboundVarying()
 unbound_varying.run(unbound_varying.a, x)
@@ -224,3 +237,7 @@ kwargs_passed.run(kwargs_passed.b, x)
 starred_passed = StarredPassed()
 starred_passed.run(starred_passed.a, x)
 starred_passed.run(starred_passed.b, x)
+unbound_swapped = UnboundSwapped()
+unbound_swapped.run(x)
+unbound_swapped.swap()
+unbound_swapped.run(tf.ones([3, 3]))
