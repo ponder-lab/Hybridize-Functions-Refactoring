@@ -18359,7 +18359,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * names both of {@code h0}'s {@code h0/dense/kernel:0}, and it is refused. {@code WrapTop1} through {@code WrapTop6} call it through
 	 * chains of one to six wrappers; measured on TensorFlow 2.9.3, {@code WrapTop3} alone collides as {@code HelperTop} does, and each is
 	 * refused. Even through six wrappers the analysis keeps a node of {@code make_dense} per call site, so none of these runs one node on
-	 * both sides of the trace, and counting such a node on both sides isn't witnessed here.
+	 * both sides of the trace. {@code MethodBlock} constructs both of its {@code Dense}s through its own method, {@code make}, called on
+	 * the same receiver from {@code __init__} and from {@code build}: measured on TensorFlow 2.9.3, with nothing unnamed constructed before
+	 * it, decorating {@code MethodTop.call} names both of {@code h0}'s {@code h0/dense/kernel:0}, and it is refused. The analysis keeps a
+	 * node of {@code make} per {@code build} or {@code __init__} it is reached from, too, so no row here runs one node on both sides of the
+	 * trace, and counting such a node on both sides isn't witnessed.
 	 */
 	@Test
 	public void testMayBuildLayersTraceCounter() throws Exception {
@@ -18373,6 +18377,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "WrapTop4.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "WrapTop5.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "WrapTop6.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "MethodTop.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Block.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}

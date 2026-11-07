@@ -232,6 +232,32 @@ class WrapTop6(tf.keras.layers.Layer):
         return self.second(self.first(x))
 
 
+class MethodBlock(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.eager = self.make()
+
+    def build(self, input_shape):
+        self.lazy = self.make()
+
+    def make(self):
+        return tf.keras.layers.Dense(4)
+
+    def call(self, x):
+        return self.lazy(self.eager(x))
+
+
+class MethodTop(tf.keras.layers.Layer):
+
+    def build(self, input_shape):
+        self.first = MethodBlock(name="h0")
+        self.second = MethodBlock(name="h1")
+
+    def call(self, x):
+        return self.second(self.first(x))
+
+
 class Net(tf.keras.Model):
 
     def __init__(self):
@@ -245,14 +271,16 @@ class Net(tf.keras.Model):
         self.wrap_top4 = WrapTop4(name="wrap_top4")
         self.wrap_top5 = WrapTop5(name="wrap_top5")
         self.wrap_top6 = WrapTop6(name="wrap_top6")
+        self.method_top = MethodTop(name="method_top")
 
     def call(self, x):
         x = self.helper_top(self.lazy_top(self.top(x)))
-        return self.wrap_top6(
+        x = self.wrap_top6(
             self.wrap_top5(
                 self.wrap_top4(self.wrap_top3(self.wrap_top2(self.wrap_top1(x))))
             )
         )
+        return self.method_top(x)
 
 
 model = Net()
