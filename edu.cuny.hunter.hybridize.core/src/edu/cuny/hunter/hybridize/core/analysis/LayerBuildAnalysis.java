@@ -309,7 +309,7 @@ class LayerBuildAnalysis {
 			ret = this.findSharedFunction(nodes);
 
 		if (ret.isEmpty())
-			ret = this.findConditionalBuild(traced);
+			ret = this.findConditionalBuild(nodes, traced);
 
 		if (ret.isEmpty())
 			ret = this.findCollidingNames(nodes);
@@ -433,11 +433,12 @@ class LayerBuildAnalysis {
 	/**
 	 * Finds a call that may build a layer under a condition that can differ between traces, in a program function among {@code traced}.
 	 *
+	 * @param nodes The method's nodes.
 	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
 	 * @return {@link LayerBuildShape#FIRST_CALL_ON_RETRACE} with the call's position, or empty if every call that may build a layer runs
 	 *         under conditions that are fixed across traces.
 	 */
-	private Optional<Verdict> findConditionalBuild(Set<CGNode> traced) {
+	private Optional<Verdict> findConditionalBuild(Set<CGNode> nodes, Set<CGNode> traced) {
 		for (CGNode node : traced) {
 			// Only program code: a summary's branches, such as `__call__`'s test of whether the layer is built, are the engine's model.
 			if (!(node.getMethod() instanceof AstMethod))
@@ -492,10 +493,25 @@ class LayerBuildAnalysis {
 						continue;
 					}
 
+					// A layer passed to the method, or read from an object passed to it, may be another on each call, which the engine
+					// shows only across the method's nodes, one per call site, not within one.
+					if (nodes.contains(node) && this.readsParameter(node, call.getUse(0)))
+						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE, "its call at " + describePosition(node, call)
+								+ " calls a layer passed to it, which may differ on a retrace"));
+
 					// A callee chosen among several layers by a value that may differ between traces may first call one on a retrace.
 					if (!this.isSelectedFixedly(node, call.getUse(0), ir, cfg, controlDependence, new HashSet<>()))
 						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE,
 								"its call at " + describePosition(node, call) + " may call a different layer on a retrace"));
+
+					// A method called through its class, as `Block.project(blk, x)`, takes its receiver as its first argument, which then
+					// chooses the layers it calls, as a bound call's callee value does.
+					if (call instanceof PythonInvokeInstruction invoke && this.passesReceiverUnbound(node, invoke)
+							&& (invoke.getNumberOfPositionalParameters() < 2 || invoke.firstStarredPosition() == 1
+									|| nodes.contains(node) && this.readsParameter(node, invoke.getUse(1))
+									|| !this.isReceiverSelectedFixedly(node, invoke.getUse(1))))
+						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE,
+								"its call at " + describePosition(node, call) + " may pass a different receiver on a retrace"));
 
 					for (Object callee : this.getCallees(node, call)) {
 						callingBlocks.computeIfAbsent(callee, k -> new LinkedHashSet<>()).add(block);
@@ -569,7 +585,8 @@ class LayerBuildAnalysis {
 		}
 
 		// One layer. One allocation that may make several, as a comprehension does, needs a fixed selection, in a callee too: a
-		// callee's receiver is fixed, since the call into it had its own callee value checked so in its caller.
+		// callee's receiver is fixed, since the call into it had its own callee value, or the receiver it passes unbound, checked so in
+		// its caller.
 		if (allocators.isEmpty() || allocators.size() == 1 && !several)
 			return true;
 
@@ -613,9 +630,8 @@ class LayerBuildAnalysis {
 	 * an instance of the method's own class ({@link #receivesOwnInstances(CGNode)}), and only {@code __init__} or {@code build} writes that
 	 * field ({@link ReboundStateReadAnalysis#readsSetUpStateOnly(CGNode, SSAInstruction)}). However many layers the field may hold, an
 	 * instance holds one of them from its construction on, and each instance traces its own function, so each first calls it on its first
-	 * trace: {@code self.embedding}, set in either arm of a branch in {@code __init__}, is. That holds only for calls bound to their
-	 * receiver ({@link #isCalledBound(CGNode)}): a method called through its class, as {@code Embedded.project(a, x)}, shares one function
-	 * among its receivers, whatever their class, so its field isn't.
+	 * trace: {@code self.embedding}, set in either arm of a branch in {@code __init__}, is. A receiver passed through the class, as in
+	 * {@code Embedded.project(a, x)}, is checked where it is passed ({@link #passesReceiverUnbound(CGNode, PythonInvokeInstruction)}).
 	 *
 	 * @param node A program node the method's trace runs.
 	 * @param value A value number of {@code node}.
@@ -633,8 +649,84 @@ class LayerBuildAnalysis {
 			return false;
 
 		int[] parameters = node.getIR().getSymbolTable().getParameterValueNumbers();
-		return parameters.length > 1 && parameters[1] == object && this.receivesOwnInstances(node) && this.isCalledBound(node)
+		return parameters.length > 1 && parameters[1] == object && this.receivesOwnInstances(node)
 				&& this.getReboundState().readsSetUpStateOnly(node, def);
+	}
+
+	/**
+	 * True iff {@code invoke} may call a program method through its class, as {@code Block.project(blk, x)} does, passing its receiver as
+	 * the first argument rather than binding it, which the engine publishes per call ({@link CallTargets#parameterBoundTargets}). The
+	 * method's receiver clause ({@link #isReadFixedly(CGNode, int)}) then holds only if that argument is selected fixedly in the caller. A
+	 * plain function's parameter is no receiver, so a layer passed to one is checked where the function calls it.
+	 *
+	 * @param node The node of {@code invoke}.
+	 * @param invoke A call.
+	 * @return True iff one of the call's targets is a method whose receiver it passes unbound.
+	 */
+	private boolean passesReceiverUnbound(CGNode node, PythonInvokeInstruction invoke) {
+		for (Map.Entry<CGNode, Boolean> target : CallTargets.parameterBoundTargets(this.builder, node, invoke).entrySet())
+			if (!Boolean.TRUE.equals(target.getValue()) && this.getDeclaringClass(target.getKey()).isPresent())
+				return true;
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code value} of {@code node} is a parameter other than the receiver, or a field or property read from one, at any depth: an
+	 * object the method's caller passes, which may be another on each call. The engine gives the method a node per call site, so within one
+	 * node such a parameter may be a single object even when the calls pass different ones. It is asked only of a callee value of a call
+	 * that may reach {@code add_weight}, and of a receiver passed to a program method, neither of which a tensor parameter can be.
+	 *
+	 * @param node A node of the method.
+	 * @param value A value number of {@code node}.
+	 * @return True iff the value is read from a parameter other than the receiver.
+	 */
+	private boolean readsParameter(CGNode node, int value) {
+		int[] parameters = node.getIR().getSymbolTable().getParameterValueNumbers();
+
+		// Slot 0 is the function object itself, and slot 1 of a method its receiver.
+		for (int i = 0; i < parameters.length; i++)
+			if (parameters[i] == value)
+				return i > 1 || i == 1 && !this.isReceiver(node, value);
+
+		SSAInstruction def = node.getDU().getDef(value);
+
+		if (def instanceof SSAGetInstruction get && !get.isStatic())
+			return this.readsParameter(node, get.getRef());
+
+		if (def instanceof AstPropertyRead read)
+			return this.readsParameter(node, read.getObjectRef());
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code receiver}, a receiver a call passes unbound ({@link #passesReceiverUnbound(CGNode, PythonInvokeInstruction)}), is the
+	 * same object on every trace: the engine allocates at most one object it may be, at one site, and not several, or one that may be
+	 * several, as a comprehension's, read by a fixed selection ({@link #isReadFixedly(CGNode, int)}). Unlike a callee value, a receiver is
+	 * told apart by allocation site, not by allocating node: {@code self.a} and {@code self.b}, both set in one {@code __init__}, are two
+	 * receivers, each tracing its own layers.
+	 *
+	 * @param node The node of the call.
+	 * @param receiver A value number of {@code node}.
+	 * @return True iff the value is one object on every trace.
+	 */
+	private boolean isReceiverSelectedFixedly(CGNode node, int receiver) {
+		Set<AllocationSiteInNode> sites = new HashSet<>();
+		boolean several = false;
+
+		for (InstanceKey instanceKey : this.getPointerAnalysis()
+				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, receiver))) {
+			AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
+
+			if (site == null)
+				return false;
+
+			sites.add(site);
+			several |= this.mayBeSeveral(instanceKey);
+		}
+
+		return sites.size() <= 1 && (!several || this.isReadFixedly(node, receiver));
 	}
 
 	/**
@@ -671,10 +763,11 @@ class LayerBuildAnalysis {
 	/**
 	 * True iff {@code value} of a program node reads one layer of an allocation that makes several by a fixed selection: the node's
 	 * receiver, since each instance of the method traces its own function, and a callee's receiver is the callee value of a call checked so
-	 * in its caller, a field or element of a value read so, under a key that is a literal or fixed ({@link #isFixed(CGNode, int)}), or the
-	 * element of a loop over a fixed iterable. {@code self.blocks[i]} for a varying {@code i} isn't, in the method or in a function it
-	 * calls; {@code self.d}, {@code self.blocks[0]}, {@code block} in {@code for block in self.blocks} and {@code self.blocks[i]} in
-	 * {@code for i in range(self.n)} are.
+	 * in its caller, or the first argument of a call through its class checked so
+	 * ({@link #passesReceiverUnbound(CGNode, PythonInvokeInstruction)}), a field or element of a value read so, under a key that is a
+	 * literal or fixed ({@link #isFixed(CGNode, int)}), or the element of a loop over a fixed iterable. {@code self.blocks[i]} for a
+	 * varying {@code i} isn't, in the method or in a function it calls; {@code self.d}, {@code self.blocks[0]}, {@code block} in
+	 * {@code for block in self.blocks} and {@code self.blocks[i]} in {@code for i in range(self.n)} are.
 	 *
 	 * @param node A program node the method's trace runs.
 	 * @param value A value number of {@code node}.

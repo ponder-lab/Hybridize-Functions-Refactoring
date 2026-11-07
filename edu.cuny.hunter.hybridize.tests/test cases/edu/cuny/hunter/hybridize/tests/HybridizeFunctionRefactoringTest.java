@@ -18488,6 +18488,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a receiver passed to a method called through its
+	 * class. Each {@code run} is called twice, and each of its blocks, {@code a} and {@code b}, has a {@code project} calling its own
+	 * {@code Dense}. {@code UnboundVarying.run} calls {@code Block.project(blk, x)} on the block passed to it: measured on TensorFlow
+	 * 2.9.3, decorating it raises "tf.function only supports singleton tf.Variables created on the first call" on the retrace, so it has
+	 * the shape of a first call on a retrace. So does {@code BoundVarying.run}, which calls {@code blk.project(x)}, and
+	 * {@code UnboundChosen.run}, which passes {@code self.a if flag else self.b} through the class for a parameter {@code flag}. The engine
+	 * gives each {@code run} a node per call site, so a passed block is one object within each node; the analysis reads it as varying since
+	 * it is a parameter. {@code UnboundFixed.run} calls {@code Block.project(self.a, x)}, the same block on every trace: measured, it
+	 * retraces without error, and it isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersUnboundReceiver() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "UnboundVarying.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "BoundVarying.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "UnboundChosen.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "UnboundFixed.run", true, false, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a branch on a parameter passed {@code None} by
 	 * one call and a tensor by another, {@code if mode: x = self.extra(x)}. The engine types the condition as a tensor, but a Python value
 	 * reaches it too, a mix: measured on TensorFlow 2.9.3, decorating {@code Gated.call} raises "tf.function only supports singleton
