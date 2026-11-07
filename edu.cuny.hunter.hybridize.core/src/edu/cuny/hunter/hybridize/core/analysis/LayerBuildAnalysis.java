@@ -922,32 +922,16 @@ class LayerBuildAnalysis {
 
 	/**
 	 * True iff {@code receiver}, a receiver a call passes unbound ({@link #passesReceiverUnbound(CGNode, PythonInvokeInstruction)}), is the
-	 * same object on every trace: the engine allocates at most one object it may be, at one site, and not several, or one that may be
-	 * several, as a comprehension's, read by a fixed selection ({@link #isReadFixedly(CGNode, int)}), or it reads a field of the caller's
-	 * own receiver only set up ({@link #readsSetUpField(CGNode, int)}), one object per instance of the caller, as {@code self.a} is. Unlike
-	 * a callee value, a receiver is told apart by allocation site, not by allocating node: {@code self.a} and {@code self.b}, both set in
-	 * one {@code __init__}, are two receivers, each tracing its own layers.
+	 * same object on every trace by how it is read, by a fixed selection ({@link #isReadFixedly(CGNode, int)}), as {@code self.a} is: each
+	 * instance of the caller traces its own function. How few objects its points-to set holds doesn't make it fixed, since the set may not
+	 * hold every object a call outside the analysis passes: {@code self.a if flag else self.b} merges two at a phi no fixed read selects.
 	 *
 	 * @param node The node of the call.
 	 * @param receiver A value number of {@code node}.
 	 * @return True iff the value is one object on every trace.
 	 */
 	private boolean isReceiverSelectedFixedly(CGNode node, int receiver) {
-		Set<AllocationSiteInNode> sites = new HashSet<>();
-		boolean several = false;
-
-		for (InstanceKey instanceKey : this.getPointerAnalysis()
-				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, receiver))) {
-			AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
-
-			if (site == null)
-				return false;
-
-			sites.add(site);
-			several |= this.mayBeSeveral(instanceKey);
-		}
-
-		return sites.size() <= 1 && (!several || this.isReadFixedly(node, receiver)) || this.readsSetUpField(node, receiver);
+		return this.isReadFixedly(node, receiver);
 	}
 
 	/**
