@@ -638,30 +638,6 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff every call of {@code node} from program code binds its receiver, as {@code a.project(x)} does, rather than passing it
-	 * through the class, as {@code Embedded.project(a, x)} does, which the engine publishes per call
-	 * ({@link CallTargets#parameterBoundTargets}). A call from the engine's summaries, such as a layer's {@code __call__} calling its
-	 * {@code call}, binds it.
-	 *
-	 * @param node A method's node.
-	 * @return True iff each call of the node from program code is bound to its receiver.
-	 */
-	private boolean isCalledBound(CGNode node) {
-		for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(node))) {
-			if (!CallTargets.isProgramCode(caller))
-				continue;
-
-			for (CallSiteReference site : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, node)))
-				for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(site))
-					if (!(call instanceof PythonInvokeInstruction invoke)
-							|| !Boolean.TRUE.equals(CallTargets.parameterBoundTargets(this.builder, caller, invoke).get(node)))
-						return false;
-		}
-
-		return true;
-	}
-
-	/**
 	 * True iff the receiver of {@code node}, a method, may be at least one object and every object it may be is an instance of the method's
 	 * declaring class or of a class reaching it through its bases.
 	 *
