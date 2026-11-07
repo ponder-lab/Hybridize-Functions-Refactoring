@@ -29,6 +29,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.core.runtime.ILog;
 
+import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstPropertyRead;
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.ir.ssa.EachElementHasNextInstruction;
@@ -567,13 +569,12 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code callee}, a call's callee value, calls the same layer on every trace: the engine allocates at most one object it may
-	 * be, a layer or another, such as a bound method of an object holding one, told apart by allocating node, and not several, or it is
-	 * read by a fixed selection ({@link #isReadFixedly(CGNode, int)}), or it merges several at a phi whose choosing branches are fixed
+	 * True iff {@code callee}, a call's callee value, calls the same layer on every trace: it is read by a fixed selection
+	 * ({@link #isReadFixedly(CGNode, int)}), or it merges several at a phi whose choosing branches are fixed
 	 * ({@link #varies(CGNode, ISSABasicBlock, IR)}) and each of whose operands is selected fixedly in turn, or it reads a field only set up
-	 * ({@link #readsSetUpField(CGNode, int)}). A value that may be several layers and that no phi selects, such as an element holding
-	 * several, or a field another method rebinds, has no selecting value the engine shows fixed, so it isn't. A single layer called through
-	 * a local alias is the same value and is.
+	 * ({@link #readsSetUpField(CGNode, int)}). How few objects the engine shows the value may be, even none, doesn't make it fixed, since a
+	 * points-to set may not hold every object a call outside the analysis passes. A value that no fixed read selects, such as a parameter,
+	 * an element under a varying key, or a field another method rebinds, isn't. A layer called through a local alias is the same value.
 	 *
 	 * @param node The node of {@code callee}.
 	 * @param callee A value number of {@code node}.
@@ -588,35 +589,11 @@ class LayerBuildAnalysis {
 		if (!seen.add(callee))
 			return true;
 
-		Set<CGNode> allocators = new HashSet<>();
-		boolean several = false;
-
-		// Every object the callee may be, not only a layer: the call reaches `add_weight`, so a bound method of a plain object holding a
-		// layer, such as `self.heads[i].run`, selects the layer as well.
-		for (InstanceKey instanceKey : this.getPointerAnalysis()
-				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, callee))) {
-			AllocationSiteInNode site = findAllocationSiteInNode(instanceKey);
-
-			if (site == null) {
-				// A constant or a Python scalar has no allocation and holds no layer. Any other object whose allocation the engine
-				// doesn't place can't be told apart from the others.
-				if (instanceKey instanceof ConstantKey<?> || isPythonScalarKey(instanceKey))
-					continue;
-
-				return false;
-			}
-
-			allocators.add(site.getNode());
-			several |= this.mayBeSeveral(instanceKey);
-		}
-
-		// One layer. One allocation that may make several, as a comprehension does, needs a fixed selection, in a callee too: a
-		// callee's receiver is fixed, since the call into it had its own callee value checked so in its caller.
-		if (allocators.isEmpty() || allocators.size() == 1 && !several)
-			return true;
-
+		// However few objects the engine shows the callee may be, which may not be all it receives, the selection must be fixed by how the
+		// value is read, in a callee too: a callee's receiver is fixed, since the call into it had its own callee value checked so in its
+		// caller.
 		if (!(node.getDU().getDef(callee) instanceof SSAPhiInstruction phi))
-			return allocators.size() == 1 && this.isReadFixedly(node, callee) || this.readsSetUpField(node, callee);
+			return this.isReadFixedly(node, callee) || this.readsSetUpField(node, callee);
 
 		ISSABasicBlock merge = null;
 
@@ -713,9 +690,10 @@ class LayerBuildAnalysis {
 	/**
 	 * True iff {@code value} of a program node reads one layer of an allocation that makes several by a fixed selection: the node's
 	 * receiver, since each instance of the method traces its own function, and a callee's receiver is the callee value of a call checked so
-	 * in its caller, a field or element of a value read so, under a key that is a literal or fixed ({@link #isFixed(CGNode, int)}), or the
-	 * element of a loop over a fixed iterable. {@code self.blocks[i]} for a varying {@code i} isn't, in the method or in a function it
-	 * calls; {@code self.d}, {@code self.blocks[0]}, {@code block} in {@code for block in self.blocks} and {@code self.blocks[i]} in
+	 * in its caller, a module's name, a field or element of a value read so, under a key that is a literal or fixed
+	 * ({@link #isFixed(CGNode, int)}) and written only while its object is set up, or the element of a loop over a fixed iterable.
+	 * {@code self.blocks[i]} for a varying {@code i} isn't, in the method or in a function it calls; {@code self.d},
+	 * {@code self.blocks[0]}, {@code block} in {@code for block in self.blocks} and {@code self.blocks[i]} in
 	 * {@code for i in range(self.n)} are.
 	 *
 	 * @param node A program node the method's trace runs.
@@ -732,12 +710,21 @@ class LayerBuildAnalysis {
 
 		SSAInstruction def = node.getDU().getDef(value);
 
-		if (def instanceof SSAGetInstruction get && !get.isStatic())
-			return this.isReadFixedly(node, get.getRef());
+		// A module's name, as a function, a class, or a layer it binds, is taken to name the same object on every trace.
+		if (def instanceof AstGlobalRead || def instanceof AstLexicalRead)
+			return true;
 
+		// A field or element only while its object is set up, so no other method rebinds it between traces.
+		if (def instanceof SSAGetInstruction get && !get.isStatic())
+			return this.isReadFixedly(node, get.getRef()) && this.getReboundState().readsSetUpStateOnly(node, get);
+
+		// An attribute must be written only while its object is set up. An element, read under a number or a fixed key, is taken to stay
+		// as its container's set-up stored it, since the rebinding analysis doesn't follow element stores
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1270).
 		if (def instanceof AstPropertyRead read)
 			return (symbolTable.isConstant(read.getMemberRef()) || this.isFixed(node, read.getMemberRef()))
-					&& this.isReadFixedly(node, read.getObjectRef());
+					&& this.isReadFixedly(node, read.getObjectRef())
+					&& (!symbolTable.isStringConstant(read.getMemberRef()) || this.getReboundState().readsSetUpStateOnly(node, read));
 
 		// A loop over a fixed iterable, `next` of `iter` of it, calls every element in the same order on every trace, so each first call is
 		// on the first trace.
@@ -1041,13 +1028,11 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff the engine shows that {@code value}, a branch's condition, takes the same path on every trace: its points-to set is one
-	 * constant, the same in every context of the node's function, so it is one literal or module constant whatever the call, or the engine
-	 * types it as a tensor, and no Python value, in every context, whose branch AutoGraph traces both arms of, so the first trace makes the
-	 * first call. Anything else may vary: a value whose points-to set is empty or holds two constants, and a mix, such as a tensor in one
-	 * context or call and {@code None} or a Python {@code bool} in another, which takes a Python branch on one trace and a tensor branch on
-	 * another. A context whose points-to set is empty but which the engine types as a tensor counts as a tensor with no Python value, so a
-	 * Python value the engine doesn't model, merged there, is hidden; that is rare, since a Python {@code bool} mostly has a key.
+	 * True iff the engine shows that {@code value}, a branch's condition, takes the same path on every trace: the engine types it as a
+	 * tensor, and no Python value, in every context of the node's function, so AutoGraph traces both arms of its branch and the first trace
+	 * makes the first call. A Python value, even one constant in every context, may vary: a points-to set may not hold every value a call
+	 * outside the analysis passes, so it shows variation, not fixedness. A context whose points-to set is empty but which the engine types
+	 * as a tensor counts as a tensor with no Python value, so a Python value the engine doesn't model, merged there, is hidden.
 	 *
 	 * @param node The node of {@code value}.
 	 * @param value A value number of {@code node}.
@@ -1055,28 +1040,23 @@ class LayerBuildAnalysis {
 	 */
 	private boolean isFixedByEngine(CGNode node, int value) {
 		boolean anyTensor = false;
-		Set<InstanceKey> constants = new HashSet<>();
 
 		for (CGNode context : this.callGraph.getNodes(node.getMethod().getReference())) {
 			PointerKey pointerKey = this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(context, value);
-			OrdinalSet<InstanceKey> pointsTo = this.getPointerAnalysis().getPointsToSet(pointerKey);
 			boolean pythonValue = false;
 
-			for (InstanceKey instanceKey : pointsTo)
+			for (InstanceKey instanceKey : this.getPointerAnalysis().getPointsToSet(pointerKey))
 				if (instanceKey instanceof ConstantKey<?> || isPythonScalarKey(instanceKey))
 					pythonValue = true;
 
-			if (this.tensorTypedKeys.containsKey(pointerKey) && !pythonValue)
-				anyTensor = true;
-			else if (pointsTo.size() == 1 && pointsTo.iterator().next() instanceof ConstantKey<?> constant)
-				constants.add(constant);
-			else
-				// Empty in a context is unknown there; a tensor alongside a Python value is a mix.
+			// A Python value may be another on another trace, however few the engine shows; a tensor alongside one is a mix.
+			if (!this.tensorTypedKeys.containsKey(pointerKey) || pythonValue)
 				return false;
+
+			anyTensor = true;
 		}
 
-		// Every context a tensor, or every context the same one constant.
-		return anyTensor ? constants.isEmpty() : constants.size() == 1;
+		return anyTensor;
 	}
 
 	/**
