@@ -1246,14 +1246,16 @@ class LayerBuildAnalysis {
 					unnamedByParent.computeIfAbsent(parent, k -> new TreeMap<>())
 							.computeIfAbsent(getSimpleName(allocatedClass.getName()), k -> new TreeSet<>())
 							.addAll(this.getNamingClasses(allocatedClass));
-					String generated = toSnakeCase(getSimpleName(allocatedClass.getName()));
+					for (String namingClass : this.getNamingClasses(allocatedClass)) {
+						String generated = toSnakeCase(namingClass);
 
-					for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator))) {
-						if (traced.contains(caller))
-							generatedInTrace.computeIfAbsent(parent, k -> new TreeSet<>()).add(generated);
+						for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator))) {
+							if (traced.contains(caller))
+								generatedInTrace.computeIfAbsent(parent, k -> new TreeSet<>()).add(generated);
 
-						if (untraced.contains(caller) || !traced.contains(caller))
-							generatedOutside.computeIfAbsent(parent, k -> new TreeSet<>()).add(generated);
+							if (untraced.contains(caller) || !traced.contains(caller))
+								generatedOutside.computeIfAbsent(parent, k -> new TreeSet<>()).add(generated);
+						}
 					}
 				}
 
