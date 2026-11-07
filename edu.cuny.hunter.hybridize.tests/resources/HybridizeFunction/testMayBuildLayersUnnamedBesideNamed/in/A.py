@@ -74,6 +74,23 @@ class Subclassed(tf.keras.layers.Layer):
         return self.second(self.first(x))
 
 
+class TemplateUnnamed(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.first = tf.keras.layers.Dense(4)
+        self.second = tf.keras.layers.Dense(4)
+        self.rest = []
+        for i in range(2):
+            self.rest.append(tf.keras.layers.Dense(4, name="dense_{}".format(i)))
+
+    def call(self, x):
+        x = self.second(self.first(x))
+        for dense in self.rest:
+            x = dense(x)
+        return x
+
+
 class Net(tf.keras.Model):
 
     def __init__(self):
@@ -84,10 +101,13 @@ class Net(tf.keras.Model):
         self.aliased = Aliased(name="aliased")
         self.counted = Counted(name="counted")
         self.subclassed = Subclassed(name="subclassed")
+        self.template_unnamed = TemplateUnnamed(name="template_unnamed")
 
     def call(self, x):
         return (
-            self.subclassed(self.counted(self.apart(self.normalized(self.pair(x))))),
+            self.template_unnamed(
+                self.subclassed(self.counted(self.apart(self.normalized(self.pair(x)))))
+            ),
             self.aliased(x),
         )
 
