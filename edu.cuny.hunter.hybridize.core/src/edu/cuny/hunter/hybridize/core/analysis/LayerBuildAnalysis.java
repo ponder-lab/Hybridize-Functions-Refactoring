@@ -528,9 +528,10 @@ class LayerBuildAnalysis {
 	 * True iff {@code callee}, a call's callee value, calls the same layer on every trace: the engine allocates at most one object it may
 	 * be, a layer or another, such as a bound method of an object holding one, told apart by allocating node, and not several, or it is
 	 * read by a fixed selection ({@link #isReadFixedly(CGNode, int)}), or it merges several at a phi whose choosing branches are fixed
-	 * ({@link #varies(CGNode, ISSABasicBlock, IR)}) and each of whose operands is selected fixedly in turn. A value that may be several
-	 * layers and that no phi selects, such as a field or an element holding several, has no selecting value the engine shows fixed, so it
-	 * isn't. A single layer called through a local alias is the same value and is.
+	 * ({@link #varies(CGNode, ISSABasicBlock, IR)}) and each of whose operands is selected fixedly in turn, or it reads a field only set up
+	 * ({@link #readsSetUpField(CGNode, int)}). A value that may be several layers and that no phi selects, such as an element holding
+	 * several, or a field another method rebinds, has no selecting value the engine shows fixed, so it isn't. A single layer called through
+	 * a local alias is the same value and is.
 	 *
 	 * @param node The node of {@code callee}.
 	 * @param callee A value number of {@code node}.
@@ -573,7 +574,7 @@ class LayerBuildAnalysis {
 			return true;
 
 		if (!(node.getDU().getDef(callee) instanceof SSAPhiInstruction phi))
-			return allocators.size() == 1 && this.isReadFixedly(node, callee);
+			return allocators.size() == 1 && this.isReadFixedly(node, callee) || this.readsSetUpField(node, callee);
 
 		ISSABasicBlock merge = null;
 
@@ -605,6 +606,90 @@ class LayerBuildAnalysis {
 				return false;
 
 		return true;
+	}
+
+	/**
+	 * True iff {@code value} of a program node reads a field, not an element, of the node's receiver, every object the receiver may be is
+	 * an instance of the method's own class ({@link #receivesOwnInstances(CGNode)}), and only {@code __init__} or {@code build} writes that
+	 * field ({@link ReboundStateReadAnalysis#readsSetUpStateOnly(CGNode, SSAInstruction)}). However many layers the field may hold, an
+	 * instance holds one of them from its construction on, and each instance traces its own function, so each first calls it on its first
+	 * trace: {@code self.embedding}, set in either arm of a branch in {@code __init__}, is. That holds only for calls bound to their
+	 * receiver ({@link #isCalledBound(CGNode)}): a method called through its class, as {@code Embedded.project(a, x)}, shares one function
+	 * among its receivers, whatever their class, so its field isn't.
+	 *
+	 * @param node A program node the method's trace runs.
+	 * @param value A value number of {@code node}.
+	 * @return True iff the value reads a field that holds one layer per instance.
+	 */
+	private boolean readsSetUpField(CGNode node, int value) {
+		SSAInstruction def = node.getDU().getDef(value);
+		int object;
+
+		if (def instanceof SSAGetInstruction get && !get.isStatic())
+			object = get.getRef();
+		else if (def instanceof AstPropertyRead read && node.getIR().getSymbolTable().isConstant(read.getMemberRef()))
+			object = read.getObjectRef();
+		else
+			return false;
+
+		int[] parameters = node.getIR().getSymbolTable().getParameterValueNumbers();
+		return parameters.length > 1 && parameters[1] == object && this.receivesOwnInstances(node) && this.isCalledBound(node)
+				&& this.getReboundState().readsSetUpStateOnly(node, def);
+	}
+
+	/**
+	 * True iff every call of {@code node} from program code binds its receiver, as {@code a.project(x)} does, rather than passing it
+	 * through the class, as {@code Embedded.project(a, x)} does, which the engine publishes per call
+	 * ({@link CallTargets#parameterBoundTargets}). A call from the engine's summaries, such as a layer's {@code __call__} calling its
+	 * {@code call}, binds it.
+	 *
+	 * @param node A method's node.
+	 * @return True iff each call of the node from program code is bound to its receiver.
+	 */
+	private boolean isCalledBound(CGNode node) {
+		for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(node))) {
+			if (!CallTargets.isProgramCode(caller))
+				continue;
+
+			for (CallSiteReference site : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, node)))
+				for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(site))
+					if (!(call instanceof PythonInvokeInstruction invoke)
+							|| !Boolean.TRUE.equals(CallTargets.parameterBoundTargets(this.builder, caller, invoke).get(node)))
+						return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * True iff the receiver of {@code node}, a method, may be at least one object and every object it may be is an instance of the method's
+	 * declaring class or of a class reaching it through its bases.
+	 *
+	 * @param node A program node.
+	 * @return True iff the method receives only instances of its own class.
+	 */
+	private boolean receivesOwnInstances(CGNode node) {
+		Optional<TypeName> declaringClass = this.getDeclaringClass(node);
+		int[] parameters = node.getIR().getSymbolTable().getParameterValueNumbers();
+
+		if (declaringClass.isEmpty() || parameters.length < 2)
+			return false;
+
+		PointerKey receiver = this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, parameters[1]);
+		boolean any = false;
+
+		for (InstanceKey instanceKey : this.getPointerAnalysis().getPointsToSet(receiver)) {
+			Optional<IClass> allocatedClass = allocatedClass(instanceKey);
+
+			if (allocatedClass.isEmpty()
+					|| !Function.getClassAndBaseNames(this.builder.getClassHierarchy(), allocatedClass.get().getReference())
+							.contains(declaringClass.get()))
+				return false;
+
+			any = true;
+		}
+
+		return any;
 	}
 
 	/**
