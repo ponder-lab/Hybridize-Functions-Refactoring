@@ -679,7 +679,8 @@ class LayerBuildAnalysis {
 	 * parameter of the method other than its receiver, which its caller passes, and a parameter of a traced callee to which a call in a
 	 * traced node passes a value read from one ({@link #readsVarying(CGNode, int, Map)}). The engine gives a function a node per call site,
 	 * so within one node such a parameter may be a single object even when the calls pass different ones. A callee's parameter that its
-	 * callers pass a fixed value, as {@code apply(self.dense, x)} does, doesn't vary.
+	 * callers pass a fixed value, as {@code apply(self.dense, x)} does, doesn't vary. A starred argument spreads a sequence whose elements
+	 * the analysis doesn't follow, so in a function with a varying parameter it may pass one to any parameter.
 	 *
 	 * @param nodes The method's nodes.
 	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
@@ -711,51 +712,124 @@ class LayerBuildAnalysis {
 			if (!(node.getMethod() instanceof AstMethod) || node.getIR() == null)
 				continue;
 
-			for (SSAInstruction instruction : node.getIR().getInstructions())
-				if (instruction instanceof PythonInvokeInstruction invoke)
-					for (Map.Entry<CGNode, Boolean> target : CallTargets.parameterBoundTargets(this.builder, node, invoke).entrySet()) {
-						CGNode callee = target.getKey();
+			for (SSAInstruction instruction : node.getIR().getInstructions()) {
+				if (!(instruction instanceof PythonInvokeInstruction invoke))
+					continue;
 
-						if (!traced.contains(callee) || callee.getIR() == null)
-							continue;
+				// A starred argument spreads a sequence whose elements the analysis doesn't follow, so in a function with any varying
+				// parameter it may spread one.
+				boolean starred = invoke.getStarredPositions().length > 0 && !ret.getOrDefault(node, Collections.emptySet()).isEmpty();
+				boolean anyVarying = starred;
 
-						int[] parameters = callee.getIR().getSymbolTable().getParameterValueNumbers();
-						int shift = Boolean.TRUE.equals(target.getValue()) ? 1 : 0;
-						Set<Integer> calleeVarying = ret.computeIfAbsent(callee, k -> new HashSet<>());
-						boolean changed = false;
+				for (int i = 1; i < invoke.getNumberOfUses(); i++)
+					anyVarying |= readsVarying(node, invoke.getUse(i), ret);
 
-						// A starred argument may fill any parameter.
-						boolean starred = invoke.getStarredPositions().length > 0;
+				if (!anyVarying)
+					continue;
 
-						for (int j = 1; j < invoke.getNumberOfPositionalParameters(); j++)
-							if (readsVarying(node, invoke.getUse(j), ret))
-								if (starred)
-									for (int i = 1 + shift; i < parameters.length; i++)
-										changed |= calleeVarying.add(parameters[i]);
-								else if (j + shift < parameters.length)
-									changed |= calleeVarying.add(parameters[j + shift]);
+				Map<CGNode, Boolean> targets = CallTargets.parameterBoundTargets(this.builder, node, invoke);
 
-						for (String keyword : invoke.getKeywords())
-							if (readsVarying(node, invoke.getUse(keyword), ret))
-								for (int i = 1; i < parameters.length; i++) {
-									String[] names = callee.getIR().getLocalNames(0, parameters[i]);
+				for (Map.Entry<CGNode, Boolean> target : targets.entrySet()) {
+					CGNode callee = target.getKey();
 
-									if (names != null && Set.of(names).contains(keyword))
-										changed |= calleeVarying.add(parameters[i]);
-								}
-
-						if (changed)
-							worklist.add(callee);
-					}
+					if (traced.contains(callee) && callee.getIR() != null
+							&& passVarying(node, invoke, callee, Boolean.TRUE.equals(target.getValue()), ret))
+						worklist.add(callee);
+				}
+			}
 		}
 
 		return ret;
 	}
 
 	/**
+	 * Marks the parameters of {@code callee} to which {@code invoke} passes a varying value: by position, shifted past a bound receiver, or
+	 * by keyword name. A varying value that fills no one parameter by either, as a starred argument, an argument spread with {@code **}, or
+	 * a keyword that only {@code **kwargs} takes, may fill any, so every parameter after a bound receiver varies.
+	 *
+	 * @param node The node of {@code invoke}.
+	 * @param invoke A call.
+	 * @param callee A program function the call passes its arguments to.
+	 * @param bound True iff the call binds a receiver before its arguments.
+	 * @param varying Each traced node's varying parameters, updated.
+	 * @return True iff a parameter of {@code callee} newly varies.
+	 */
+	private static boolean passVarying(CGNode node, PythonInvokeInstruction invoke, CGNode callee, boolean bound,
+			Map<CGNode, Set<Integer>> varying) {
+		int[] parameters = callee.getIR().getSymbolTable().getParameterValueNumbers();
+		int shift = bound ? 1 : 0;
+		Set<Integer> calleeVarying = varying.computeIfAbsent(callee, k -> new HashSet<>());
+		Set<Integer> placed = new HashSet<>();
+		boolean unplaced = false;
+		boolean ret = false;
+
+		if (invoke.getStarredPositions().length == 0)
+			for (int j = 1; j < invoke.getNumberOfPositionalParameters(); j++) {
+				placed.add(invoke.getUse(j));
+
+				if (readsVarying(node, invoke.getUse(j), varying))
+					if (j + shift < parameters.length)
+						ret |= calleeVarying.add(parameters[j + shift]);
+					else
+						unplaced = true;
+			}
+
+		for (String keyword : invoke.getKeywords()) {
+			placed.add(invoke.getUse(keyword));
+
+			if (readsVarying(node, invoke.getUse(keyword), varying)) {
+				boolean matched = false;
+
+				for (int i = 1; i < parameters.length; i++) {
+					String[] names = callee.getIR().getLocalNames(0, parameters[i]);
+
+					if (names != null && Set.of(names).contains(keyword)) {
+						ret |= calleeVarying.add(parameters[i]);
+						matched = true;
+					}
+				}
+
+				unplaced |= !matched;
+			}
+		}
+
+		for (int i = 1; i < invoke.getNumberOfUses(); i++)
+			if (!placed.contains(invoke.getUse(i)) && readsVarying(node, invoke.getUse(i), varying))
+				unplaced = true;
+
+		// A starred argument spreads a sequence whose elements the analysis doesn't follow.
+		if (invoke.getStarredPositions().length > 0 && !varying.getOrDefault(node, Collections.emptySet()).isEmpty())
+			unplaced = true;
+
+		if (unplaced)
+			ret |= markAllVarying(callee, 1 + shift, varying);
+
+		return ret;
+	}
+
+	/**
+	 * Marks every parameter of {@code callee} from slot {@code from} on varying.
+	 *
+	 * @param callee A program node.
+	 * @param from The first parameter slot to mark; slot 0 is the function object.
+	 * @param varying Each traced node's varying parameters, updated.
+	 * @return True iff a parameter newly varies.
+	 */
+	private static boolean markAllVarying(CGNode callee, int from, Map<CGNode, Set<Integer>> varying) {
+		int[] parameters = callee.getIR().getSymbolTable().getParameterValueNumbers();
+		Set<Integer> calleeVarying = varying.computeIfAbsent(callee, k -> new HashSet<>());
+		boolean ret = false;
+
+		for (int i = from; i < parameters.length; i++)
+			ret |= calleeVarying.add(parameters[i]);
+
+		return ret;
+	}
+
+	/**
 	 * True iff {@code value} of {@code node} is one of its varying parameters ({@link #getVaryingParameters(Set, Set)}), a field or
-	 * property read from one, at any depth, or a phi merging one. It is asked only of a callee value of a call that may reach
-	 * {@code add_weight}, which a tensor parameter can't be.
+	 * property read from one, at any depth, a phi merging one, or the result of a call passed one, which may return it. It is asked only of
+	 * a callee value of a call that may reach {@code add_weight}, which a tensor parameter can't be.
 	 *
 	 * @param node A traced node.
 	 * @param value A value number of {@code node}.
@@ -793,6 +867,12 @@ class LayerBuildAnalysis {
 		if (def instanceof SSAPhiInstruction phi)
 			for (int i = 0; i < phi.getNumberOfUses(); i++)
 				if (readsVarying(node, phi.getUse(i), varying, seen))
+					return true;
+
+		// A call's result may be anything it was passed, as `pick(blk)` returning `blk` is, or anything read from it.
+		if (def instanceof PythonInvokeInstruction invoke)
+			for (int i = 0; i < invoke.getNumberOfUses(); i++)
+				if (readsVarying(node, invoke.getUse(i), varying, seen))
 					return true;
 
 		return false;

@@ -119,6 +119,65 @@ class SetUpChosen(tf.keras.layers.Layer):
         return Block.project(self.a, x)
 
 
+def pick(blk):
+    return blk
+
+
+class Wrapper(tf.keras.layers.Layer):
+
+    def call(self, blk, x):
+        return blk.project(x)
+
+
+class HelperReturned(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.a = Block(name="a")
+        self.b = Block(name="b")
+
+    def run(self, blk, x):
+        chosen = pick(blk)
+        return chosen.project(x)
+
+
+class LayerCallPassed(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.a = Block(name="a")
+        self.b = Block(name="b")
+        self.wrapper = Wrapper()
+
+    def run(self, blk, x):
+        return self.wrapper(blk, x)
+
+
+class KwargsPassed(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.a = Block(name="a")
+        self.b = Block(name="b")
+
+    def run(self, blk, x):
+        return self.via_kwargs(x, blk=blk)
+
+    def via_kwargs(self, x, **kwargs):
+        return kwargs["blk"].project(x)
+
+
+class StarredPassed(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.a = Block(name="a")
+        self.b = Block(name="b")
+
+    def run(self, blk, x):
+        return helper(*(blk, x))
+
+
 x = tf.ones([2, 3])
 unbound_varying = UnboundVarying()
 unbound_varying.run(unbound_varying.a, x)
@@ -153,3 +212,15 @@ narrow.run(x)
 wide.run(x)
 narrow.run(tf.ones([3, 3]))
 wide.run(tf.ones([3, 3]))
+helper_returned = HelperReturned()
+helper_returned.run(helper_returned.a, x)
+helper_returned.run(helper_returned.b, x)
+layer_call_passed = LayerCallPassed()
+layer_call_passed.run(layer_call_passed.a, x)
+layer_call_passed.run(layer_call_passed.b, x)
+kwargs_passed = KwargsPassed()
+kwargs_passed.run(kwargs_passed.a, x)
+kwargs_passed.run(kwargs_passed.b, x)
+starred_passed = StarredPassed()
+starred_passed.run(starred_passed.a, x)
+starred_passed.run(starred_passed.b, x)

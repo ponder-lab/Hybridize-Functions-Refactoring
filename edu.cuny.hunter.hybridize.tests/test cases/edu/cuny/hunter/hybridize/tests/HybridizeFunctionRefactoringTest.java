@@ -18497,13 +18497,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * gives each {@code run} a node per call site, so a passed block is one object within each node; the analysis reads it as varying since
 	 * it is a parameter. {@code HelperBound.run} and {@code HelperUnbound.run} pass the block to a function, {@code helper} or
 	 * {@code helper_unbound}, that calls it bound or through its class, and the engine gives the function a node per call site as well:
-	 * measured, each raises, and each is refused. {@code UnboundFixed.run} calls {@code Block.project(self.a, x)} and
-	 * {@code HelperFixed.run} {@code helper(self.a, x)}, the same block on every trace: measured, each retraces without error, and neither
-	 * is refused. Nor is {@code TwoHolders.run}, which two holders call, each passing its own block, constructed unnamed so that their
-	 * variables' names stay distinct, as {@code self.a} through the class: measured, each retraces on a new shape without error, since each
-	 * holder traces its own function. Nor is {@code SetUpChosen.run}, which passes {@code self.a}, set to one of two blocks in either arm
-	 * of a branch in {@code __init__}, through the class: each instance holds one block from its construction on, and measured, each
-	 * retraces on a new shape without error.
+	 * measured, each raises, and each is refused. So does each of four that pass it on otherwise: {@code HelperReturned.run} calls
+	 * {@code pick(blk).project(x)}, {@code pick} returning its argument, {@code LayerCallPassed.run} passes it to a layer call,
+	 * {@code self.wrapper(blk, x)}, whose {@code call} calls it, and {@code KwargsPassed.run} passes it as a keyword that only
+	 * {@code **kwargs} takes, and {@code StarredPassed.run} passes it to {@code helper} spread, {@code helper(*(blk, x))}.
+	 * {@code UnboundFixed.run} calls {@code Block.project(self.a, x)} and {@code HelperFixed.run} {@code helper(self.a, x)}, the same block
+	 * on every trace: measured, each retraces without error, and neither is refused. Nor is {@code TwoHolders.run}, which two holders call,
+	 * each passing its own block, constructed unnamed so that their variables' names stay distinct, as {@code self.a} through the class:
+	 * measured, each retraces on a new shape without error, since each holder traces its own function. Nor is {@code SetUpChosen.run},
+	 * which passes {@code self.a}, set to one of two blocks in either arm of a branch in {@code __init__}, through the class: each instance
+	 * holds one block from its construction on, and measured, each retraces on a new shape without error.
 	 */
 	@Test
 	public void testMayBuildLayersUnboundReceiver() throws Exception {
@@ -18513,6 +18516,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "UnboundChosen.run", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "HelperBound.run", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "HelperUnbound.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "HelperReturned.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "LayerCallPassed.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "KwargsPassed.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "StarredPassed.run", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "UnboundFixed.run", true, false, null);
 		assertMayBuildLayers(functions, "HelperFixed.run", true, false, null);
 		assertMayBuildLayers(functions, "TwoHolders.run", true, false, null);
