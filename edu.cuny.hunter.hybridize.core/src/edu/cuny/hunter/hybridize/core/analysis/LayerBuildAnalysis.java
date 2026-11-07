@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -120,11 +121,12 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * {@code h10}, and refuse. A sublayer's parent is the layer holding it; Keras scopes it under the layer whose {@code __call__} first builds
  * it, which is the same whenever a layer is called by its holder, but not for a layer passed to another's {@code call} and built there. Any
  * other name that is not one constant string may collide with any other and refuses. A sublayer constructed without a name, or with
- * {@code None}, gets a unique one from Keras and never collides. The front end reads an f-string as the one constant string of its source
- * text, opening quote included, which counts as computed until the engine reads it so (wala/ML#1231). A constructing call that unpacks
- * {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which counts as computed too, and so does a base's
- * {@code __init__} call unpacking anything but the calling {@code __init__}'s own {@code **kwargs}: {@code super().__init__(**kwargs)}
- * forwards only the keywords the constructing call passed, which are read there.</li>
+ * {@code None}, gets one from Keras, its class's in snake case, as {@code dense}, or that with {@code _<n>} appended; Keras counts only the
+ * names it makes, so a sibling's constant name, or a name a sibling's template fills, may be one of them, which refuses. The front end
+ * reads an f-string as the one constant string of its source text, opening quote included, which counts as computed until the engine reads
+ * it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which
+ * counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own
+ * {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed, which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
@@ -1218,11 +1220,21 @@ class LayerBuildAnalysis {
 		Map<CGNode, Map<String, CGNode>> constantsByParent = new HashMap<>();
 		Map<CGNode, Map<String, CGNode>> templatesByParent = new HashMap<>();
 
+		// The classes Keras may name each unnamed sublayer after, by its parent and its own class.
+		Map<CGNode, Map<String, Set<String>>> unnamedByParent = new HashMap<>();
+
 		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.objects().entrySet()) {
 			CGNode allocator = sublayer.getKey();
 			Names sublayerNames = names.get(allocator);
 
 			for (CGNode parent : sublayers.parents().get(allocator)) {
+				if (!sublayerNames.named()) {
+					IClass allocatedClass = allocatedClass(sublayer.getValue().iterator().next()).orElseThrow();
+					unnamedByParent.computeIfAbsent(parent, k -> new TreeMap<>())
+							.computeIfAbsent(getSimpleName(allocatedClass.getName()), k -> new TreeSet<>())
+							.addAll(this.getNamingClasses(allocatedClass));
+				}
+
 				Map<String, CGNode> constants = constantsByParent.computeIfAbsent(parent, k -> new HashMap<>());
 				Map<String, CGNode> templates = templatesByParent.computeIfAbsent(parent, k -> new HashMap<>());
 
@@ -1267,7 +1279,66 @@ class LayerBuildAnalysis {
 								"sublayers named `" + templates.get(i) + "` and `" + templates.get(j) + "` may share a name"));
 		}
 
+		// Keras names an unnamed layer after its class, `dense` or `dense_<n>`, counting only the names it makes, so a sibling's constant
+		// name, or a name a sibling's template fills, may be one of them.
+		for (Map.Entry<CGNode, Map<String, Set<String>>> parent : unnamedByParent.entrySet())
+			for (Map.Entry<String, Set<String>> unnamed : parent.getValue().entrySet())
+				for (String namingClass : unnamed.getValue()) {
+					String generated = toSnakeCase(namingClass);
+
+					for (String name : constantsByParent.getOrDefault(parent.getKey(), Collections.emptyMap()).keySet())
+						if (name.equals(generated) || name.startsWith(generated + "_") && !name.substring(generated.length() + 1).isEmpty()
+								&& name.substring(generated.length() + 1).chars().allMatch(Character::isDigit))
+							return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
+									"an unnamed `" + unnamed.getKey() + "` sublayer may be named `" + name + "`, as another is"));
+
+					for (String template : templatesByParent.getOrDefault(parent.getKey(), Collections.emptyMap()).keySet())
+						if (fills(template, generated) || mayFillAlike(template, generated + "_{}"))
+							return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
+									"an unnamed `" + unnamed.getKey() + "` sublayer may be named as `" + template + "` fills"));
+				}
+
 		return Optional.empty();
+	}
+
+	/**
+	 * The simple names of the classes Keras may name an unnamed layer of {@code allocatedClass} after: a program class's own, since Keras
+	 * names a layer after {@code type(self).__name__}, and, for a library class, its own and each superclass's below
+	 * {@code tf.keras.layers.Layer}, since the engine models an alias such as {@code Convolution2D} as a subclass of the class it names,
+	 * {@code Conv2D}, after which Keras names it.
+	 *
+	 * @param allocatedClass The class of an unnamed sublayer.
+	 * @return The simple names of the classes it may be named after.
+	 */
+	private Set<String> getNamingClasses(IClass allocatedClass) {
+		Set<String> ret = new LinkedHashSet<>(List.of(getSimpleName(allocatedClass.getName())));
+
+		if (Util.isUserCodeClass(allocatedClass))
+			return ret;
+
+		// The bases as the engine declares them, by name, without `Layer` and what lies above it.
+		IClassHierarchy classHierarchy = this.builder.getClassHierarchy();
+		Set<TypeName> aboveLayer = Function.getClassAndBaseNames(classHierarchy, KERAS_LAYER_TYPE.getName());
+
+		for (TypeName base : Function.getClassAndBaseNames(classHierarchy, allocatedClass.getReference()))
+			if (!aboveLayer.contains(base))
+				ret.add(getSimpleName(base));
+
+		return ret;
+	}
+
+	/**
+	 * The name Keras makes for an unnamed layer of the class {@code className}, before any {@code _<n>} it appends to tell layers apart, as
+	 * its {@code to_snake_case} makes it: an underscore before each capitalized word, lower-cased, and {@code private} before a leading
+	 * underscore. {@code Dense} is {@code dense}, {@code LayerNormalization} {@code layer_normalization}.
+	 *
+	 * @param className A layer class's simple name.
+	 * @return The name Keras generates from it.
+	 */
+	private static String toSnakeCase(String className) {
+		String intermediate = className.replaceAll("(.)([A-Z][a-z0-9]+)", "$1_$2");
+		String insecure = intermediate.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
+		return insecure.startsWith("_") ? "private" + insecure : insecure;
 	}
 
 	/**

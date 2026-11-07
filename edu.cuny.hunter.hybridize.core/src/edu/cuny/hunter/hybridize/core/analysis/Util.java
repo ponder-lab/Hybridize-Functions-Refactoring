@@ -55,6 +55,7 @@ import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.cast.python.types.PythonTypes;
+import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
@@ -559,7 +560,17 @@ public class Util {
 
 	/** True iff {@code node} is user code, a script or a function in one, rather than a library or summary node. */
 	private static boolean isUserCodeNode(CGNode node) {
-		return node.getMethod().getDeclaringClass().getName().toString().startsWith(USER_SCRIPT_TYPE_NAME_PREFIX);
+		return isUserCodeClass(node.getMethod().getDeclaringClass());
+	}
+
+	/**
+	 * True iff {@code cls} is declared in user code, a script or a function or class in one, rather than in a library or a summary.
+	 *
+	 * @param cls A class.
+	 * @return True iff the class is declared in user code.
+	 */
+	static boolean isUserCodeClass(IClass cls) {
+		return cls.getName().toString().startsWith(USER_SCRIPT_TYPE_NAME_PREFIX);
 	}
 
 	/**

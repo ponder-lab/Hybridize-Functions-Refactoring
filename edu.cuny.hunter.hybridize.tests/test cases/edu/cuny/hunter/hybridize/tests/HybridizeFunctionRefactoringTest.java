@@ -18428,6 +18428,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with an unnamed sublayer beside one given the name
+	 * Keras would generate for it. Keras names an unnamed layer after its class in snake case, {@code dense} or {@code dense_<n>}, counting
+	 * only the names it makes, so {@code Dense(4)} beside {@code Dense(4, name="dense")} in {@code Pair} are both named {@code dense}, and
+	 * so are {@code Normalized}'s two {@code LayerNormalization}s as {@code layer_normalization}: measured on TensorFlow 2.9.3, their
+	 * variables collide even undecorated, and each is refused for the colliding names. {@code Apart} names its second {@code Dense}
+	 * {@code proj}, which Keras never generates for a {@code Dense}: decorated, its variables' names stay distinct, and it isn't refused.
+	 * {@code Counted} names its third {@code Dense} {@code dense_1}, the name Keras generates for its second, unnamed one: measured, both
+	 * are named {@code dense_1}, and it is refused. {@code Subclassed} constructs a {@code MyDense(4)}, a program subclass of
+	 * {@code Dense}, beside {@code Dense(4, name="dense")}: Keras names a layer after its own class, {@code my_dense}, so measured, the
+	 * names stay distinct, and it isn't refused. {@code TemplateUnnamed} constructs two unnamed {@code Dense}s beside
+	 * {@code Dense(4, name="dense_{}".format(i))} for {@code i in range(2)}: measured alone, the second unnamed one and the loop's second
+	 * are both named {@code dense_1}, and it is refused. {@code Aliased} constructs {@code Convolution2D(4, 1)}, an alias Keras names after
+	 * the class it names, {@code conv2d}, beside {@code Conv2D(4, 1, name="conv2d")}: measured, both are named {@code conv2d}, and the save
+	 * fails. A library alias is named after each of its bases below {@code Layer}, which would refuse it.
+	 * <p>
+	 * TODO: The engine models no object for a {@code Convolution2D} construction (https://github.com/wala/ML/issues/1236), so the sublayer
+	 * is invisible and {@code Aliased.call} is a missed refusal until the engine models it. {@code SeparableConvolution1D} and
+	 * {@code SeparableConvolution2D}, which Keras names {@code separable_conv1d} and {@code separable_conv2d}, are declared but not modeled
+	 * either; should the engine model one as the class it allocates, as it does {@code MaxPool2D} for {@code MaxPooling2D}, its generated
+	 * name must come from its target too.
+	 */
+	@Test
+	public void testMayBuildLayersUnnamedBesideNamed() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Pair.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Normalized.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Apart.call", true, false, null);
+		assertMayBuildLayers(functions, "Counted.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Subclassed.call", true, false, null);
+		assertMayBuildLayers(functions, "TemplateUnnamed.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Aliased.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with sublayers whose names are computed in a
 	 * comprehension, {@code "g{}".format(i)} in {@code Formatted} and {@code f"h{i}"} in {@code Stack}. A computed name may collide with
 	 * any other, so {@code Formatted.call} is refused for the colliding names, the conservative side: measured on TensorFlow 2.9.3, the
