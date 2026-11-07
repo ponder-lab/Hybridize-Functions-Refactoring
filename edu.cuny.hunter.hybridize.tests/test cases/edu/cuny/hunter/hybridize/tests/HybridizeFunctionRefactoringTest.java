@@ -18495,8 +18495,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * the shape of a first call on a retrace. So does {@code BoundVarying.run}, which calls {@code blk.project(x)}, and
 	 * {@code UnboundChosen.run}, which passes {@code self.a if flag else self.b} through the class for a parameter {@code flag}. The engine
 	 * gives each {@code run} a node per call site, so a passed block is one object within each node; the analysis reads it as varying since
-	 * it is a parameter. {@code UnboundFixed.run} calls {@code Block.project(self.a, x)}, the same block on every trace: measured, it
-	 * retraces without error, and it isn't refused.
+	 * it is a parameter. {@code HelperBound.run} and {@code HelperUnbound.run} pass the block to a function, {@code helper} or
+	 * {@code helper_unbound}, that calls it bound or through its class, and the engine gives the function a node per call site as well:
+	 * measured, each raises, and each is refused. {@code UnboundFixed.run} calls {@code Block.project(self.a, x)} and
+	 * {@code HelperFixed.run} {@code helper(self.a, x)}, the same block on every trace: measured, each retraces without error, and neither
+	 * is refused. Nor is {@code TwoHolders.run}, which two holders call, each passing its own block, constructed unnamed so that their
+	 * variables' names stay distinct, as {@code self.a} through the class: measured, each retraces on a new shape without error, since each
+	 * holder traces its own function. Nor is {@code SetUpChosen.run}, which passes {@code self.a}, set to one of two blocks in either arm
+	 * of a branch in {@code __init__}, through the class: each instance holds one block from its construction on, and measured, each
+	 * retraces on a new shape without error.
 	 */
 	@Test
 	public void testMayBuildLayersUnboundReceiver() throws Exception {
@@ -18504,7 +18511,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "UnboundVarying.run", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "BoundVarying.run", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "UnboundChosen.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "HelperBound.run", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "HelperUnbound.run", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "UnboundFixed.run", true, false, null);
+		assertMayBuildLayers(functions, "HelperFixed.run", true, false, null);
+		assertMayBuildLayers(functions, "TwoHolders.run", true, false, null);
+		assertMayBuildLayers(functions, "SetUpChosen.run", true, false, null);
 	}
 
 	/**

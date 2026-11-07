@@ -439,6 +439,8 @@ class LayerBuildAnalysis {
 	 *         under conditions that are fixed across traces.
 	 */
 	private Optional<Verdict> findConditionalBuild(Set<CGNode> nodes, Set<CGNode> traced) {
+		Map<CGNode, Set<Integer>> varying = this.getVaryingParameters(nodes, traced);
+
 		for (CGNode node : traced) {
 			// Only program code: a summary's branches, such as `__call__`'s test of whether the layer is built, are the engine's model.
 			if (!(node.getMethod() instanceof AstMethod))
@@ -494,8 +496,8 @@ class LayerBuildAnalysis {
 					}
 
 					// A layer passed to the method, or read from an object passed to it, may be another on each call, which the engine
-					// shows only across the method's nodes, one per call site, not within one.
-					if (nodes.contains(node) && this.readsParameter(node, call.getUse(0)))
+					// shows only across the nodes of the function receiving it, one per call site, not within one.
+					if (readsVarying(node, call.getUse(0), varying))
 						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE, "its call at " + describePosition(node, call)
 								+ " calls a layer passed to it, which may differ on a retrace"));
 
@@ -505,10 +507,11 @@ class LayerBuildAnalysis {
 								"its call at " + describePosition(node, call) + " may call a different layer on a retrace"));
 
 					// A method called through its class, as `Block.project(blk, x)`, takes its receiver as its first argument, which then
-					// chooses the layers it calls, as a bound call's callee value does.
+					// chooses the layers it calls, as a bound call's callee value does. One read from a varying parameter makes the
+					// method's
+					// receiver vary in turn (`getVaryingParameters`), so its calls are refused there.
 					if (call instanceof PythonInvokeInstruction invoke && this.passesReceiverUnbound(node, invoke)
 							&& (invoke.getNumberOfPositionalParameters() < 2 || invoke.firstStarredPosition() == 1
-									|| nodes.contains(node) && this.readsParameter(node, invoke.getUse(1))
 									|| !this.isReceiverSelectedFixedly(node, invoke.getUse(1))))
 						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE,
 								"its call at " + describePosition(node, call) + " may pass a different receiver on a retrace"));
@@ -672,30 +675,125 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code value} of {@code node} is a parameter other than the receiver, or a field or property read from one, at any depth: an
-	 * object the method's caller passes, which may be another on each call. The engine gives the method a node per call site, so within one
-	 * node such a parameter may be a single object even when the calls pass different ones. It is asked only of a callee value of a call
-	 * that may reach {@code add_weight}, and of a receiver passed to a program method, neither of which a tensor parameter can be.
+	 * The parameters, by value number, of each of {@code traced} that may be another object on each call of the method of {@code nodes}: a
+	 * parameter of the method other than its receiver, which its caller passes, and a parameter of a traced callee to which a call in a
+	 * traced node passes a value read from one ({@link #readsVarying(CGNode, int, Map)}). The engine gives a function a node per call site,
+	 * so within one node such a parameter may be a single object even when the calls pass different ones. A callee's parameter that its
+	 * callers pass a fixed value, as {@code apply(self.dense, x)} does, doesn't vary.
 	 *
-	 * @param node A node of the method.
-	 * @param value A value number of {@code node}.
-	 * @return True iff the value is read from a parameter other than the receiver.
+	 * @param nodes The method's nodes.
+	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
+	 * @return Each traced node's varying parameters.
 	 */
-	private boolean readsParameter(CGNode node, int value) {
-		int[] parameters = node.getIR().getSymbolTable().getParameterValueNumbers();
+	private Map<CGNode, Set<Integer>> getVaryingParameters(Set<CGNode> nodes, Set<CGNode> traced) {
+		Map<CGNode, Set<Integer>> ret = new HashMap<>();
+		Deque<CGNode> worklist = new ArrayDeque<>();
 
-		// Slot 0 is the function object itself, and slot 1 of a method its receiver.
-		for (int i = 0; i < parameters.length; i++)
-			if (parameters[i] == value)
-				return i > 1 || i == 1 && !this.isReceiver(node, value);
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (ir == null)
+				continue;
+
+			// Slot 0 is the function object itself, and slot 1 of a method its receiver.
+			int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
+
+			for (int i = 1; i < parameters.length; i++)
+				if (i > 1 || !this.isReceiver(node, parameters[i]))
+					ret.computeIfAbsent(node, k -> new HashSet<>()).add(parameters[i]);
+
+			worklist.add(node);
+		}
+
+		while (!worklist.isEmpty()) {
+			CGNode node = worklist.remove();
+
+			if (!(node.getMethod() instanceof AstMethod) || node.getIR() == null)
+				continue;
+
+			for (SSAInstruction instruction : node.getIR().getInstructions())
+				if (instruction instanceof PythonInvokeInstruction invoke)
+					for (Map.Entry<CGNode, Boolean> target : CallTargets.parameterBoundTargets(this.builder, node, invoke).entrySet()) {
+						CGNode callee = target.getKey();
+
+						if (!traced.contains(callee) || callee.getIR() == null)
+							continue;
+
+						int[] parameters = callee.getIR().getSymbolTable().getParameterValueNumbers();
+						int shift = Boolean.TRUE.equals(target.getValue()) ? 1 : 0;
+						Set<Integer> calleeVarying = ret.computeIfAbsent(callee, k -> new HashSet<>());
+						boolean changed = false;
+
+						// A starred argument may fill any parameter.
+						boolean starred = invoke.getStarredPositions().length > 0;
+
+						for (int j = 1; j < invoke.getNumberOfPositionalParameters(); j++)
+							if (readsVarying(node, invoke.getUse(j), ret))
+								if (starred)
+									for (int i = 1 + shift; i < parameters.length; i++)
+										changed |= calleeVarying.add(parameters[i]);
+								else if (j + shift < parameters.length)
+									changed |= calleeVarying.add(parameters[j + shift]);
+
+						for (String keyword : invoke.getKeywords())
+							if (readsVarying(node, invoke.getUse(keyword), ret))
+								for (int i = 1; i < parameters.length; i++) {
+									String[] names = callee.getIR().getLocalNames(0, parameters[i]);
+
+									if (names != null && Set.of(names).contains(keyword))
+										changed |= calleeVarying.add(parameters[i]);
+								}
+
+						if (changed)
+							worklist.add(callee);
+					}
+		}
+
+		return ret;
+	}
+
+	/**
+	 * True iff {@code value} of {@code node} is one of its varying parameters ({@link #getVaryingParameters(Set, Set)}), a field or
+	 * property read from one, at any depth, or a phi merging one. It is asked only of a callee value of a call that may reach
+	 * {@code add_weight}, which a tensor parameter can't be.
+	 *
+	 * @param node A traced node.
+	 * @param value A value number of {@code node}.
+	 * @param varying Each traced node's varying parameters.
+	 * @return True iff the value is read from a varying parameter.
+	 */
+	private static boolean readsVarying(CGNode node, int value, Map<CGNode, Set<Integer>> varying) {
+		return readsVarying(node, value, varying.getOrDefault(node, Collections.emptySet()), new HashSet<>());
+	}
+
+	/**
+	 * Decides {@link #readsVarying(CGNode, int, Map)}.
+	 *
+	 * @param node A traced node.
+	 * @param value A value number of {@code node}.
+	 * @param varying The node's varying parameters.
+	 * @param seen The values already visited, along a cycle of phis.
+	 * @return True iff the value is read from a varying parameter.
+	 */
+	private static boolean readsVarying(CGNode node, int value, Set<Integer> varying, Set<Integer> seen) {
+		if (varying.contains(value))
+			return true;
+
+		if (!seen.add(value))
+			return false;
 
 		SSAInstruction def = node.getDU().getDef(value);
 
 		if (def instanceof SSAGetInstruction get && !get.isStatic())
-			return this.readsParameter(node, get.getRef());
+			return readsVarying(node, get.getRef(), varying, seen);
 
 		if (def instanceof AstPropertyRead read)
-			return this.readsParameter(node, read.getObjectRef());
+			return readsVarying(node, read.getObjectRef(), varying, seen);
+
+		if (def instanceof SSAPhiInstruction phi)
+			for (int i = 0; i < phi.getNumberOfUses(); i++)
+				if (readsVarying(node, phi.getUse(i), varying, seen))
+					return true;
 
 		return false;
 	}
@@ -703,9 +801,10 @@ class LayerBuildAnalysis {
 	/**
 	 * True iff {@code receiver}, a receiver a call passes unbound ({@link #passesReceiverUnbound(CGNode, PythonInvokeInstruction)}), is the
 	 * same object on every trace: the engine allocates at most one object it may be, at one site, and not several, or one that may be
-	 * several, as a comprehension's, read by a fixed selection ({@link #isReadFixedly(CGNode, int)}). Unlike a callee value, a receiver is
-	 * told apart by allocation site, not by allocating node: {@code self.a} and {@code self.b}, both set in one {@code __init__}, are two
-	 * receivers, each tracing its own layers.
+	 * several, as a comprehension's, read by a fixed selection ({@link #isReadFixedly(CGNode, int)}), or it reads a field of the caller's
+	 * own receiver only set up ({@link #readsSetUpField(CGNode, int)}), one object per instance of the caller, as {@code self.a} is. Unlike
+	 * a callee value, a receiver is told apart by allocation site, not by allocating node: {@code self.a} and {@code self.b}, both set in
+	 * one {@code __init__}, are two receivers, each tracing its own layers.
 	 *
 	 * @param node The node of the call.
 	 * @param receiver A value number of {@code node}.
@@ -726,7 +825,7 @@ class LayerBuildAnalysis {
 			several |= this.mayBeSeveral(instanceKey);
 		}
 
-		return sites.size() <= 1 && (!several || this.isReadFixedly(node, receiver));
+		return sites.size() <= 1 && (!several || this.isReadFixedly(node, receiver)) || this.readsSetUpField(node, receiver);
 	}
 
 	/**
