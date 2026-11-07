@@ -18445,6 +18445,31 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a layer chosen at construction:
+	 * {@code Embedded.__init__} sets {@code self.embedding} in either arm of {@code if weights is not None}, and {@code Embedded.call}
+	 * calls it. The field may hold either {@code Embedding}, but only {@code __init__} writes it, so each instance holds one from its
+	 * construction on and traces its own function; measured on TensorFlow 2.9.3, decorating {@code Embedded.call} retraces without error,
+	 * and it isn't refused. {@code Swapped.call} calls the same kind of field, which {@code swap} rebinds: measured on TensorFlow 2.9.3,
+	 * decorating it raises "tf.function only supports singleton tf.Variables created on the first call" on the retrace after the rebinding,
+	 * so it has the shape of a first call on a retrace. {@code Block.project} in {@link #testMayBuildLayersMixedReceivers()}, whose
+	 * receiver may be another class's object, is refused, since its receivers share one function. So is {@code Unbound.project}, the same
+	 * choice called through its class, {@code Unbound.project(a, x)}, on two instances: its receivers share one function, and measured on
+	 * TensorFlow 2.9.3, decorated, it raises "tf.function only supports singleton tf.Variables created on the first call".
+	 */
+	@Test
+	public void testMayBuildLayersSetUpChoice() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Embedded.call", true, false, null);
+		Function swapped = findFunction(functions, "Swapped.call");
+		assertEquals("`Swapped.call` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE, swapped.getLayerBuildShape());
+		assertNull("`Swapped.call` is refused.", swapped.getPassingPrecondition());
+		Function unbound = findFunction(functions, "Unbound.project");
+		assertEquals("`Unbound.project` may first call another layer on a retrace.", FIRST_CALL_ON_RETRACE, unbound.getLayerBuildShape());
+		assertNull("`Unbound.project` is refused.", unbound.getPassingPrecondition());
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a branch on a parameter passed {@code None} by
 	 * one call and a tensor by another, {@code if mode: x = self.extra(x)}. The engine types the condition as a tensor, but a Python value
 	 * reaches it too, a mix: measured on TensorFlow 2.9.3, decorating {@code Gated.call} raises "tf.function only supports singleton
