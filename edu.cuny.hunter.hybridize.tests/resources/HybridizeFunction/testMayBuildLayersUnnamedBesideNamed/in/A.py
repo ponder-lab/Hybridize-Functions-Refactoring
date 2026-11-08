@@ -91,6 +91,22 @@ class TemplateUnnamed(tf.keras.layers.Layer):
         return x
 
 
+class DenseTemplateNoUnderscore(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.first = tf.keras.layers.Dense(4)
+        self.rest = []
+        for i in range(2):
+            self.rest.append(tf.keras.layers.Dense(4, name="dense{}".format(i)))
+
+    def call(self, x):
+        x = self.first(x)
+        for dense in self.rest:
+            x = dense(x)
+        return x
+
+
 class Net(tf.keras.Model):
 
     def __init__(self):
@@ -102,6 +118,7 @@ class Net(tf.keras.Model):
         self.counted = Counted(name="counted")
         self.subclassed = Subclassed(name="subclassed")
         self.template_unnamed = TemplateUnnamed(name="template_unnamed")
+        self.no_underscore = DenseTemplateNoUnderscore(name="no_underscore")
 
     def call(self, x):
         return (
@@ -109,6 +126,7 @@ class Net(tf.keras.Model):
                 self.subclassed(self.counted(self.apart(self.normalized(self.pair(x)))))
             ),
             self.aliased(x),
+            self.no_underscore(x),
         )
 
 

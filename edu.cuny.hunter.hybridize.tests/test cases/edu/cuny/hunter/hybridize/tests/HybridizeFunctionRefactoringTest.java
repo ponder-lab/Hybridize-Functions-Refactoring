@@ -18464,9 +18464,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code Dense}, beside {@code Dense(4, name="dense")}: Keras names a layer after its own class, {@code my_dense}, so measured, the
 	 * names stay distinct, and it isn't refused. {@code TemplateUnnamed} constructs two unnamed {@code Dense}s beside
 	 * {@code Dense(4, name="dense_{}".format(i))} for {@code i in range(2)}: measured alone, the second unnamed one and the loop's second
-	 * are both named {@code dense_1}, and it is refused. {@code Aliased} constructs {@code Convolution2D(4, 1)}, an alias Keras names after
-	 * the class it names, {@code conv2d}, beside {@code Conv2D(4, 1, name="conv2d")}: measured, both are named {@code conv2d}, and the save
-	 * fails. A library alias is named after each of its bases below {@code Layer}, which would refuse it.
+	 * are both named {@code dense_1}, and it is refused. {@code DenseTemplateNoUnderscore} fills {@code "dense{}"} beside an unnamed
+	 * {@code Dense}: a fill is an integer, so {@code dense0} and {@code dense1} never equal {@code dense} or {@code dense_<n>}; measured
+	 * alone, the names stay distinct, and it isn't refused. {@code Aliased} constructs {@code Convolution2D(4, 1)}, an alias Keras names
+	 * after the class it names, {@code conv2d}, beside {@code Conv2D(4, 1, name="conv2d")}: measured, both are named {@code conv2d}, and
+	 * the save fails. A library alias is named after each of its bases below {@code Layer}, which would refuse it.
 	 * <p>
 	 * TODO: The engine models no object for a {@code Convolution2D} construction (https://github.com/wala/ML/issues/1236), so the sublayer
 	 * is invisible and {@code Aliased.call} is a missed refusal until the engine models it. {@code SeparableConvolution1D} and
@@ -18483,7 +18485,57 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Counted.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Subclassed.call", true, false, null);
 		assertMayBuildLayers(functions, "TemplateUnnamed.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "DenseTemplateNoUnderscore.call", true, false, null);
 		assertMayBuildLayers(functions, "Aliased.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with unnamed sublayers constructed on both sides of a
+	 * trace. Keras counts the names it makes per graph, so a layer constructed during the trace restarts the count. Each {@code Block}
+	 * constructs a {@code Dense} in {@code __init__}, before the trace, and another in {@code build}, which runs when {@code Top.call}
+	 * first calls the block, during the trace. Measured on TensorFlow 2.9.3, decorating {@code Top.call} names both of {@code h0}'s
+	 * {@code h0/dense/kernel:0}, and the HDF5 save fails, so it is refused for the colliding names. {@code LazyTop.call} constructs both of
+	 * its block's {@code Dense}s during the trace, and {@code Block.call} constructs none, since a layer's own {@code build} runs before
+	 * its trace; decorated, each keeps its variables' names distinct, and neither is refused. {@code HelperBlock} constructs both of its
+	 * {@code Dense}s through one helper, {@code make_dense}, called from {@code __init__} and from {@code build}, so the helper runs on
+	 * both sides of the trace: measured on TensorFlow 2.9.3, with nothing unnamed constructed before it, decorating {@code HelperTop.call}
+	 * names both of {@code h0}'s {@code h0/dense/kernel:0}, and it is refused. {@code WrapTop1} through {@code WrapTop6} call it through
+	 * chains of one to six wrappers; measured on TensorFlow 2.9.3, {@code WrapTop3} alone collides as {@code HelperTop} does, and each is
+	 * refused. Even through six wrappers the analysis keeps a node of {@code make_dense} per call site, so none of these runs one node on
+	 * both sides of the trace. {@code MethodBlock} constructs both of its {@code Dense}s through its own method, {@code make}, called on
+	 * the same receiver from {@code __init__} and from {@code build}: measured on TensorFlow 2.9.3, with nothing unnamed constructed before
+	 * it, decorating {@code MethodTop.call} names both of {@code h0}'s {@code h0/dense/kernel:0}, and it is refused. The analysis keeps a
+	 * node of {@code make} per {@code build} or {@code __init__} it is reached from, too, so no row here runs one node on both sides of the
+	 * trace, and counting such a node on both sides isn't witnessed.
+	 */
+	@Test
+	public void testMayBuildLayersTraceCounter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Top.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "LazyTop.call", true, false, null);
+		assertMayBuildLayers(functions, "HelperTop.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop1.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop2.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop3.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop4.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop5.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "WrapTop6.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "MethodTop.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Block.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a layer constructing one unnamed {@code Dense}
+	 * in {@code __init__} and another in its own {@code build}. Keras runs a layer's {@code build} before tracing its {@code call}, so both
+	 * are constructed before the trace: measured on TensorFlow 2.9.3, decorating {@code Mixed.call} names them {@code dense} and
+	 * {@code dense_1}, and it isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersTraceCounterOwnBuild() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Mixed.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
@@ -18519,14 +18571,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * keeps the weights' names distinct across two traces. Two of the three {@code Encoder}s are named {@code encoder}, one each in
 	 * {@code Left} and {@code Right}, but a receiver's own name is dropped with its scope, so it collides with nothing in its trace.
 	 * {@code Left.call} and {@code Right.call} each reach one {@code Encoder}, whose {@code __init__} forwards its own {@code **kwargs}
-	 * through {@code super().__init__(**kwargs)}: that passes only the constructing call's {@code name="encoder"}, so neither is refused.
+	 * through {@code super().__init__(**kwargs)}: that passes only the constructing call's {@code name="encoder"}. But their
+	 * {@code Encoder} constructs its second {@code Dense} in {@code build}, which runs during their trace, where Keras restarts its count
+	 * of the names it makes, and its first before it, so both may be named {@code dense}: measured on TensorFlow 2.9.3, with {@code Left}
+	 * constructed first, decorating {@code Left.call} names both {@code encoder/dense/kernel:0}. Whether they collide depends on how many
+	 * unnamed {@code Dense}s precede, so each is refused for the colliding names.
 	 */
 	@Test
 	public void testMayBuildLayersBuiltSublayers() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Encoder.call", true, false, null);
-		assertMayBuildLayers(functions, "Left.call", true, false, null);
-		assertMayBuildLayers(functions, "Right.call", true, false, null);
+		assertMayBuildLayers(functions, "Left.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "Right.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
