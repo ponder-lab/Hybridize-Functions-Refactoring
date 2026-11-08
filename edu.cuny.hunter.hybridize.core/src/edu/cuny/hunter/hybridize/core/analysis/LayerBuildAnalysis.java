@@ -122,11 +122,13 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * it, which is the same whenever a layer is called by its holder, but not for a layer passed to another's {@code call} and built there. Any
  * other name that is not one constant string may collide with any other and refuses. A sublayer constructed without a name, or with
  * {@code None}, gets one from Keras, its class's in snake case, as {@code dense}, or that with {@code _<n>} appended; Keras counts only the
- * names it makes, so a sibling's constant name, or a name a sibling's template fills, may be one of them, which refuses. The front end
- * reads an f-string as the one constant string of its source text, opening quote included, which counts as computed until the engine reads
- * it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may pass any name, which
- * counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling {@code __init__}'s own
- * {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed, which are read there.</li>
+ * names it makes, so a sibling's constant name, or a name a sibling's template fills, may be one of them, which refuses. It counts them per
+ * graph, so one constructed during the trace, as a sublayer's lazily run {@code build} does, may take the name of a sibling constructed
+ * before it, which refuses. The front end reads an f-string as the one constant string of its source text, opening quote included, which
+ * counts as computed until the engine reads it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as
+ * {@code Dense(**config)} does, may pass any name, which counts as computed too, and so does a base's {@code __init__} call unpacking
+ * anything but the calling {@code __init__}'s own {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the
+ * constructing call passed, which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
@@ -1305,13 +1307,11 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff the engine shows that {@code value}, a branch's condition, takes the same path on every trace: its points-to set is one
-	 * constant, the same in every context of the node's function, so it is one literal or module constant whatever the call, or the engine
-	 * types it as a tensor, and no Python value, in every context, whose branch AutoGraph traces both arms of, so the first trace makes the
-	 * first call. Anything else may vary: a value whose points-to set is empty or holds two constants, and a mix, such as a tensor in one
-	 * context or call and {@code None} or a Python {@code bool} in another, which takes a Python branch on one trace and a tensor branch on
-	 * another. A context whose points-to set is empty but which the engine types as a tensor counts as a tensor with no Python value, so a
-	 * Python value the engine doesn't model, merged there, is hidden; that is rare, since a Python {@code bool} mostly has a key.
+	 * True iff the engine shows that {@code value}, a branch's condition, takes the same path on every trace: the engine types it as a
+	 * tensor, and no Python value, in every context of the node's function, so AutoGraph traces both arms of its branch and the first trace
+	 * makes the first call. A Python value, even one constant in every context, may vary: a points-to set may not hold every value a call
+	 * outside the analysis passes. A context whose points-to set is empty but which the engine types as a tensor counts as a tensor with no
+	 * Python value, so a Python value the engine doesn't model, merged there, is hidden.
 	 *
 	 * @param node The node of {@code value}.
 	 * @param value A value number of {@code node}.
@@ -1319,28 +1319,23 @@ class LayerBuildAnalysis {
 	 */
 	private boolean isFixedByEngine(CGNode node, int value) {
 		boolean anyTensor = false;
-		Set<InstanceKey> constants = new HashSet<>();
 
 		for (CGNode context : this.callGraph.getNodes(node.getMethod().getReference())) {
 			PointerKey pointerKey = this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(context, value);
-			OrdinalSet<InstanceKey> pointsTo = this.getPointerAnalysis().getPointsToSet(pointerKey);
 			boolean pythonValue = false;
 
-			for (InstanceKey instanceKey : pointsTo)
+			for (InstanceKey instanceKey : this.getPointerAnalysis().getPointsToSet(pointerKey))
 				if (instanceKey instanceof ConstantKey<?> || isPythonScalarKey(instanceKey))
 					pythonValue = true;
 
-			if (this.tensorTypedKeys.containsKey(pointerKey) && !pythonValue)
-				anyTensor = true;
-			else if (pointsTo.size() == 1 && pointsTo.iterator().next() instanceof ConstantKey<?> constant)
-				constants.add(constant);
-			else
-				// Empty in a context is unknown there; a tensor alongside a Python value is a mix.
+			// A Python value may be another on another trace, however few the engine shows; a tensor alongside one is a mix.
+			if (!this.tensorTypedKeys.containsKey(pointerKey) || pythonValue)
 				return false;
+
+			anyTensor = true;
 		}
 
-		// Every context a tensor, or every context the same one constant.
-		return anyTensor ? constants.isEmpty() : constants.size() == 1;
+		return anyTensor;
 	}
 
 	/**
@@ -1469,6 +1464,13 @@ class LayerBuildAnalysis {
 
 		Map<CGNode, Names> names = new HashMap<>();
 
+		// Keras counts the names it makes per graph, so an unnamed sublayer constructed during the trace, as one a sublayer's `build` makes
+		// when the method first calls it, restarts the count and may take the name of a sibling constructed before the trace. The
+		// receiver's own `build` runs before the trace. A node may run on both sides, as a helper both `__init__` and a lazily run `build`
+		// call does: it runs during the trace when the method reaches it, and before it when an entry point reaches it without the method.
+		Set<CGNode> traced = this.getReachable(nodes, Collections.emptySet());
+		Set<CGNode> untraced = this.getReachable(Collections.singleton(this.callGraph.getFakeRootNode()), nodes);
+
 		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.objects().entrySet()) {
 			Names sublayerNames = this.getNames(sublayer.getKey(), sublayer.getValue());
 
@@ -1487,6 +1489,10 @@ class LayerBuildAnalysis {
 		// The classes Keras may name each unnamed sublayer after, by its parent and its own class.
 		Map<CGNode, Map<String, Set<String>>> unnamedByParent = new HashMap<>();
 
+		// The names Keras may make for each parent's unnamed sublayers during the trace and before it.
+		Map<CGNode, Set<String>> generatedInTrace = new HashMap<>();
+		Map<CGNode, Set<String>> generatedOutside = new HashMap<>();
+
 		for (Map.Entry<CGNode, Set<InstanceKey>> sublayer : sublayers.objects().entrySet()) {
 			CGNode allocator = sublayer.getKey();
 			Names sublayerNames = names.get(allocator);
@@ -1497,6 +1503,17 @@ class LayerBuildAnalysis {
 					unnamedByParent.computeIfAbsent(parent, k -> new TreeMap<>())
 							.computeIfAbsent(getSimpleName(allocatedClass.getName()), k -> new TreeSet<>())
 							.addAll(this.getNamingClasses(allocatedClass));
+					for (String namingClass : this.getNamingClasses(allocatedClass)) {
+						String generated = toSnakeCase(namingClass);
+
+						for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(allocator))) {
+							if (traced.contains(caller))
+								generatedInTrace.computeIfAbsent(parent, k -> new TreeSet<>()).add(generated);
+
+							if (untraced.contains(caller) || !traced.contains(caller))
+								generatedOutside.computeIfAbsent(parent, k -> new TreeSet<>()).add(generated);
+						}
+					}
 				}
 
 				Map<String, CGNode> constants = constantsByParent.computeIfAbsent(parent, k -> new HashMap<>());
@@ -1562,7 +1579,35 @@ class LayerBuildAnalysis {
 									"an unnamed `" + unnamed.getKey() + "` sublayer may be named as `" + template + "` fills"));
 				}
 
+		for (Map.Entry<CGNode, Set<String>> parent : generatedInTrace.entrySet())
+			for (String generated : parent.getValue())
+				if (generatedOutside.getOrDefault(parent.getKey(), Collections.emptySet()).contains(generated))
+					return Optional.of(new Verdict(LayerBuildShape.COLLIDING_NAMES,
+							"unnamed sublayers constructed during the trace and before it may both be named `" + generated + "`"));
+
 		return Optional.empty();
+	}
+
+	/**
+	 * The nodes {@code roots} reach in the call graph without passing through {@code avoiding}, the roots included.
+	 *
+	 * @param roots Nodes of the call graph.
+	 * @param avoiding Nodes not to pass through.
+	 * @return The nodes reachable from the roots.
+	 */
+	private Set<CGNode> getReachable(Set<CGNode> roots, Set<CGNode> avoiding) {
+		Set<CGNode> ret = new HashSet<>(roots);
+		Deque<CGNode> worklist = new ArrayDeque<>(roots);
+
+		while (!worklist.isEmpty())
+			for (Iterator<CGNode> succNodes = this.callGraph.getSuccNodes(worklist.remove()); succNodes.hasNext();) {
+				CGNode next = succNodes.next();
+
+				if (!avoiding.contains(next) && ret.add(next))
+					worklist.add(next);
+			}
+
+		return ret;
 	}
 
 	/**
@@ -1717,7 +1762,9 @@ class LayerBuildAnalysis {
 	 * True iff two templates, each with one {@code {}} field a loop's index fills, may fill the same name, as {@code "h{}"} with {@code 10}
 	 * and {@code "h1{}"} with {@code 0} both fill {@code h10}. A fill is the string of an integer, so a shared name requires one template's
 	 * text before its field to start the other's, and one's text after its field to end the other's. Templates failing either, as
-	 * {@code "h{}"} and {@code "ln_{}"} do, never share a name.
+	 * {@code "h{}"} and {@code "ln_{}"} do, never share a name. Then what the longer prefix has beyond the shorter begins the shorter's
+	 * fill, so it must begin with a digit or {@code -}, and what the longer suffix has beyond the shorter ends the other's fill, so it must
+	 * end with a digit: {@code "dense{}"} never fills what {@code "dense_{}"} does, nor {@code dense} itself.
 	 *
 	 * @param first A template with one {@code {}} field.
 	 * @param second Another template with one {@code {}} field.
@@ -1730,8 +1777,18 @@ class LayerBuildAnalysis {
 		String secondPrefix = second.substring(0, secondField);
 		String firstSuffix = first.substring(firstField + 2);
 		String secondSuffix = second.substring(secondField + 2);
-		return (firstPrefix.startsWith(secondPrefix) || secondPrefix.startsWith(firstPrefix))
-				&& (firstSuffix.endsWith(secondSuffix) || secondSuffix.endsWith(firstSuffix));
+		if (!(firstPrefix.startsWith(secondPrefix) || secondPrefix.startsWith(firstPrefix))
+				|| !(firstSuffix.endsWith(secondSuffix) || secondSuffix.endsWith(firstSuffix)))
+			return false;
+
+		// The longer prefix's excess is the start of the other's fill, and the longer suffix's excess the end of it.
+		String prefixExcess = firstPrefix.length() > secondPrefix.length() ? firstPrefix.substring(secondPrefix.length())
+				: secondPrefix.substring(firstPrefix.length());
+		String suffixExcess = firstSuffix.length() > secondSuffix.length()
+				? firstSuffix.substring(0, firstSuffix.length() - secondSuffix.length())
+				: secondSuffix.substring(0, secondSuffix.length() - firstSuffix.length());
+		return (prefixExcess.isEmpty() || Character.isDigit(prefixExcess.charAt(0)) || prefixExcess.charAt(0) == '-')
+				&& (suffixExcess.isEmpty() || Character.isDigit(suffixExcess.charAt(suffixExcess.length() - 1)));
 	}
 
 	/**
@@ -1748,8 +1805,8 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code name} is a name {@code template} may be filled into: the template's text around its one {@code {}} field, with any
-	 * text between.
+	 * True iff {@code name} is a name {@code template} may be filled into: the template's text around its one {@code {}} field, with an
+	 * integer between, as a loop's index fills it.
 	 *
 	 * @param template A template with one {@code {}} field.
 	 * @param name A constant name.
@@ -1759,7 +1816,8 @@ class LayerBuildAnalysis {
 		int field = template.indexOf("{}");
 		String prefix = template.substring(0, field);
 		String suffix = template.substring(field + 2);
-		return name.length() >= prefix.length() + suffix.length() && name.startsWith(prefix) && name.endsWith(suffix);
+		return name.length() > prefix.length() + suffix.length() && name.startsWith(prefix) && name.endsWith(suffix)
+				&& name.substring(prefix.length(), name.length() - suffix.length()).matches("-?[0-9]+");
 	}
 
 	/**
