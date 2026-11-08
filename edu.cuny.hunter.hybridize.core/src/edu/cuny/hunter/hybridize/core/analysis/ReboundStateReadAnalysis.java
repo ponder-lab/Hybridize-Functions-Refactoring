@@ -104,6 +104,9 @@ class ReboundStateReadAnalysis {
 	/** The set-up method types of each class, by the class's type name (see {@link #getSetUpMethodTypes(InstanceKey)}). */
 	private final Map<TypeName, Set<TypeReference>> setUpMethodTypes = new HashMap<>();
 
+	/** Each summary node's fields, with whether all its writes to each are to its own allocation (see {@link #getOwnAllocationWrites}). */
+	private final Map<CGNode, Map<InstanceFieldPointerKey, Boolean>> ownAllocationWrites = new HashMap<>();
+
 	/** The fields some node writes outside the methods setting their objects up, over the whole program; computed on first use. */
 	private Set<InstanceFieldPointerKey> reboundFields;
 
@@ -448,22 +451,38 @@ class ReboundStateReadAnalysis {
 		if (site == null || !node.equals(site.getNode()) || ir == null)
 			return false;
 
-		DefUse du = node.getDU();
-		boolean wrote = false;
+		return this.getOwnAllocationWrites(node, ir).getOrDefault(field, false);
+	}
 
-		for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
-			if (this.modRef.getMod(node, this.heapModel, this.pointerAnalysis, instruction, null).contains(field)) {
-				int ref = instruction instanceof SSAPutInstruction put ? put.getRef()
-						: instruction instanceof AstPropertyWrite write ? write.getObjectRef() : -1;
+	/**
+	 * For each field {@code node}'s instructions write, whether every write to it is to an object that {@code node}'s own allocation of
+	 * that field's object's site defines: one pass over the node's instructions, memoized, since a summary may write many fields and the
+	 * call graph and pointer analysis are final here.
+	 *
+	 * @param node A node the engine synthesizes.
+	 * @param ir The node's IR.
+	 * @return Each field written, mapped to whether all its writes are anchored on the node's own allocation.
+	 */
+	private Map<InstanceFieldPointerKey, Boolean> getOwnAllocationWrites(CGNode node, IR ir) {
+		return this.ownAllocationWrites.computeIfAbsent(node, k -> {
+			Map<InstanceFieldPointerKey, Boolean> ret = new HashMap<>();
+			DefUse du = node.getDU();
 
-				if (ref == -1 || !(du.getDef(ref) instanceof SSANewInstruction allocation)
-						|| !allocation.getNewSite().equals(site.getSite()))
-					return false;
+			for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+				for (PointerKey written : this.modRef.getMod(node, this.heapModel, this.pointerAnalysis, instruction, null)) {
+					if (!(written instanceof InstanceFieldPointerKey field))
+						continue;
 
-				wrote = true;
-			}
+					AllocationSiteInNode site = findAllocationSiteInNode(field.getInstanceKey());
+					int ref = instruction instanceof SSAPutInstruction put ? put.getRef()
+							: instruction instanceof AstPropertyWrite write ? write.getObjectRef() : -1;
+					boolean anchored = site != null && ref != -1 && du.getDef(ref) instanceof SSANewInstruction allocation
+							&& allocation.getNewSite().equals(site.getSite());
+					ret.merge(field, anchored, Boolean::logicalAnd);
+				}
 
-		return wrote;
+			return ret;
+		});
 	}
 
 	/**
