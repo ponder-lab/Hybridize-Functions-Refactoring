@@ -18443,6 +18443,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testMayBuildLayersZippedPasts() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Stack.call", true, false, FIRST_CALL_ON_RETRACE);
+		assertTrue("`Stack.call` is refused for a layer its loop may select differently on a retrace.",
+				findFunction(functions, "Stack.call").getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+						.contains("may call a different layer on a retrace"));
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
