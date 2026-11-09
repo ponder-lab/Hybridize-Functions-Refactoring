@@ -18310,6 +18310,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1273 with layers' {@code call}s that construct a layer in
+	 * their bodies, one creating no variables and one creating its variable in its {@code __init__}, as deep_recommenders'
+	 * {@code MultiHeadAttention.call} constructs a {@code ScaledDotProductAttention}. Each also calls a {@code Dense} built in its
+	 * {@code __init__}, so it may build a layer. Measured on TensorFlow 2.9.3, decorating {@code Heads.call}, which constructs the
+	 * weightless {@code Attention}, retraces and matches eager, since a trace creates no variables; decorating {@code Scaled.call}, which
+	 * constructs {@code Scale}, raises on the second trace. Only {@code Scaled.call} is refused for the construction.
+	 */
+	@Test
+	public void testMayBuildLayersConstructedWeightless() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Heads.call", true, false, null);
+		assertMayBuildLayers(functions, "Scaled.call", true, false, CONSTRUCTED_IN_BODY);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with layers' {@code call}s that first call a sublayer
 	 * under a branch whose condition can differ between traces: a parameter in {@code Gated.call}, {@code if flag: x = self.b(x)}, and a
 	 * field that another method, {@code enable}, rebinds in {@code Toggled.call}, {@code if self.use_b: x = self.b(x)}. Measured on

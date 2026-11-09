@@ -85,7 +85,9 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * <ol>
  * <li>{@link LayerBuildShape#CONSTRUCTED_IN_BODY}: the engine allocates an object of a class reaching {@code tf.keras.layers.Layer} or
  * {@code tf.keras.Model} through its Python bases, at an allocation site in the method or in a callee it reaches other than a layer's own
- * {@code __init__} or {@code build}, which set a layer up once. Each trace creates new variables.</li>
+ * {@code __init__} or {@code build}, which set a layer up once, and the layer may create variables: its {@code __init__}, or a call in the
+ * trace whose callee may be it, may reach {@code Layer.add_weight}. Each trace then creates new variables. A layer that creates none, such
+ * as one whose {@code call} only computes with tensors, is constructed afresh on each trace harmlessly.</li>
  * <li>{@link LayerBuildShape#FIRST_CALL_ON_RETRACE}: a call whose callees may reach {@code Layer.add_weight} lies in a block of the method,
  * or of a program function it reaches, that is control dependent, transitively, on a branch or loop condition that can differ between
  * traces, and the branch decides whether the callee is first called: a trace can reach the branch without calling the callee, and an arm of
@@ -385,10 +387,12 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * Finds an allocation of a layer or a model at a site in one of {@code traced}.
+	 * Finds an allocation of a layer or a model that may create variables ({@link #mayCreateVariables(InstanceKey, Set)}) at a site in one
+	 * of {@code traced}.
 	 *
 	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
-	 * @return {@link LayerBuildShape#CONSTRUCTED_IN_BODY} with the class allocated, or empty if no traced node allocates a layer.
+	 * @return {@link LayerBuildShape#CONSTRUCTED_IN_BODY} with the class allocated, or empty if no traced node allocates a layer that may
+	 *         create variables.
 	 */
 	private Optional<Verdict> findConstruction(Set<CGNode> traced) {
 		for (CGNode node : traced) {
@@ -409,13 +413,75 @@ class LayerBuildAnalysis {
 
 					Optional<IClass> allocatedClass = allocatedClass(instanceKey);
 
-					if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference()))
+					if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference())
+							&& this.mayCreateVariables(instanceKey, traced))
 						return Optional.of(new Verdict(LayerBuildShape.CONSTRUCTED_IN_BODY,
 								"it constructs `" + getSimpleName(allocatedClass.get().getName()) + "`"));
 				}
 		}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * True iff {@code layer}, a layer constructed in a trace, may create variables: its {@code __init__}, which the trace runs, or a call
+	 * in one of {@code traced} whose callee may be it, which runs its {@code __call__} and so its {@code build} and {@code call}, may reach
+	 * {@code Layer.add_weight}.
+	 *
+	 * @param layer The layer's object.
+	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
+	 * @return True iff constructing {@code layer} on each trace may create new variables on each.
+	 */
+	private boolean mayCreateVariables(InstanceKey layer, Set<CGNode> traced) {
+		for (CGNode node : traced) {
+			// The trace runs the layer's `__init__`, which `getTracedNodes` leaves out as setting a layer up.
+			for (Iterator<CGNode> succNodes = this.callGraph.getSuccNodes(node); succNodes.hasNext();) {
+				CGNode next = succNodes.next();
+
+				if (getFunctionName(next).equals(PythonTypes.INIT_METHOD_NAME) && this.isLayerSetUp(next) && this.receives(next, layer)
+						&& this.reachesAddWeight(next))
+					return true;
+			}
+
+			IR ir = node.getIR();
+
+			if (ir == null)
+				continue;
+
+			for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+				if (instruction instanceof SSAAbstractInvokeInstruction call && this.getCallees(node, call).contains(layer)
+						&& this.callGraph.getPossibleTargets(node, call.getCallSite()).stream().anyMatch(this::reachesAddWeight))
+					return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code object} may be the receiver, the {@code self}, of {@code node}, an instance method.
+	 *
+	 * @param node A node of an instance method.
+	 * @param object An object.
+	 * @return True iff the receiver's points-to set holds {@code object}.
+	 */
+	private boolean receives(CGNode node, InstanceKey object) {
+		IR ir = node.getIR();
+
+		if (ir == null)
+			return true;
+
+		// Parameter value numbers: slot 0 is the function object itself; slot 1 is the receiver of an instance method.
+		int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
+
+		if (parameters.length < 2)
+			return true;
+
+		for (InstanceKey instanceKey : this.getPointerAnalysis()
+				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, parameters[1])))
+			if (instanceKey.equals(object))
+				return true;
+
+		return false;
 	}
 
 	/**
