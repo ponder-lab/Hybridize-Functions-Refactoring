@@ -18462,16 +18462,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * parameter, so it is refused.
 	 * <p>
 	 * TODO: A release would need the length of a {@code tf.unstack} result (https://github.com/wala/ML/issues/1238) and of a list a loop
-	 * appends to, which isn't tracked.
+	 * appends to, which isn't tracked, and the varying-parameter check to keep the elements of {@code zip} and {@code enumerate} apart by
+	 * the sequence each comes from, since the blocks come from {@code self.blocks}, not from {@code pasts}.
 	 */
 	@Test
 	public void testMayBuildLayersZippedPasts() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Stack.call", true, false, FIRST_CALL_ON_RETRACE);
-		assertTrue("`Stack.call` is refused for a layer its loop may select differently on a retrace.",
+		assertTrue("`Stack.call` is refused for a layer read from what its caller passes.",
 				findFunction(functions, "Stack.call").getStatus()
 						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
-						.contains("may call a different layer on a retrace"));
+						.contains("calls a layer passed to it, which may differ on a retrace"));
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
