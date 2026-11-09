@@ -18453,6 +18453,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with the loop of NLPGNN's {@code GPT2.call}:
+	 * {@code Stack.call} calls its blocks in {@code for i, (block, layer_past) in enumerate(zip(self.blocks, pasts))}, where {@code pasts}
+	 * is {@code tf.unstack(past, axis=1)} for a {@code past} passed in, or {@code [None] * self.num_layers}. {@code zip} stops at the
+	 * shorter sequence, so every block is called on every trace only if {@code pasts} is as long as {@code self.blocks}. Measured on
+	 * TensorFlow 2.9.3, decorating {@code Stack.call} and calling it with no {@code past}, with the {@code presents} it returned, and on a
+	 * new shape runs without error, since both lengths are the layer count. The analysis can't show that: {@code pasts} is read from a
+	 * parameter, so it is refused.
+	 * <p>
+	 * TODO: A release would need the length of a {@code tf.unstack} result (https://github.com/wala/ML/issues/1238) and of a list a loop
+	 * appends to, which isn't tracked, and the varying-parameter check to keep the elements of {@code zip} and {@code enumerate} apart by
+	 * the sequence each comes from, since the blocks come from {@code self.blocks}, not from {@code pasts}.
+	 */
+	@Test
+	public void testMayBuildLayersZippedPasts() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "Stack.call", true, false, FIRST_CALL_ON_RETRACE);
+		assertTrue("`Stack.call` is refused for a layer read from what its caller passes.",
+				findFunction(functions, "Stack.call").getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+						.contains("calls a layer passed to it, which may differ on a retrace"));
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with an unnamed sublayer beside one given the name
 	 * Keras would generate for it. Keras names an unnamed layer after its class in snake case, {@code dense} or {@code dense_<n>}, counting
 	 * only the names it makes, so {@code Dense(4)} beside {@code Dense(4, name="dense")} in {@code Pair} are both named {@code dense}, and
