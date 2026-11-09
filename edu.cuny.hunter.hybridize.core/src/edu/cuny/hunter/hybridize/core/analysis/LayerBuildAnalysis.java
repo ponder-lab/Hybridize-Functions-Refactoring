@@ -88,9 +88,10 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * {@code __init__} or {@code build}, which set a layer up once, and the layer may create variables. Each trace then creates new variables.
  * A model always does, since its {@code __init__} creates Keras's step counters without {@code add_weight}. A layer does when its
  * {@code __init__}, or a call in the trace whose callee may be it, may reach {@code Layer.add_weight}, when such a call has no target the
- * engine resolves, or when it escapes, passed to a call or stored, since code the walk doesn't see, such as a library's, may then call it.
- * A layer that creates none, such as one whose {@code call} only computes with tensors, is constructed afresh on each trace
- * harmlessly.</li>
+ * engine resolves, or when it escapes: any use other than as a call's callee, such as an argument, a store, a return or a read of one of
+ * its attributes, since code the walk doesn't see, such as a library's, may then call it, and a call through one of its bound methods, as
+ * {@code layer.build(shape)}, has the method, not the layer, as its callee. A layer that creates none, such as one whose {@code call} only
+ * computes with tensors, is constructed afresh on each trace harmlessly.</li>
  * <li>{@link LayerBuildShape#FIRST_CALL_ON_RETRACE}: a call whose callees may reach {@code Layer.add_weight} lies in a block of the method,
  * or of a program function it reaches, that is control dependent, transitively, on a branch or loop condition that can differ between
  * traces, and the branch decides whether the callee is first called: a trace can reach the branch without calling the callee, and an arm of
@@ -430,9 +431,12 @@ class LayerBuildAnalysis {
 	/**
 	 * True iff {@code layer}, a layer constructed in a trace, may create variables: its {@code __init__}, which the trace runs, or a call
 	 * in one of {@code traced} whose callee may be it, which runs its {@code __call__} and so its {@code build} and {@code call}, may reach
-	 * {@code Layer.add_weight}, or such a call has no target the engine resolves. A layer that escapes, passed to a call or stored, as
-	 * {@code tf.keras.Sequential([layer])} stores it, may be called by code whose calls the walk doesn't see, such as a library's, so it
-	 * may too.
+	 * {@code Layer.add_weight}, or such a call has no target the engine resolves. A layer that escapes may too: any use other than as a
+	 * call's callee, such as an argument, a store, as {@code tf.keras.Sequential([layer])} makes, a return or a read of one of its
+	 * attributes, may let code the walk doesn't see, such as a library's, call it, and a call through one of its bound methods, as
+	 * {@code layer.build(shape)}, has the method as its callee. A use in one of the layer's own methods, where the front end may store
+	 * {@code self} while laying out a frame, is not an escape, so such a method passing {@code self} on, as {@code TimeDistributed(self)}
+	 * would in its {@code call}, is a known gap.
 	 *
 	 * @param layer The layer's object.
 	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
@@ -474,7 +478,8 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code instruction} uses {@code object} other than as the callee of a call: passes it to a call, stores it, or returns it.
+	 * True iff {@code instruction} uses {@code object} other than as the callee of a call, such as an argument, a store, a return or a read
+	 * of one of its attributes.
 	 *
 	 * @param node The node of {@code instruction}.
 	 * @param instruction An instruction of {@code node}.

@@ -18323,6 +18323,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code __init__} creates Keras's step counters, so even the last raises.</li>
 	 * <li>{@code ModelInBody.call} constructs {@code Softmax}, a model creating no variables of its own.</li>
 	 * <li>{@code WrappedDense.call} passes a {@code Dense} it constructs to a {@code TimeDistributed}, which calls it.</li>
+	 * <li>{@code BuiltDirectly.call} constructs a {@code Scale2} and calls its {@code build} and {@code call} methods, whose callee is the
+	 * bound method, not the layer.</li>
 	 * </ul>
 	 * {@code WrappedWeightless.call} passes the weightless {@code Attention} to a {@code TimeDistributed}. Decorating it retraces fine, but
 	 * a layer passed to a call may be called by code the analysis doesn't follow, such as a library's, so it is refused too,
@@ -18333,6 +18335,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Heads.call", true, false, null);
 		assertMayBuildLayers(functions, "Scaled.call", true, false, CONSTRUCTED_IN_BODY);
+		assertMayBuildLayers(functions, "BuiltDirectly.call", true, false, CONSTRUCTED_IN_BODY);
 		assertMayBuildLayers(functions, "StackedDense.call", true, false, CONSTRUCTED_IN_BODY);
 		assertMayBuildLayers(functions, "StackedScale.call", true, false, CONSTRUCTED_IN_BODY);
 		assertMayBuildLayers(functions, "StackedWeightless.call", true, false, CONSTRUCTED_IN_BODY);

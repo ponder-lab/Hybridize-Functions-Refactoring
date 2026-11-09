@@ -116,6 +116,18 @@ class WrappedWeightless(tf.keras.layers.Layer):
         )
 
 
+class BuiltDirectly(tf.keras.layers.Layer):
+
+    def __init__(self):
+        super().__init__()
+        self.proj = tf.keras.layers.Dense(4)
+
+    def call(self, x):
+        layer = Scale2()
+        layer.build(x.shape)
+        return layer.call(self.proj(x))
+
+
 class Net(tf.keras.Model):
 
     def __init__(self):
@@ -128,13 +140,14 @@ class Net(tf.keras.Model):
         self.model_in_body = ModelInBody()
         self.wrapped_dense = WrappedDense()
         self.wrapped_weightless = WrappedWeightless()
+        self.built_directly = BuiltDirectly()
 
     def call(self, x):
         y = self.scaled(self.heads(x))
         y = self.model_in_body(
             self.stacked_weightless(self.stacked_scale(self.stacked_dense(y)))
         )
-        return self.wrapped_dense(y), self.wrapped_weightless(x)
+        return self.wrapped_dense(y), self.wrapped_weightless(x), self.built_directly(x)
 
 
 model = Net()
