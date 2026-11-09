@@ -438,7 +438,8 @@ public enum PreconditionFailure {
 	 * nothing. A method is refused only for one of three shapes, which the failure's message names:
 	 * <ol>
 	 * <li>{@link LayerBuildShape#CONSTRUCTED_IN_BODY}: it, or a function it calls other than a layer's {@code __init__} or {@code build},
-	 * constructs a layer, so each trace creates new variables, and the second raises.</li>
+	 * constructs a layer that may create variables, so each trace creates new ones, and the second raises. A model always may; a layer
+	 * creating none, constructed and only called in the trace, is constructed afresh harmlessly.</li>
 	 * <li>{@link LayerBuildShape#FIRST_CALL_ON_RETRACE}: it, or a function it calls, may first call a layer under a branch or loop whose
 	 * condition may differ between traces, such as one depending on a parameter, on a field another method rebinds, or on a value whose
 	 * source can't be shown. A retrace then creates the layer's variables and raises.</li>

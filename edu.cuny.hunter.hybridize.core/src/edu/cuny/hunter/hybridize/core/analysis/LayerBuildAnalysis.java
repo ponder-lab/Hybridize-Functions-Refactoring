@@ -85,7 +85,13 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * <ol>
  * <li>{@link LayerBuildShape#CONSTRUCTED_IN_BODY}: the engine allocates an object of a class reaching {@code tf.keras.layers.Layer} or
  * {@code tf.keras.Model} through its Python bases, at an allocation site in the method or in a callee it reaches other than a layer's own
- * {@code __init__} or {@code build}, which set a layer up once. Each trace creates new variables.</li>
+ * {@code __init__} or {@code build}, which set a layer up once, and the layer may create variables. Each trace then creates new variables.
+ * A model always does, since its {@code __init__} creates Keras's step counters without {@code add_weight}. A layer does when its
+ * {@code __init__}, or a call in the trace whose callee may be it, may reach {@code Layer.add_weight}, when such a call has no target the
+ * engine resolves, or when it escapes: any use other than as a call's callee, such as an argument, a store, a return or a read of one of
+ * its attributes, since code the walk doesn't see, such as a library's, may then call it, and a call through one of its bound methods, as
+ * {@code layer.build(shape)}, has the method, not the layer, as its callee. A layer that creates none, such as one whose {@code call} only
+ * computes with tensors, is constructed afresh on each trace harmlessly.</li>
  * <li>{@link LayerBuildShape#FIRST_CALL_ON_RETRACE}: a call whose callees may reach {@code Layer.add_weight} lies in a block of the method,
  * or of a program function it reaches, that is control dependent, transitively, on a branch or loop condition that can differ between
  * traces, and the branch decides whether the callee is first called: a trace can reach the branch without calling the callee, and an arm of
@@ -385,10 +391,12 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * Finds an allocation of a layer or a model at a site in one of {@code traced}.
+	 * Finds an allocation of a layer or a model that may create variables ({@link #mayCreateVariables(InstanceKey, Set)}) at a site in one
+	 * of {@code traced}.
 	 *
 	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
-	 * @return {@link LayerBuildShape#CONSTRUCTED_IN_BODY} with the class allocated, or empty if no traced node allocates a layer.
+	 * @return {@link LayerBuildShape#CONSTRUCTED_IN_BODY} with the class allocated, or empty if no traced node allocates a layer that may
+	 *         create variables.
 	 */
 	private Optional<Verdict> findConstruction(Set<CGNode> traced) {
 		for (CGNode node : traced) {
@@ -409,13 +417,122 @@ class LayerBuildAnalysis {
 
 					Optional<IClass> allocatedClass = allocatedClass(instanceKey);
 
-					if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference()))
+					// A model's `__init__` creates Keras's step counters as variables, without `add_weight`.
+					if (allocatedClass.isPresent() && this.isLayerClass(allocatedClass.get().getReference())
+							&& (this.isModelClass(allocatedClass.get().getReference()) || this.mayCreateVariables(instanceKey, traced)))
 						return Optional.of(new Verdict(LayerBuildShape.CONSTRUCTED_IN_BODY,
 								"it constructs `" + getSimpleName(allocatedClass.get().getName()) + "`"));
 				}
 		}
 
 		return Optional.empty();
+	}
+
+	/**
+	 * True iff {@code layer}, a layer constructed in a trace, may create variables: its {@code __init__}, which the trace runs, or a call
+	 * in one of {@code traced} whose callee may be it, which runs its {@code __call__} and so its {@code build} and {@code call}, may reach
+	 * {@code Layer.add_weight}, or such a call has no target the engine resolves. A layer that escapes may too: any use other than as a
+	 * call's callee, such as an argument, a store, as {@code tf.keras.Sequential([layer])} makes, a return or a read of one of its
+	 * attributes, may let code the walk doesn't see, such as a library's, call it, and a call through one of its bound methods, as
+	 * {@code layer.build(shape)}, has the method as its callee. A use in one of the layer's own methods, where the front end may store
+	 * {@code self} while laying out a frame, is not an escape, so such a method passing {@code self} on, as {@code TimeDistributed(self)}
+	 * would in its {@code call}, is a known gap.
+	 *
+	 * @param layer The layer's object.
+	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
+	 * @return True iff constructing {@code layer} on each trace may create new variables on each.
+	 */
+	private boolean mayCreateVariables(InstanceKey layer, Set<CGNode> traced) {
+		for (CGNode node : traced) {
+			// The trace runs the layer's `__init__`, which `getTracedNodes` leaves out as setting a layer up.
+			for (Iterator<CGNode> succNodes = this.callGraph.getSuccNodes(node); succNodes.hasNext();) {
+				CGNode next = succNodes.next();
+
+				if (getFunctionName(next).equals(PythonTypes.INIT_METHOD_NAME) && this.isLayerSetUp(next)
+						&& this.receives(next, layer, true) && this.reachesAddWeight(next))
+					return true;
+			}
+
+			IR ir = node.getIR();
+
+			if (ir == null)
+				continue;
+
+			for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions())) {
+				if (instruction instanceof SSAAbstractInvokeInstruction call && this.getCallees(node, call).contains(layer)) {
+					Set<CGNode> targets = this.callGraph.getPossibleTargets(node, call.getCallSite());
+
+					if (targets.isEmpty() || targets.stream().anyMatch(this::reachesAddWeight))
+						return true;
+				}
+
+				// Only program code: a summary, such as the constructor that passes the new layer to its `__init__`, is the engine's model.
+				// The layer's own methods, whose variable creation the calls on it reach, may store their `self` as the front end lays out
+				// a frame.
+				if (node.getMethod() instanceof AstMethod && !this.receives(node, layer, false) && this.escapes(node, instruction, layer))
+					return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * True iff {@code instruction} uses {@code object} other than as the callee of a call, such as an argument, a store, a return or a read
+	 * of one of its attributes.
+	 *
+	 * @param node The node of {@code instruction}.
+	 * @param instruction An instruction of {@code node}.
+	 * @param object An object.
+	 * @return True iff a use of {@code instruction} other than a call's callee value may be {@code object}.
+	 */
+	private boolean escapes(CGNode node, SSAInstruction instruction, InstanceKey object) {
+		for (int i = instruction instanceof SSAAbstractInvokeInstruction ? 1 : 0; i < instruction.getNumberOfUses(); i++)
+			for (InstanceKey instanceKey : this.getPointerAnalysis()
+					.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, instruction.getUse(i))))
+				if (instanceKey.equals(object))
+					return true;
+
+		return false;
+	}
+
+	/**
+	 * True iff the class {@code type} names reaches {@code tf.keras.Model} through its bases.
+	 *
+	 * @param type A class.
+	 * @return True iff the class is a model.
+	 */
+	private boolean isModelClass(TypeReference type) {
+		return Function.getClassAndBaseNames(this.builder.getClassHierarchy(), type).contains(KERAS_MODEL_TYPE.getName());
+	}
+
+	/**
+	 * True iff {@code object} may be the receiver, the {@code self}, of {@code node}, an instance method, or {@code unknown} when the node
+	 * has no IR or no receiver.
+	 *
+	 * @param node A node of an instance method.
+	 * @param object An object.
+	 * @param unknown The answer when the node's receiver can't be read.
+	 * @return True iff the receiver's points-to set holds {@code object}.
+	 */
+	private boolean receives(CGNode node, InstanceKey object, boolean unknown) {
+		IR ir = node.getIR();
+
+		if (ir == null)
+			return unknown;
+
+		// Parameter value numbers: slot 0 is the function object itself; slot 1 is the receiver of an instance method.
+		int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
+
+		if (parameters.length < 2)
+			return unknown;
+
+		for (InstanceKey instanceKey : this.getPointerAnalysis()
+				.getPointsToSet(this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, parameters[1])))
+			if (instanceKey.equals(object))
+				return true;
+
+		return false;
 	}
 
 	/**
