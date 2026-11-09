@@ -18310,18 +18310,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1273 with layers' {@code call}s that construct a layer in
-	 * their bodies, one creating no variables and one creating its variable in its {@code __init__}, as deep_recommenders'
-	 * {@code MultiHeadAttention.call} constructs a {@code ScaledDotProductAttention}. Each also calls a {@code Dense} built in its
-	 * {@code __init__}, so it may build a layer. Measured on TensorFlow 2.9.3, decorating {@code Heads.call}, which constructs the
-	 * weightless {@code Attention}, retraces and matches eager, since a trace creates no variables; decorating {@code Scaled.call}, which
-	 * constructs {@code Scale}, raises on the second trace. Only {@code Scaled.call} is refused for the construction.
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1273 with layers' {@code call}s that construct a layer or
+	 * a model in their bodies, as deep_recommenders' {@code MultiHeadAttention.call} constructs a {@code ScaledDotProductAttention}, which
+	 * creates no variables. Each also calls a {@code Dense} built in its {@code __init__}, so it may build a layer. Measured on TensorFlow
+	 * 2.9.3, decorating {@code Heads.call}, which constructs and calls the weightless {@code Attention}, retraces and matches eager, and it
+	 * is not refused. Decorating each of the others raises on the second trace, since each trace creates new variables, and each is refused
+	 * for the construction:
+	 * <ul>
+	 * <li>{@code Scaled.call} constructs {@code Scale}, which creates its variable in its {@code __init__}.</li>
+	 * <li>{@code StackedDense.call}, {@code StackedScale.call} and {@code StackedWeightless.call} construct a {@code tf.keras.Sequential}
+	 * over a {@code Dense}, a {@code Scale2} creating its variable in its {@code build}, and the weightless {@code Attention}. A model's
+	 * {@code __init__} creates Keras's step counters, so even the last raises.</li>
+	 * <li>{@code ModelInBody.call} constructs {@code Softmax}, a model creating no variables of its own.</li>
+	 * <li>{@code WrappedDense.call} passes a {@code Dense} it constructs to a {@code TimeDistributed}, which calls it.</li>
+	 * </ul>
+	 * {@code WrappedWeightless.call} passes the weightless {@code Attention} to a {@code TimeDistributed}. Decorating it retraces fine, but
+	 * a layer passed to a call may be called by code the analysis doesn't follow, such as a library's, so it is refused too,
+	 * conservatively.
 	 */
 	@Test
 	public void testMayBuildLayersConstructedWeightless() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Heads.call", true, false, null);
 		assertMayBuildLayers(functions, "Scaled.call", true, false, CONSTRUCTED_IN_BODY);
+		assertMayBuildLayers(functions, "StackedDense.call", true, false, CONSTRUCTED_IN_BODY);
+		assertMayBuildLayers(functions, "StackedScale.call", true, false, CONSTRUCTED_IN_BODY);
+		assertMayBuildLayers(functions, "StackedWeightless.call", true, false, CONSTRUCTED_IN_BODY);
+		assertMayBuildLayers(functions, "ModelInBody.call", true, false, CONSTRUCTED_IN_BODY);
+		assertMayBuildLayers(functions, "WrappedDense.call", true, false, CONSTRUCTED_IN_BODY);
+		assertMayBuildLayers(functions, "WrappedWeightless.call", true, false, CONSTRUCTED_IN_BODY);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
