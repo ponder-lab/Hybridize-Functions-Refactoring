@@ -12368,8 +12368,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * A hybrid function whose parameter has no abstract value is not de-hybridized as having no tensor parameter (P2)
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). The argument of {@code p_fmt} comes from string
-	 * formatting, an op the analysis doesn't model, so its "not a tensor" classification concluded nothing
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). The argument of {@code p_fmt} comes from
+	 * {@code str.format}, a method the analysis doesn't model, so its "not a tensor" classification concluded nothing
 	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}). The argument of {@code p_int} is a modeled literal, so its classification is a
 	 * determination and it still de-hybridizes.
 	 */
@@ -18528,13 +18528,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code Dense}: a fill is an integer, so {@code dense0} and {@code dense1} never equal {@code dense} or {@code dense_<n>}; measured
 	 * alone, the names stay distinct, and it isn't refused. {@code Aliased} constructs {@code Convolution2D(4, 1)}, an alias Keras names
 	 * after the class it names, {@code conv2d}, beside {@code Conv2D(4, 1, name="conv2d")}: measured, both are named {@code conv2d}, and
-	 * the save fails. A library alias is named after each of its bases below {@code Layer}, which would refuse it.
+	 * the save fails. A library alias is named after each of its bases below {@code Layer}, and the engine models a {@code Convolution2D}
+	 * construction as a {@code Conv2D} (https://github.com/wala/ML/issues/1236), so it is refused for the colliding names.
 	 * <p>
-	 * TODO: The engine models no object for a {@code Convolution2D} construction (https://github.com/wala/ML/issues/1236), so the sublayer
-	 * is invisible and {@code Aliased.call} is a missed refusal until the engine models it. {@code SeparableConvolution1D} and
-	 * {@code SeparableConvolution2D}, which Keras names {@code separable_conv1d} and {@code separable_conv2d}, are declared but not modeled
-	 * either; should the engine model one as the class it allocates, as it does {@code MaxPool2D} for {@code MaxPooling2D}, its generated
-	 * name must come from its target too.
+	 * TODO: {@code SeparableConvolution1D} and {@code SeparableConvolution2D}, which Keras names {@code separable_conv1d} and
+	 * {@code separable_conv2d}, are declared but not modeled; should the engine model one as the class it allocates, as it does
+	 * {@code MaxPool2D} for {@code MaxPooling2D}, its generated name must come from its target too.
 	 */
 	@Test
 	public void testMayBuildLayersUnnamedBesideNamed() throws Exception {
@@ -18546,7 +18545,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Subclassed.call", true, false, null);
 		assertMayBuildLayers(functions, "TemplateUnnamed.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "DenseTemplateNoUnderscore.call", true, false, null);
-		assertMayBuildLayers(functions, "Aliased.call", true, false, null);
+		assertMayBuildLayers(functions, "Aliased.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
@@ -18789,17 +18788,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * normally: {@code try: return self.fast(x)}, then {@code except Exception: return self.slow(x)} in {@code Broad.call} and
 	 * {@code except ValueError: return self.slow(x)} in {@code Fallback.call}. Measured on TensorFlow 2.9.3, decorating either raises
 	 * "tf.function only supports singleton tf.Variables created on the first call" on a retrace with an input {@code fast} wasn't built
-	 * for: {@code fast} raises, and the handler first calls {@code slow}. {@code Broad.call} is refused for a first call on a retrace.
-	 * <p>
-	 * TODO: A typed handler, such as {@code except ValueError:}, one with {@code as e}, or a tuple of types, leaves its callee with no
-	 * call-graph node, while {@code except Exception:} and a bare {@code except:} reach it (https://github.com/wala/ML/issues/1005), so
-	 * {@code Fallback.call}'s call of {@code slow} is invisible. {@code Fallback.call} is a missed refusal until the engine reaches it.
+	 * for: {@code fast} raises, and the handler first calls {@code slow}. The engine reaches a typed handler's calls as it does a broad
+	 * one's (https://github.com/wala/ML/issues/1005), so each is refused for a first call on a retrace.
 	 */
 	@Test
 	public void testMayBuildLayersExceptionHandler() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "Broad.call", true, false, FIRST_CALL_ON_RETRACE);
-		assertMayBuildLayers(functions, "Fallback.call", true, false, null);
+		assertMayBuildLayers(functions, "Fallback.call", true, false, FIRST_CALL_ON_RETRACE);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
@@ -19251,7 +19247,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * {@code consume} receives each element of a dataset flat-mapped from a dataset of pairs, a float32 vector of four and an int32 vector
-	 * of three. The engine has no summary for {@code flat_map}, so its element has no value and reads as no tensor.
+	 * of three. The engine models {@code flat_map}, so the element is the pair the mapped function's dataset holds, read as a container of
+	 * tensors.
 	 */
 	@Test
 	public void testInferInputSignatureIteratedDatasetFlatMap() throws Exception {
@@ -19260,21 +19257,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function consume = findFunction(this.getFunctions(), "consume");
 		Parameter element = consume.getParameters().get(0);
 
-		// TODO: https://github.com/wala/ML/issues/1214. The element is the pair the mapped function's dataset holds, so the
-		// specification should be [[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]. Flip to it
-		// once the engine models `flat_map`.
-		assertEquals("The element has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
 				element.getTensorClassificationBasis());
-
-		InferenceResult result = consume.inferInputSignature();
-		assertFalse("No specification is written.", result.signature().isPresent());
-		assertEquals("The element reads as no tensor.", Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER),
-				result.absenceReason());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
 	 * {@code consume} receives each element of a dataset interleaved from a dataset of pairs, as in
-	 * {@link #testInferInputSignatureIteratedDatasetFlatMap()}. The engine has no summary for {@code interleave} either.
+	 * {@link #testInferInputSignatureIteratedDatasetFlatMap()}. The engine models {@code interleave} too.
 	 */
 	@Test
 	public void testInferInputSignatureIteratedDatasetInterleave() throws Exception {
@@ -19283,15 +19275,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function consume = findFunction(this.getFunctions(), "consume");
 		Parameter element = consume.getParameters().get(0);
 
-		// TODO: https://github.com/wala/ML/issues/1214. As for `flat_map`, the specification should be
-		// [[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]. Flip to it once the engine models
-		// `interleave`.
-		assertEquals("The element has no abstract value.", TensorClassificationBasis.NO_ABSTRACT_VALUE,
+		assertEquals("The pair is a container of tensors.", TensorClassificationBasis.TENSOR_CONTAINER,
 				element.getTensorClassificationBasis());
-
-		InferenceResult result = consume.inferInputSignature();
-		assertFalse("No specification is written.", result.signature().isPresent());
-		assertEquals("The element reads as no tensor.", Optional.of(InferenceResult.AbsenceReason.NON_TENSOR_PARAMETER),
-				result.absenceReason());
+		assertEquals("`consume` receives the pair, member by member.",
+				"[[tf.TensorSpec(shape=(4,), dtype=tf.float32), tf.TensorSpec(shape=(3,), dtype=tf.int32)]]",
+				consume.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 }
