@@ -9952,7 +9952,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * The comprehension-built variant of the sequence reduction (#807). The analysis does not position a comprehension's elements, so the
-	 * engine gives the list no length ({@code ContainerElements.arity()} is empty), and the parameter declines with
+	 * engine gives the list no length ({@code Containers.getLength} is empty), and the parameter declines with
 	 * {@code TENSOR_CONTAINER_UNSUPPORTED}. This fixture's comprehension happens to run once, but its length is the iteration count, which
 	 * the analysis does not know: the same list read as length 1 for {@code range(3)} too (see
 	 * {@link #testInputSignatureContainerComprehensionLength()}). Before the engine answered the length, Hybridize read it off the object
@@ -10032,7 +10032,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * A dict of tensors reaching a parameter is a container of tensors by its elements' types, which the engine gives over the dict's
-	 * element keys ({@code ContainerElements.elementTypes}). A dict keyed by a string is one, and so is a dict keyed by another constant, a
+	 * element keys ({@code Containers.getElementKeys}). A dict keyed by a string is one, and so is a dict keyed by another constant, a
 	 * float or a bool, whose key the engine names as well. Each function hybridizes (P1).
 	 */
 	@Test
@@ -10050,9 +10050,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * A dict that may hold an element the analysis does not list: {@code store} writes a tensor into it under a key the analysis cannot
-	 * resolve, and then passes it to {@code read}. The engine reports the dict incomplete ({@code ContainerElements.isComplete()}) and
-	 * lists no tensor element, so whether {@code read}'s parameter holds a tensor is unknown: it is not a container of tensors, and
-	 * {@code read} is reported as having tensor parameters that can't be inferred
+	 * resolve, and then passes it to {@code read}. The engine reports the dict incomplete ({@code Containers.isComplete}) and lists no
+	 * tensor element, so whether {@code read}'s parameter holds a tensor is unknown: it is not a container of tensors, and {@code read} is
+	 * reported as having tensor parameters that can't be inferred
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
 	 */
 	@Test
