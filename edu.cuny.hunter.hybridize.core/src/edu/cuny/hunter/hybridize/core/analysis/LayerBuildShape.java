@@ -30,8 +30,10 @@ public enum LayerBuildShape {
 	 * with a {@code save_format} of {@code "h5"}, or one that isn't a constant; of {@code load_weights} passing a {@code by_name} that
 	 * isn't {@code False}; or of any of these, {@code load_model} or {@code ModelCheckpoint} with a path that may name an HDF5 file, one
 	 * ending in {@code .h5}, {@code .hdf5} or {@code .keras}, or one that isn't known. A {@code save_weights} with a {@code save_format} of
-	 * {@code "tf"} keys nothing by name. A program that saves a SavedModel, or sets weights by position, isn't refused for the names. See
-	 * {@link LayerBuildAnalysis}.
+	 * {@code "tf"} keys nothing by name. A program that saves a SavedModel, or sets weights by position, isn't refused for the names. The
+	 * call's callee may be read as an attribute or as a variable, as a function imported by name is. A run is the code one script reaches,
+	 * except that every pytest test, and every script holding one, share one run. A call in a program method no entry point reaches, such
+	 * as a Keras callback's, may be in any run. See {@link LayerBuildAnalysis}.
 	 */
 	COLLIDING_NAMES("reaches sublayers whose names may collide once the enclosing layers' name scopes are dropped");
 

@@ -19123,7 +19123,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertTrue("`Inner.call`'s failure names the call keying weights by name.",
 					findFunction(functions, "Inner.call").getStatus()
 							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
-							.contains("may save or load weights by name in a run reaching it"));
+							.contains("may save or load weights by name"));
 	}
 
 	/**
@@ -19284,6 +19284,130 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 */
 	@Test
 	public void testMayBuildLayersSavedInAnotherScript() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, false);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with weights saved to HDF5 in
+	 * a Keras callback, {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w.h5"))} in {@code Checkpoint.on_epoch_end}, which
+	 * {@code model.fit(..., callbacks=[Checkpoint()])} calls. The engine's model of {@code fit} calls no callback, so the method has no
+	 * call-graph node and no entry point reaches the save; such a call may run in any run, so {@code Inner.call} is refused for the
+	 * colliding names. Measured on TensorFlow 2.9.3, decorating {@code Inner.call} makes the save fail with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}.
+	 */
+	@Test
+	public void testMayBuildLayersSavedInCallback() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with the callback of
+	 * {@link #testMayBuildLayersSavedInCallback()} saving a checkpoint instead,
+	 * {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w"))}, which keys nothing by name. The method has no call-graph
+	 * node, but its calls are read all the same, and none keys weights by name, so {@code Inner.call} isn't refused. Measured on TensorFlow
+	 * 2.9.3, decorated, the save succeeds.
+	 */
+	@Test
+	public void testMayBuildLayersCheckpointInCallback() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, false);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with two pytest tests sharing
+	 * a module's model: {@code test_call} calls it and {@code test_save} saves its weights to HDF5. Each test is its own entry point, but
+	 * pytest runs them in one process, where the model is one object, so a run reaching {@code Inner.call} saves by name, and it is refused
+	 * for the colliding names. Measured on TensorFlow 2.9.3, with {@code Inner.call} decorated, {@code test_save} fails with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}.
+	 */
+	@Test
+	public void testMayBuildLayersPytestSaved() throws Exception {
+		Set<Function> functions = this.getFunctions("test_layers");
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with two pytest modules
+	 * sharing a third module's model: {@code test_x.py}'s {@code test_call} calls the model {@code common.get_model()} returns, and
+	 * {@code test_y.py}'s {@code test_save} saves its weights to HDF5. pytest runs every module it collects in one process, with shared
+	 * imports, so the model is one object across the two, and {@code Inner.call} is refused for the colliding names. Measured on TensorFlow
+	 * 2.9.3, with {@code Inner.call} decorated, {@code test_save} fails with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}.
+	 * <p>
+	 * TODO: The engine reaches no call through a module-level object imported from another module, {@code from common import model} or
+	 * {@code common.model}, so {@code Inner.call} would have no call-graph node in that spelling, and the fixture reads the model through a
+	 * function instead.
+	 */
+	@Test
+	public void testMayBuildLayersPytestModulesSaved() throws Exception {
+		Set<Function> functions = this.getFunctions("common");
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a pytest test calling the
+	 * model and another script, {@code B.py}, which no test imports, saving a model of its own to HDF5. The script runs in its own process,
+	 * apart from pytest's, so no run reaching {@code Inner.call} saves by name, and it isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersPytestSavedByScript() throws Exception {
+		Set<Function> functions = this.getFunctions("test_layers");
+		assertInnerRefusedIfKeyedByName(functions, false);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a model loaded from HDF5
+	 * by a function imported by name, {@code from tensorflow.keras.models import load_model}, and called at the module's top level,
+	 * {@code load_model(path)} for a path ending in {@code .h5}. The callee is read as a variable, not as an attribute, and its name is
+	 * judged the same way, so {@code Inner.call} is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersImportedLoadModel() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with the imported
+	 * {@code load_model} of {@link #testMayBuildLayersImportedLoadModel()} called inside a function, {@code restore}, which reads it from
+	 * the module's scope. {@code Inner.call} is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersImportedLoadModelInFunction() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with the imported
+	 * {@code load_model} of {@link #testMayBuildLayersImportedLoadModelInFunction()} declared {@code global} in the function calling it,
+	 * which the front end reads as a global variable. {@code Inner.call} is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersImportedLoadModelDeclaredGlobal() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with the program's own
+	 * function named {@code load_model}, which only checks whether its path exists, called inside a function, {@code restore}, with a path
+	 * ending in {@code .h5}. Every target of the call is program code, whose own calls are read in turn, so its name says nothing, and
+	 * {@code Inner.call} isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersOwnLoadModel() throws Exception {
 		Set<Function> functions = this.getFunctions();
 		assertInnerRefusedIfKeyedByName(functions, false);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
