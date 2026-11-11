@@ -19413,6 +19413,134 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a
+	 * {@code tf.compat.v1.train.Saver} constructed over the model's weights, which keys them by name. {@code Inner.call} is refused for the
+	 * colliding names, on the conservative side here: the program never saves through it, and measured on TensorFlow 2.9.3, constructing it
+	 * over the decorated layers' weights succeeds.
+	 */
+	@Test
+	public void testMayBuildLayersSaverCreated() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a model saved as a
+	 * SavedModel by the function {@code tf.keras.models.save_model(model, os.path.join(tempfile.mkdtemp(), "m"))}, whose path is its second
+	 * argument, after the model. The path has no HDF5 suffix, so {@code Inner.call} isn't refused. Measured on TensorFlow 2.9.3, decorated,
+	 * the save succeeds.
+	 */
+	@Test
+	public void testMayBuildLayersSavedModelFunction() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, false);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a model loaded from a
+	 * path ending in {@code .h5}, {@code tf.keras.models.load_model(path)}, guarded by whether the file exists. HDF5 keys the weights by
+	 * name, so {@code Inner.call} is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersLoadedHdf5Model() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a
+	 * {@code tf.keras.callbacks.ModelCheckpoint} saving weights to a path ending in {@code .h5}, passed to {@code model.fit}. Measured on
+	 * TensorFlow 2.9.3, decorating {@code Inner.call} makes the checkpoint's save fail with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}, so it is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersModelCheckpointHdf5() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with weights loaded by
+	 * position, {@code model.load_weights(path, by_name=False)}, from a path with no HDF5 suffix, guarded by whether the file exists. The
+	 * load keys nothing by name, so {@code Inner.call} isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersLoadWeightsByPosition() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, false);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a save unpacking
+	 * keywords, {@code model.save_weights(path, **options)}, which may pass any format. {@code Inner.call} is refused for the colliding
+	 * names, on the conservative side here: the keywords hold only {@code overwrite}, and measured on TensorFlow 2.9.3, decorated, the save
+	 * succeeds as a checkpoint.
+	 */
+	@Test
+	public void testMayBuildLayersSaveUnpackingKeywords() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a starred argument before
+	 * the path, {@code tf.keras.models.save_model(*[model], path)}, which may shift the path to any slot. {@code Inner.call} is refused for
+	 * the colliding names, on the conservative side here: the path has no HDF5 suffix, and measured on TensorFlow 2.9.3, decorated, the
+	 * save succeeds as a SavedModel.
+	 */
+	@Test
+	public void testMayBuildLayersSaveStarredBeforePath() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with weights saved to an
+	 * f-string's path, {@code model.save_weights(f"{directory}/weights")}, whose text the analysis doesn't read. {@code Inner.call} is
+	 * refused for the colliding names, on the conservative side here: measured on TensorFlow 2.9.3, decorated, the save succeeds as a
+	 * checkpoint.
+	 */
+	@Test
+	public void testMayBuildLayersSaveFormattedString() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a save whose format is a
+	 * parameter, {@code model.save_weights(path, save_format=save_format)}, which may be {@code "h5"}. {@code Inner.call} is refused for
+	 * the colliding names, on the conservative side here: the one call passes {@code "tf"}, and measured on TensorFlow 2.9.3, decorated,
+	 * the save succeeds as a checkpoint.
+	 */
+	@Test
+	public void testMayBuildLayersSaveFormatComputed() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with weights saved in the
+	 * {@code "hdf5"} format to a path with no HDF5 suffix, {@code model.save_weights(path, save_format="hdf5")}, which Keras's
+	 * {@code save_weights} reads as {@code "h5"}. Measured on TensorFlow 2.9.3, decorating {@code Inner.call} makes the save fail with
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}, so it is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersSaveFormatHdf5Name() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
 	@Test
 	public void testMayBuildLayersCalledOnEveryPath() throws Exception {
 		Set<Function> functions = this.getFunctions();
