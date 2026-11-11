@@ -446,7 +446,13 @@ public enum PreconditionFailure {
 	 * <li>{@link LayerBuildShape#COLLIDING_NAMES}: two sublayers reachable from its receiver may carry the same constant name, or one
 	 * carries a computed name. The build runs inside the trace, outside the name scopes of the layers that enclose it, so their variables
 	 * may get the same names, such as {@code dense/kernel:0}, and saving the weights by name, such as to HDF5, fails with
-	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}.</li>
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}. It is refused only when a run reaching it, the code
+	 * one script or test reaches, may save or load weights by name. Such a run calls {@code init_from_checkpoint} or {@code Saver};
+	 * {@code save}, {@code save_weights} or {@code save_model} with a {@code save_format} of {@code "h5"}, or one that isn't a constant;
+	 * {@code load_weights} passing a {@code by_name} that isn't {@code False}; or any of these, {@code load_model} or
+	 * {@code ModelCheckpoint} with a path that may name an HDF5 file, one ending in {@code .h5}, {@code .hdf5} or {@code .keras}, or one
+	 * that isn't known. A {@code save_weights} with a {@code save_format} of {@code "tf"} keys nothing by name, and neither does a program
+	 * that saves a SavedModel or sets weights by position.</li>
 	 * </ol>
 	 * A Keras model's {@code call} saves regardless, so a method whose receiver the engine knows to be a model is exempt; one whose
 	 * receiver is unknown is checked. A function that is no method runs inside no layer's name scope, so it is exempt too. Neither is a
