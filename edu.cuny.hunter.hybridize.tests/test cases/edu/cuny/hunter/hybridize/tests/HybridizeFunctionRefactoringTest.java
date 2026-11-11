@@ -19309,8 +19309,13 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with the callback of
 	 * {@link #testMayBuildLayersSavedInCallback()} saving a checkpoint instead,
-	 * {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w"))}, which keys nothing by name, so {@code Inner.call} isn't
-	 * refused. Measured on TensorFlow 2.9.3, decorated, the save succeeds.
+	 * {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w"))}, which keys nothing by name. Measured on TensorFlow 2.9.3,
+	 * decorated, the save succeeds.
+	 * <p>
+	 * TODO: The engine's summary of {@code fit} doesn't call the callbacks it's passed (https://github.com/wala/ML/issues/1244), so
+	 * {@code on_epoch_end} has no call-graph node and its save isn't read. Until then, {@code Inner.call} isn't refused because the
+	 * callback isn't in the call graph, as for {@link #testMayBuildLayersSavedInCallback()}, and this test tells a checkpoint from an HDF5
+	 * save only once the engine calls the callback.
 	 */
 	@Test
 	public void testMayBuildLayersCheckpointInCallback() throws Exception {
@@ -19321,9 +19326,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with an HDF5 save in a class
-	 * the program never instantiates, {@code Saver.save} calling {@code self.model.save_weights(filepath)} for a path it's passed. Nothing
-	 * calls the method, so it has no call-graph node, and no run reaching {@code Inner.call} saves by name: {@code Inner.call} isn't
-	 * refused.
+	 * the program never instantiates, {@code Exporter.save} calling {@code self.model.save_weights(filepath)} for a path it's passed.
+	 * Nothing calls the method, so it has no call-graph node, and no run reaching {@code Inner.call} saves by name: {@code Inner.call}
+	 * isn't refused.
 	 */
 	@Test
 	public void testMayBuildLayersSavedInUnusedClass() throws Exception {

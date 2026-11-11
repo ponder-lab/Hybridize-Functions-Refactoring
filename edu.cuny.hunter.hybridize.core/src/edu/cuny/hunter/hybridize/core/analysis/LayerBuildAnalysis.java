@@ -1795,7 +1795,7 @@ class LayerBuildAnalysis {
 	 * @param ir The IR of {@code invoke}.
 	 * @param defUse The def-use chains of {@code ir}.
 	 * @param invoke A call.
-	 * @param targets The call's targets in the call graph, or {@code null} if its method has no node.
+	 * @param targets The call's targets in the call graph.
 	 * @return True iff the call may save or load weights keyed by their names.
 	 */
 	private static boolean keysNames(IR ir, DefUse defUse, PythonInvokeInstruction invoke, Set<CGNode> targets) {
@@ -1861,7 +1861,7 @@ class LayerBuildAnalysis {
 	 * @param ir The IR of {@code callee}.
 	 * @param defUse The def-use chains of {@code ir}.
 	 * @param callee A call's callee value.
-	 * @param targets The call's targets in the call graph, or {@code null} if its method has no node.
+	 * @param targets The call's targets in the call graph.
 	 * @return The name read, or {@code null} if the callee is read otherwise or is the program's own function.
 	 */
 	private static String getCalleeName(IR ir, DefUse defUse, int callee, Set<CGNode> targets) {
@@ -1883,7 +1883,7 @@ class LayerBuildAnalysis {
 			ret = name.substring(name.lastIndexOf('/') + 1);
 		}
 
-		if (ret != null && targets != null && !targets.isEmpty() && targets.stream().allMatch(CallTargets::isProgramCode))
+		if (ret != null && !targets.isEmpty() && targets.stream().allMatch(CallTargets::isProgramCode))
 			return null;
 
 		return ret;

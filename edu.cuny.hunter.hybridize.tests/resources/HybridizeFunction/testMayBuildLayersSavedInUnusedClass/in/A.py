@@ -35,7 +35,7 @@ class Net(tf.keras.Model):
         return self.stack(x)
 
 
-class Saver:
+class Exporter:
 
     def __init__(self, model):
         self.model = model
