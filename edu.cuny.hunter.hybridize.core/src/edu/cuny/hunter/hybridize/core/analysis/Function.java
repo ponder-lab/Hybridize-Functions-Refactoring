@@ -1813,9 +1813,10 @@ public class Function {
 									&& this.getLayerBuildShape() != null)
 								// Builds a Keras layer in a shape that changes behavior under tf.function: it constructs one in its
 								// trace, may first call one on a retrace, or reaches sublayers whose names may collide once the
-								// enclosing scopes are dropped (issues 1172 and 1224). A model's call saves regardless, and so does a
-								// function that is no method, which runs inside no layer's scope, so both are exempt; a method whose
-								// receiver is unknown is checked. A safety failure; it precedes the benefit signal.
+								// enclosing scopes are dropped, in a run that may save or load weights by name (issues 1172 and 1224).
+								// A model's call saves regardless, and so does a function that is no method, which runs inside no
+								// layer's scope, so both are exempt; a method whose receiver is unknown is checked. A safety failure; it
+								// precedes the benefit signal.
 								this.addFailure(PreconditionFailure.MAY_BUILD_LAYERS, "Can't hybridize a function that "
 										+ this.getLayerBuildShape().getReason() + ": " + this.layerBuildDetail + ".");
 							else if (this.tracingChangesGuardedException().isPresent() || this.bodyHandlerChange.isPresent())
