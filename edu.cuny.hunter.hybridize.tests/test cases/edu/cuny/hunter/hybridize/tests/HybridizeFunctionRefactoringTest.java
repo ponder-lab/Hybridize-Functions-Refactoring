@@ -19342,7 +19342,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * <p>
 	 * TODO: The engine reaches no call through a module-level object imported from another module, {@code from common import model} or
 	 * {@code common.model}, so {@code Inner.call} would have no call-graph node in that spelling, and the fixture reads the model through a
-	 * function instead.
+	 * function instead (https://github.com/wala/ML/issues/1243).
 	 */
 	@Test
 	public void testMayBuildLayersPytestModulesSaved() throws Exception {
