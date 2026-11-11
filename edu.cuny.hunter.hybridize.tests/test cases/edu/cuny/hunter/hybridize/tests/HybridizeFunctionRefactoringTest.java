@@ -19228,6 +19228,42 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a save through a
+	 * {@code tf.train.CheckpointManager}, {@code manager.save(checkpoint_number=1)}, which writes an object-based checkpoint. The call
+	 * passes no path, which a Keras save or load requires, so it keys nothing by name, and {@code Inner.call} isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersSavedCheckpointManager() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, false);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with an array saved to a path
+	 * formatted from a constant template, {@code np.save(os.path.join(directory, "{}_weights.npy".format("dense")), ...)}. The template's
+	 * text after its last replacement field ends in {@code .npy}, which names no HDF5 file, so {@code Inner.call} isn't refused.
+	 */
+	@Test
+	public void testMayBuildLayersSavedFormattedNumpyPath() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, false);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with weights saved to a path
+	 * formatted from a constant template ending in an HDF5 suffix, {@code os.path.join(directory, "{}.h5".format("weights"))}, which keys
+	 * the weights by name, so {@code Inner.call} is refused for the colliding names.
+	 */
+	@Test
+	public void testMayBuildLayersSavedFormattedHdf5Path() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertInnerRefusedIfKeyedByName(functions, true);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a save of weights in the
 	 * TensorFlow format to a path a function receives, {@code model.save_weights(path, save_format="tf")}. The path may name any file, as
 	 * in {@link #testMayBuildLayersUnknownSavePath()}, but under that format Keras saves a checkpoint, or raises for a path naming an HDF5

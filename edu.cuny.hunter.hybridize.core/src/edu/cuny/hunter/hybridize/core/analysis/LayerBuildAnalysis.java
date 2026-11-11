@@ -126,35 +126,38 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * <li>{@code load_model} or {@code ModelCheckpoint}, as its path decides.</li>
  * </ul>
  * The path is the {@code filepath} keyword, or else the first argument, or the second for {@code save_model}, whose first is the model. It
- * decides a save or a load by name when it may name an HDF5 file, which keys weights by name. A constant string ending in {@code .h5},
- * {@code .hdf5} or {@code .keras}, ignoring case, does, and any other constant doesn't. A call of a {@code join} attribute, as
- * {@code os.path.join(directory, "t.h5")} is, is decided by its last argument when that is a constant string. Any other path may name one,
- * such as a parameter, a computed string or an f-string, and so may any path of a call that unpacks {@code **} keywords, which may pass any
- * format too. So a program that saves a SavedModel, as {@code model.save(os.path.join(directory, "m"))} does, or that sets weights by
- * position with {@code set_weights}, is not refused for the names. The sublayers are the layer objects reachable from the receiver through
- * fields, at any depth, told apart by the node allocating them, a constructor or a summary in its context, since the engine allocates a
- * program layer's bound methods in its constructor too. The receiver's own allocation is left out: its name is dropped with its scope. A
- * sublayer's name is the {@code name} argument of the call constructing it, or of the {@code __init__} call of a base that its class's
- * {@code __init__} makes, read as the constant strings of its points-to set, which holds a parameter's default too, unless that
- * {@code __init__} forwards its own {@code name} parameter and every constructing call passes one. A sublayer's variables are named under
- * its parent's scope, the nearest layer holding it, so only siblings may collide: two allocations under one parent that may carry the same
- * constant name, whatever their classes, or one allocation that may run more than once in a run, such as one in a loop or a comprehension,
- * in a function invoked from two sites that one program run reaches, or in the {@code build} of a layer that has more than one instance,
- * unless each run is named apart. A run is named apart when its one constructing call runs once per iteration of the one loop whose index
- * fills its name, {@code "h{}".format(i)} for {@code i in range(n)}, or once per run of a parent's {@code __init__} or {@code build} whose
- * layers are named apart in turn or carry unique names from Keras. The receiver must be one object: decorating the method drops its scope,
- * so two receivers' sublayers collide. Two templates under one parent may fill a name alike, as {@code "h{}"} and {@code "h1{}"} do with
- * {@code h10}, and refuse. A sublayer's parent is the layer holding it; Keras scopes it under the layer whose {@code __call__} first builds
- * it, which is the same whenever a layer is called by its holder, but not for a layer passed to another's {@code call} and built there. Any
- * other name that is not one constant string may collide with any other and refuses. A sublayer constructed without a name, or with
- * {@code None}, gets one from Keras, its class's in snake case, as {@code dense}, or that with {@code _<n>} appended; Keras counts only the
- * names it makes, so a sibling's constant name, or a name a sibling's template fills, may be one of them, which refuses. It counts them per
- * graph, so one constructed during the trace, as a sublayer's lazily run {@code build} does, may take the name of a sibling constructed
- * before it, which refuses. The front end reads an f-string as the one constant string of its source text, opening quote included, which
- * counts as computed until the engine reads it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as
- * {@code Dense(**config)} does, may pass any name, which counts as computed too, and so does a base's {@code __init__} call unpacking
- * anything but the calling {@code __init__}'s own {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the
- * constructing call passed, which are read there.</li>
+ * decides a save or a load by name when it may name an HDF5 file, which keys weights by name. A call passing no path, and no starred
+ * argument that may supply one, saves or loads no Keras file, since Keras requires the path; {@code manager.save(checkpoint_number=n)} on a
+ * {@code CheckpointManager} is one. A constant string ending in {@code .h5}, {@code .hdf5} or {@code .keras}, ignoring case, does, and any
+ * other constant doesn't. A call of a {@code join} attribute, as {@code os.path.join(directory, "t.h5")} is, is decided by its last
+ * argument. A string a {@code format} call fills from a constant template, as {@code "data/{}_nodes.npy".format(mode)} is, is decided by
+ * the template's text after its last replacement field, when that text holds a suffix. Any other path may name one, such as a parameter, a
+ * computed string or an f-string, and so may any path of a call that unpacks {@code **} keywords, which may pass any format too. So a
+ * program that saves a SavedModel, as {@code model.save(os.path.join(directory, "m"))} does, or that sets weights by position with
+ * {@code set_weights}, is not refused for the names. The sublayers are the layer objects reachable from the receiver through fields, at any
+ * depth, told apart by the node allocating them, a constructor or a summary in its context, since the engine allocates a program layer's
+ * bound methods in its constructor too. The receiver's own allocation is left out: its name is dropped with its scope. A sublayer's name is
+ * the {@code name} argument of the call constructing it, or of the {@code __init__} call of a base that its class's {@code __init__} makes,
+ * read as the constant strings of its points-to set, which holds a parameter's default too, unless that {@code __init__} forwards its own
+ * {@code name} parameter and every constructing call passes one. A sublayer's variables are named under its parent's scope, the nearest
+ * layer holding it, so only siblings may collide: two allocations under one parent that may carry the same constant name, whatever their
+ * classes, or one allocation that may run more than once in a run, such as one in a loop or a comprehension, in a function invoked from two
+ * sites that one program run reaches, or in the {@code build} of a layer that has more than one instance, unless each run is named apart. A
+ * run is named apart when its one constructing call runs once per iteration of the one loop whose index fills its name,
+ * {@code "h{}".format(i)} for {@code i in range(n)}, or once per run of a parent's {@code __init__} or {@code build} whose layers are named
+ * apart in turn or carry unique names from Keras. The receiver must be one object: decorating the method drops its scope, so two receivers'
+ * sublayers collide. Two templates under one parent may fill a name alike, as {@code "h{}"} and {@code "h1{}"} do with {@code h10}, and
+ * refuse. A sublayer's parent is the layer holding it; Keras scopes it under the layer whose {@code __call__} first builds it, which is the
+ * same whenever a layer is called by its holder, but not for a layer passed to another's {@code call} and built there. Any other name that
+ * is not one constant string may collide with any other and refuses. A sublayer constructed without a name, or with {@code None}, gets one
+ * from Keras, its class's in snake case, as {@code dense}, or that with {@code _<n>} appended; Keras counts only the names it makes, so a
+ * sibling's constant name, or a name a sibling's template fills, may be one of them, which refuses. It counts them per graph, so one
+ * constructed during the trace, as a sublayer's lazily run {@code build} does, may take the name of a sibling constructed before it, which
+ * refuses. The front end reads an f-string as the one constant string of its source text, opening quote included, which counts as computed
+ * until the engine reads it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may
+ * pass any name, which counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling
+ * {@code __init__}'s own {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed,
+ * which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
@@ -1762,8 +1765,16 @@ class LayerBuildAnalysis {
 
 		int path = invoke.getUse(FILEPATH_KEYWORD);
 
-		if (path < 0)
-			path = getPositionalArgument(invoke, name.equals(SAVE_MODEL_FUNCTION_NAME) ? 2 : 1);
+		if (path < 0) {
+			int position = name.equals(SAVE_MODEL_FUNCTION_NAME) ? 2 : 1;
+
+			// Keras requires a save's or a load's path, so a call passing none, and no starred argument that may supply one, saves or loads
+			// no Keras file. `CheckpointManager.save(checkpoint_number=n)`, which writes an object-based checkpoint, is one.
+			if (position >= invoke.getNumberOfPositionalParameters() && invoke.firstStarredPosition() < 0)
+				return false;
+
+			path = getPositionalArgument(invoke, position);
+		}
 
 		return mayNameHdf5File(node, path);
 	}
@@ -1789,7 +1800,8 @@ class LayerBuildAnalysis {
 	 * True iff {@code value}, a save's or a load's path, may name an HDF5 file, which Keras keys by name. A constant string ending in
 	 * {@code .h5}, {@code .hdf5} or {@code .keras}, ignoring case, does, as Keras infers the format from them, and any other constant
 	 * doesn't. A call of a {@code join} attribute, as {@code os.path.join(directory, "t.h5")} is, names the file by its last argument, so
-	 * it is decided by that argument when it is a constant string. Any other value, such as a parameter or a computed string, may.
+	 * it is decided by that argument. A string a {@code format} call fills from a constant template is decided by the template's text after
+	 * its last replacement field, when that text holds a suffix. Any other value, such as a parameter or another computed string, may.
 	 *
 	 * @param node The node of {@code value}.
 	 * @param value A value number of {@code node}, or -1 if the path can't be read.
@@ -1807,10 +1819,27 @@ class LayerBuildAnalysis {
 				&& symbolTable.getStringValue(read.getMemberRef()).equals(JOIN_FUNCTION_NAME)) {
 			int last = join.getNumberOfPositionalParameters() - 1;
 
-			if (join.isPositionalSlotStarred(last) || !symbolTable.isStringConstant(join.getUse(last)))
+			if (join.isPositionalSlotStarred(last))
 				return true;
 
 			file = join.getUse(last);
+		}
+
+		// A string formatted from a constant template, as `"data/{}_nodes.npy".format(mode)` is, ends in the template's text after its
+		// last replacement field. That text gives the suffix when it holds one; otherwise a field may supply it.
+		if (node.getDU().getDef(file) instanceof PythonInvokeInstruction format
+				&& node.getDU().getDef(format.getUse(0)) instanceof AstPropertyRead read
+				&& symbolTable.isStringConstant(read.getMemberRef())
+				&& symbolTable.getStringValue(read.getMemberRef()).equals(FORMAT_METHOD_NAME)
+				&& symbolTable.isStringConstant(read.getObjectRef())) {
+			String template = symbolTable.getStringValue(read.getObjectRef());
+			String tail = template.substring(template.lastIndexOf('}') + 1);
+
+			if (!tail.contains("."))
+				return true;
+
+			String lowerCase = tail.toLowerCase(Locale.ROOT);
+			return HDF5_SUFFIXES.stream().anyMatch(lowerCase::endsWith);
 		}
 
 		if (symbolTable.isStringConstant(file)) {
