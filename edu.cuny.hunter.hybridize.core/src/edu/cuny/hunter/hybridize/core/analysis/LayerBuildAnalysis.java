@@ -55,7 +55,6 @@ import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.Entrypoint;
-import com.ibm.wala.ipa.callgraph.IAnalysisCacheView;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
@@ -124,10 +123,8 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * name, such as to HDF5, fails or mixes weights (issue 1172). The method is refused only when a run reaching it may save or load weights by
  * name. A run is what one entry point of the call graph, such as a script, reaches, and it reaches the method when it reaches one of the
  * method's nodes. pytest runs every test it collects in one process, with shared imports, so every pytest test's entry point, and every
- * script holding a test, are one run. A node no entry point reaches may be in any run, and so may a program method with no node at all,
- * such as a Keras callback's {@code on_epoch_end}, which the engine's model of {@code fit} doesn't call. Such a method's calls are read
- * too, and one that saves or loads by name refuses every method. A call in program code saves or loads by name when its callee is read as
- * an attribute, as {@code model.save_weights} is, or as a variable, as a function imported by name with
+ * script holding a test, are one run. A node no entry point reaches may be in any run. A call in program code saves or loads by name when
+ * its callee is read as an attribute, as {@code model.save_weights} is, or as a variable, as a function imported by name with
  * {@code from tensorflow.keras.models import load_model} is, under one of the names below. A name read as a variable may be the program's
  * own function, as a {@code load_model} the program defines is, so a call of one whose every target in the call graph is program code is
  * left to that code's own calls. The names are:
@@ -242,15 +239,6 @@ class LayerBuildAnalysis {
 	private record Sublayers(Map<CGNode, Set<InstanceKey>> objects, Map<CGNode, Set<CGNode>> parents) {
 	}
 
-	/**
-	 * The calls in a program that save or load weights by name ({@link #getNameKeyedCalls()}).
-	 *
-	 * @param reached The program nodes of the call graph holding one, each with a description of its first.
-	 * @param unreached A description of one in a program method with no call-graph node, or {@code null} if there is none.
-	 */
-	private record NameKeyedCalls(Map<CGNode, String> reached, String unreached) {
-	}
-
 	private static final ILog LOG = getLog(LayerBuildAnalysis.class);
 
 	/**
@@ -333,7 +321,7 @@ class LayerBuildAnalysis {
 	 * The calls saving or loading weights by name in the program of each call graph ({@link #getNameKeyedCalls()}). Built once per call
 	 * graph, deciding each method once; concurrent because functions may be processed in parallel.
 	 */
-	private static final Map<CallGraph, NameKeyedCalls> nameKeyedCallsCache = new ConcurrentHashMap<>();
+	private static final Map<CallGraph, Map<CGNode, String>> nameKeyedCallsCache = new ConcurrentHashMap<>();
 
 	/**
 	 * The entry points of each call graph that pytest runs in one process ({@link #getTestRun()}). Built once per call graph; concurrent
@@ -1685,7 +1673,7 @@ class LayerBuildAnalysis {
 	 * the method of {@code nodes}: a call in a node that an entry point of the call graph, such as a script or a test, reaches when it
 	 * reaches one of the method's nodes. Each entry point starts its own run, so a save in another script doesn't count, but pytest runs
 	 * its tests in one process ({@link #getTestRun()}). A node no entry point reaches may be in any run, so a method with such a node
-	 * counts as reaching any such call, and such a call in a node, or in a program method with no node, counts as reached by any method.
+	 * counts as reaching any such call, and such a call in such a node counts as reached by any method.
 	 *
 	 * @param nodes The method's nodes.
 	 * @return A description of the call, or of why the runs reaching the method can't be told, or empty if no run reaching the method keys
@@ -1711,17 +1699,12 @@ class LayerBuildAnalysis {
 		if (reaching.intersects(testRun))
 			reaching.or(testRun);
 
-		NameKeyedCalls calls = this.getNameKeyedCalls();
-
-		for (Map.Entry<CGNode, String> call : calls.reached().entrySet()) {
+		for (Map.Entry<CGNode, String> call : this.getNameKeyedCalls().entrySet()) {
 			BitSet callEntryPoints = entryPoints.get(call.getKey());
 
 			if (callEntryPoints == null || callEntryPoints.intersects(reaching))
 				return Optional.of(call.getValue() + " may save or load weights by name in a run reaching it");
 		}
-
-		if (calls.unreached() != null)
-			return Optional.of(calls.unreached() + ", which no entry point reaches, may save or load weights by name in any run");
 
 		return Optional.empty();
 	}
@@ -1766,21 +1749,21 @@ class LayerBuildAnalysis {
 
 	/**
 	 * The calls in the program that save or load weights by name ({@link #keysNames(IR, DefUse, PythonInvokeInstruction, Set)}): the
-	 * program nodes of the call graph holding one, each with a description of its first, and one in a program method with no node, such as
-	 * a Keras callback's {@code on_epoch_end}, which the engine's model of {@code fit} doesn't call. Program code is what the engine says
-	 * it is ({@link CallTargets#isProgramCode(CGNode)}): a library's summary is the engine's model, and its saves aren't the program's.
-	 * Built once per call graph.
+	 * program nodes of the call graph holding one, each with a description of its first. Program code is what the engine says it is
+	 * ({@link CallTargets#isProgramCode(CGNode)}): a library's summary is the engine's model, and its saves aren't the program's. Built
+	 * once per call graph.
+	 * <p>
+	 * TODO: A Keras callback's methods, such as {@code on_epoch_end}, have no node when the program passes the callback to {@code fit},
+	 * {@code evaluate} or {@code predict}, since the engine's summaries of those don't call the callbacks they're passed, so a save in one
+	 * is missed until the engine models those calls.
 	 *
-	 * @return The calls keying weights by name.
+	 * @return The calls keying weights by name, by the program node holding each.
 	 */
-	private NameKeyedCalls getNameKeyedCalls() {
+	private Map<CGNode, String> getNameKeyedCalls() {
 		return nameKeyedCallsCache.computeIfAbsent(this.callGraph, cg -> {
 			Map<CGNode, String> reached = new LinkedHashMap<>();
-			Set<MethodReference> nodeMethods = new HashSet<>();
 
 			for (CGNode node : cg) {
-				nodeMethods.add(node.getMethod().getReference());
-
 				if (!CallTargets.isProgramCode(node) || node.getIR() == null)
 					continue;
 
@@ -1792,50 +1775,8 @@ class LayerBuildAnalysis {
 					}
 			}
 
-			return new NameKeyedCalls(reached, this.findUnreachedNameKeyedCall(nodeMethods));
+			return reached;
 		});
-	}
-
-	/**
-	 * Describes a call saving or loading weights by name in a program method with no call-graph node: a method a script declares, which the
-	 * class hierarchy holds, that is no WALA-synthetic method and none of {@code nodeMethods}. Such a method may still run, as a Keras
-	 * callback's does when {@code fit} calls it. Its IR comes from the builder's cache; one that can't be built may hold any call.
-	 *
-	 * @param nodeMethods The methods of the call graph's nodes.
-	 * @return A description of the first such call, or of a method whose IR can't be built, or {@code null} if there is none.
-	 */
-	private String findUnreachedNameKeyedCall(Set<MethodReference> nodeMethods) {
-		IAnalysisCacheView cache = this.builder.getAnalysisCache();
-
-		for (IClass klass : this.builder.getClassHierarchy()) {
-			if (!Util.isUserCodeClass(klass))
-				continue;
-
-			for (IMethod method : klass.getDeclaredMethods()) {
-				if (!(method instanceof AstMethod) || method.isWalaSynthetic() || nodeMethods.contains(method.getReference()))
-					continue;
-
-				IR ir;
-
-				try {
-					ir = cache.getIR(method);
-				} catch (RuntimeException e) {
-					LOG.warn("Can't build the IR of " + method + ".", e);
-					ir = null;
-				}
-
-				if (ir == null)
-					return "`" + getSimpleName(klass.getName()) + "`, whose code can't be read";
-
-				DefUse defUse = cache.getDefUse(ir);
-
-				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
-					if (instruction instanceof PythonInvokeInstruction invoke && keysNames(ir, defUse, invoke, null))
-						return describePosition(method, invoke);
-			}
-		}
-
-		return null;
 	}
 
 	/**
