@@ -12369,7 +12369,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * A hybrid function whose parameter has no abstract value is not de-hybridized as having no tensor parameter (P2)
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). The argument of {@code p_fmt} comes from
-	 * {@code str.format}, a method the analysis doesn't model, so its "not a tensor" classification concluded nothing
+	 * {@code json.loads}, a function the analysis doesn't model, so its "not a tensor" classification concluded nothing
 	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}). The argument of {@code p_int} is a modeled literal, so its classification is a
 	 * determination and it still de-hybridizes.
 	 */
@@ -19289,29 +19289,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with weights saved to HDF5 in
 	 * a Keras callback, {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w.h5"))} in {@code Checkpoint.on_epoch_end}, which
 	 * {@code model.fit(..., callbacks=[Checkpoint()])} calls. Measured on TensorFlow 2.9.3, decorating {@code Inner.call} makes the save
-	 * fail with {@code ValueError: Unable to synchronously create dataset (name already exists)}.
-	 * <p>
-	 * TODO: The engine's summary of {@code fit} doesn't call the callbacks it's passed, so {@code on_epoch_end} has no call-graph node, its
-	 * save isn't read, and {@code Inner.call} is a missed refusal until the engine models those calls
-	 * (https://github.com/wala/ML/issues/1244).
+	 * fail with {@code ValueError: Unable to synchronously create dataset (name already exists)}. The engine's summary of {@code fit} calls
+	 * the hooks of the callbacks it's passed (https://github.com/wala/ML/issues/1244), so the save is in a run reaching {@code Inner.call},
+	 * which is refused for the colliding names.
 	 */
 	@Test
 	public void testMayBuildLayersSavedInCallback() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		assertInnerRefusedIfKeyedByName(functions, false);
+		assertInnerRefusedIfKeyedByName(functions, true);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
 	/**
 	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with the callback of
 	 * {@link #testMayBuildLayersSavedInCallback()} saving a checkpoint instead,
-	 * {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w"))}, which keys nothing by name. Measured on TensorFlow 2.9.3,
-	 * decorated, the save succeeds.
-	 * <p>
-	 * TODO: The engine's summary of {@code fit} doesn't call the callbacks it's passed (https://github.com/wala/ML/issues/1244), so
-	 * {@code on_epoch_end} has no call-graph node and its save isn't read. Until then, {@code Inner.call} isn't refused because the
-	 * callback isn't in the call graph, as for {@link #testMayBuildLayersSavedInCallback()}, and this test tells a checkpoint from an HDF5
-	 * save only once the engine calls the callback.
+	 * {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w"))}, which keys nothing by name, so {@code Inner.call} isn't
+	 * refused. Measured on TensorFlow 2.9.3, decorated, the save succeeds.
 	 */
 	@Test
 	public void testMayBuildLayersCheckpointInCallback() throws Exception {

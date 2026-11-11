@@ -1752,10 +1752,6 @@ class LayerBuildAnalysis {
 	 * program nodes of the call graph holding one, each with a description of its first. Program code is what the engine says it is
 	 * ({@link CallTargets#isProgramCode(CGNode)}): a library's summary is the engine's model, and its saves aren't the program's. Built
 	 * once per call graph.
-	 * <p>
-	 * TODO: A Keras callback's methods, such as {@code on_epoch_end}, have no node when the program passes the callback to {@code fit},
-	 * {@code evaluate} or {@code predict}, since the engine's summaries of those don't call the callbacks they're passed, so a save in one
-	 * is missed until the engine models those calls (https://github.com/wala/ML/issues/1244).
 	 *
 	 * @return The calls keying weights by name, by the program node holding each.
 	 */
