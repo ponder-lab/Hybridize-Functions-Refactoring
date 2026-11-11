@@ -1755,7 +1755,7 @@ class LayerBuildAnalysis {
 	 * <p>
 	 * TODO: A Keras callback's methods, such as {@code on_epoch_end}, have no node when the program passes the callback to {@code fit},
 	 * {@code evaluate} or {@code predict}, since the engine's summaries of those don't call the callbacks they're passed, so a save in one
-	 * is missed until the engine models those calls.
+	 * is missed until the engine models those calls (https://github.com/wala/ML/issues/1244).
 	 *
 	 * @return The calls keying weights by name, by the program node holding each.
 	 */

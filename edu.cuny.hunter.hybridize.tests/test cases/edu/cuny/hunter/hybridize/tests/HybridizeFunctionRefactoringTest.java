@@ -19296,7 +19296,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * fail with {@code ValueError: Unable to synchronously create dataset (name already exists)}.
 	 * <p>
 	 * TODO: The engine's summary of {@code fit} doesn't call the callbacks it's passed, so {@code on_epoch_end} has no call-graph node, its
-	 * save isn't read, and {@code Inner.call} is a missed refusal until the engine models those calls.
+	 * save isn't read, and {@code Inner.call} is a missed refusal until the engine models those calls
+	 * (https://github.com/wala/ML/issues/1244).
 	 */
 	@Test
 	public void testMayBuildLayersSavedInCallback() throws Exception {
