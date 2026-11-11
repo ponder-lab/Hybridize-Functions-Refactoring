@@ -25,7 +25,15 @@ public enum LayerBuildShape {
 	/**
 	 * Two sublayers reachable from the method's receiver may carry the same constant name, or one carries a name computed at run time.
 	 * Decorating the method names the variables built in its trace without the enclosing layers' scopes, so the names may collide, and a
-	 * save keyed by name, such as to HDF5, fails or mixes weights.
+	 * save keyed by name, such as to HDF5, fails or mixes weights. So the method is refused only when a run reaching it may save or load
+	 * weights by name: a call of {@code init_from_checkpoint} or {@code Saver}; of {@code save}, {@code save_weights} or {@code save_model}
+	 * with a {@code save_format} of {@code "h5"}, or one that isn't a constant; of {@code load_weights} passing a {@code by_name} that
+	 * isn't {@code False}; or of any of these, {@code load_model} or {@code ModelCheckpoint} with a path that may name an HDF5 file, one
+	 * ending in {@code .h5}, {@code .hdf5} or {@code .keras}, or one that isn't known. A {@code save_weights} with a {@code save_format} of
+	 * {@code "tf"} keys nothing by name. A program that saves a SavedModel, or sets weights by position, isn't refused for the names. The
+	 * call's callee may be read as an attribute or as a variable, as a function imported by name is. A run is the code one script reaches,
+	 * except that every pytest test, and every script holding one, share one run. A call in a program method no entry point reaches, such
+	 * as a Keras callback's, may be in any run. See {@link LayerBuildAnalysis}.
 	 */
 	COLLIDING_NAMES("reaches sublayers whose names may collide once the enclosing layers' name scopes are dropped");
 

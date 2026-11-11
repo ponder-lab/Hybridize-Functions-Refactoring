@@ -2,6 +2,7 @@ package edu.cuny.hunter.hybridize.core.analysis;
 
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.KERAS_LAYER_TYPE;
 import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.KERAS_MODEL_TYPE;
+import static com.ibm.wala.cast.python.types.Util.getRelativeFilename;
 import static com.ibm.wala.cast.python.util.Util.allocatedClass;
 import static com.ibm.wala.cast.python.util.Util.findAllocationSiteInNode;
 import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
@@ -29,10 +30,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.core.runtime.ILog;
 
+import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
+import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstPropertyRead;
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.ir.ssa.EachElementHasNextInstruction;
 import com.ibm.wala.cast.loader.AstMethod;
+import com.ibm.wala.cast.python.ipa.callgraph.PytesttEntrypoint;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
 import com.ibm.wala.cast.python.loader.IPythonClass;
@@ -46,8 +51,11 @@ import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.cfg.cdg.ControlDependenceGraph;
 import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
+import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
+import com.ibm.wala.ipa.callgraph.Entrypoint;
+import com.ibm.wala.ipa.callgraph.IAnalysisCacheView;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
 import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
@@ -57,6 +65,7 @@ import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ipa.cfg.ExceptionPrunedCFG;
 import com.ibm.wala.ipa.cfg.PrunedCFG;
 import com.ibm.wala.ipa.cha.IClassHierarchy;
+import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.ISSABasicBlock;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
@@ -70,6 +79,7 @@ import com.ibm.wala.ssa.SSAPhiInstruction;
 import com.ibm.wala.ssa.SSASwitchInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
 import com.ibm.wala.ssa.SymbolTable;
+import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
@@ -111,30 +121,59 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * choosing, as {@code self.d} does in a class constructed twice, is fixed, since each instance traces its own function.</li>
  * <li>{@link LayerBuildShape#COLLIDING_NAMES}: decorating the method names the variables built in its trace without the scopes of the
  * receiver and the layers enclosing it, so two sublayers that carry the same name build variables with the same names, and a save keyed by
- * name, such as to HDF5, fails or mixes weights (issue 1172). The sublayers are the layer objects reachable from the receiver through
- * fields, at any depth, told apart by the node allocating them, a constructor or a summary in its context, since the engine allocates a
- * program layer's bound methods in its constructor too. The receiver's own allocation is left out: its name is dropped with its scope. A
- * sublayer's name is the {@code name} argument of the call constructing it, or of the {@code __init__} call of a base that its class's
- * {@code __init__} makes, read as the constant strings of its points-to set, which holds a parameter's default too, unless that
- * {@code __init__} forwards its own {@code name} parameter and every constructing call passes one. A sublayer's variables are named under
- * its parent's scope, the nearest layer holding it, so only siblings may collide: two allocations under one parent that may carry the same
- * constant name, whatever their classes, or one allocation that may run more than once in a run, such as one in a loop or a comprehension,
- * in a function invoked from two sites that one program run reaches, or in the {@code build} of a layer that has more than one instance,
- * unless each run is named apart. A run is named apart when its one constructing call runs once per iteration of the one loop whose index
- * fills its name, {@code "h{}".format(i)} for {@code i in range(n)}, or once per run of a parent's {@code __init__} or {@code build} whose
- * layers are named apart in turn or carry unique names from Keras. The receiver must be one object: decorating the method drops its scope,
- * so two receivers' sublayers collide. Two templates under one parent may fill a name alike, as {@code "h{}"} and {@code "h1{}"} do with
- * {@code h10}, and refuse. A sublayer's parent is the layer holding it; Keras scopes it under the layer whose {@code __call__} first builds
- * it, which is the same whenever a layer is called by its holder, but not for a layer passed to another's {@code call} and built there. Any
- * other name that is not one constant string may collide with any other and refuses. A sublayer constructed without a name, or with
- * {@code None}, gets one from Keras, its class's in snake case, as {@code dense}, or that with {@code _<n>} appended; Keras counts only the
- * names it makes, so a sibling's constant name, or a name a sibling's template fills, may be one of them, which refuses. It counts them per
- * graph, so one constructed during the trace, as a sublayer's lazily run {@code build} does, may take the name of a sibling constructed
- * before it, which refuses. The front end reads an f-string as the one constant string of its source text, opening quote included, which
- * counts as computed until the engine reads it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as
- * {@code Dense(**config)} does, may pass any name, which counts as computed too, and so does a base's {@code __init__} call unpacking
- * anything but the calling {@code __init__}'s own {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the
- * constructing call passed, which are read there.</li>
+ * name, such as to HDF5, fails or mixes weights (issue 1172). The method is refused only when a run reaching it may save or load weights by
+ * name. A run is what one entry point of the call graph, such as a script, reaches, and it reaches the method when it reaches one of the
+ * method's nodes. pytest runs every test it collects in one process, with shared imports, so every pytest test's entry point, and every
+ * script holding a test, are one run. A node no entry point reaches may be in any run, and so may a program method with no node at all,
+ * such as a Keras callback's {@code on_epoch_end}, which the engine's model of {@code fit} doesn't call. Such a method's calls are read
+ * too, and one that saves or loads by name refuses every method. A call in program code saves or loads by name when its callee is read as
+ * an attribute, as {@code model.save_weights} is, or as a variable, as a function imported by name with
+ * {@code from tensorflow.keras.models import load_model} is, under one of the names below. A name read as a variable may be the program's
+ * own function, as a {@code load_model} the program defines is, so a call of one whose every target in the call graph is program code is
+ * left to that code's own calls. The names are:
+ * <ul>
+ * <li>{@code init_from_checkpoint} or {@code Saver}, always.</li>
+ * <li>{@code save}, {@code save_weights} or {@code save_model}, when its {@code save_format} is the constant {@code "h5"}, or
+ * {@code "hdf5"} or {@code "keras"}, which {@code save_weights} reads as {@code "h5"}, or isn't a constant. A {@code save_weights} whose
+ * {@code save_format} is the constant {@code "tf"} doesn't, since it then saves a checkpoint or raises. Otherwise, its path decides, even
+ * under {@code "tf"} for {@code save} and {@code save_model}, which, measured on TensorFlow 2.9.3, save to HDF5 whenever the path's suffix
+ * names it.</li>
+ * <li>{@code load_weights}, when its {@code by_name} is passed and isn't the constant {@code False}. Otherwise, its path decides.</li>
+ * <li>{@code load_model} or {@code ModelCheckpoint}, as its path decides.</li>
+ * </ul>
+ * The path is the {@code filepath} keyword, or else the first argument, or the second for {@code save_model}, whose first is the model. It
+ * decides a save or a load by name when it may name an HDF5 file, which keys weights by name. A call passing no path, and no starred
+ * argument that may supply one, saves or loads no Keras file, since Keras requires the path; {@code manager.save(checkpoint_number=n)} on a
+ * {@code CheckpointManager} is one. A constant string ending in {@code .h5}, {@code .hdf5} or {@code .keras}, ignoring case, does, and any
+ * other constant doesn't. A call of a {@code join} attribute, as {@code os.path.join(directory, "t.h5")} is, is decided by its last
+ * argument. A string a {@code format} call fills from a constant template, as {@code "data/{}_nodes.npy".format(mode)} is, is decided by
+ * the template's text after its last replacement field, when that text holds a suffix. Any other path may name one, such as a parameter, a
+ * computed string or an f-string, and so may any path of a call that unpacks {@code **} keywords, which may pass any format too. So a
+ * program that saves a SavedModel, as {@code model.save(os.path.join(directory, "m"))} does, or that sets weights by position with
+ * {@code set_weights}, is not refused for the names. The sublayers are the layer objects reachable from the receiver through fields, at any
+ * depth, told apart by the node allocating them, a constructor or a summary in its context, since the engine allocates a program layer's
+ * bound methods in its constructor too. The receiver's own allocation is left out: its name is dropped with its scope. A sublayer's name is
+ * the {@code name} argument of the call constructing it, or of the {@code __init__} call of a base that its class's {@code __init__} makes,
+ * read as the constant strings of its points-to set, which holds a parameter's default too, unless that {@code __init__} forwards its own
+ * {@code name} parameter and every constructing call passes one. A sublayer's variables are named under its parent's scope, the nearest
+ * layer holding it, so only siblings may collide: two allocations under one parent that may carry the same constant name, whatever their
+ * classes, or one allocation that may run more than once in a run, such as one in a loop or a comprehension, in a function invoked from two
+ * sites that one program run reaches, or in the {@code build} of a layer that has more than one instance, unless each run is named apart. A
+ * run is named apart when its one constructing call runs once per iteration of the one loop whose index fills its name,
+ * {@code "h{}".format(i)} for {@code i in range(n)}, or once per run of a parent's {@code __init__} or {@code build} whose layers are named
+ * apart in turn or carry unique names from Keras. The receiver must be one object: decorating the method drops its scope, so two receivers'
+ * sublayers collide. Two templates under one parent may fill a name alike, as {@code "h{}"} and {@code "h1{}"} do with {@code h10}, and
+ * refuse. A sublayer's parent is the layer holding it; Keras scopes it under the layer whose {@code __call__} first builds it, which is the
+ * same whenever a layer is called by its holder, but not for a layer passed to another's {@code call} and built there. Any other name that
+ * is not one constant string may collide with any other and refuses. A sublayer constructed without a name, or with {@code None}, gets one
+ * from Keras, its class's in snake case, as {@code dense}, or that with {@code _<n>} appended; Keras counts only the names it makes, so a
+ * sibling's constant name, or a name a sibling's template fills, may be one of them, which refuses. It counts them per graph, so one
+ * constructed during the trace, as a sublayer's lazily run {@code build} does, may take the name of a sibling constructed before it, which
+ * refuses. The front end reads an f-string as the one constant string of its source text, opening quote included, which counts as computed
+ * until the engine reads it so (wala/ML#1231). A constructing call that unpacks {@code **} keywords, as {@code Dense(**config)} does, may
+ * pass any name, which counts as computed too, and so does a base's {@code __init__} call unpacking anything but the calling
+ * {@code __init__}'s own {@code **kwargs}: {@code super().__init__(**kwargs)} forwards only the keywords the constructing call passed,
+ * which are read there.</li>
  * </ol>
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
@@ -151,7 +190,8 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * hierarchy's own subtype test would not do: the engine records a single superclass per class, so {@code class Net(Mixin, tf.keras.Model)}
  * would read as no model in either order of bases. In the engine's model, unlike at run time, {@code Model} does not extend {@code Layer},
  * so the walk tells a model from a layer. Allocation sites, points-to sets, field keys, call sites, and the control dependence of a node's
- * own control-flow graph are WALA's; the conditions, names and counts over them are this analysis's logic.
+ * own control-flow graph are WALA's, and whether a node is program code is the engine's ({@link CallTargets#isProgramCode(CGNode)}); the
+ * conditions, names and counts over them, and which calls key weights by name, are this analysis's logic.
  */
 class LayerBuildAnalysis {
 
@@ -202,6 +242,15 @@ class LayerBuildAnalysis {
 	private record Sublayers(Map<CGNode, Set<InstanceKey>> objects, Map<CGNode, Set<CGNode>> parents) {
 	}
 
+	/**
+	 * The calls in a program that save or load weights by name ({@link #getNameKeyedCalls()}).
+	 *
+	 * @param reached The program nodes of the call graph holding one, each with a description of its first.
+	 * @param unreached A description of one in a program method with no call-graph node, or {@code null} if there is none.
+	 */
+	private record NameKeyedCalls(Map<CGNode, String> reached, String unreached) {
+	}
+
 	private static final ILog LOG = getLog(LayerBuildAnalysis.class);
 
 	/**
@@ -224,6 +273,50 @@ class LayerBuildAnalysis {
 	/** The builtins whose result is the same on every trace when their arguments are, including those a {@code for} loop is lowered to. */
 	private static final Set<String> FIXED_BUILTIN_NAMES = Set.of("iter", "len", "next", "range");
 
+	/** The attributes whose call keys weights by name whatever its arguments: TensorFlow's checkpoint initializer and saver. */
+	private static final Set<String> NAME_KEYED_CALL_NAMES = Set.of("init_from_checkpoint", "Saver");
+
+	/** The attributes whose call saves a model or its weights in the format its {@code save_format} gives, or else its path's. */
+	private static final Set<String> SAVE_CALL_NAMES = Set.of("save", "save_weights", "save_model");
+
+	/** The saving function whose first argument is the model and whose second is the path. */
+	private static final String SAVE_MODEL_FUNCTION_NAME = "save_model";
+
+	/** The method saving a model's weights, which raises rather than save to HDF5 under the {@code "tf"} format. */
+	private static final String SAVE_WEIGHTS_METHOD_NAME = "save_weights";
+
+	/** The method loading a model's weights, by name when its {@code by_name} says so, or else as its path's format does. */
+	private static final String LOAD_WEIGHTS_METHOD_NAME = "load_weights";
+
+	/** The attributes whose call loads or saves a model in its path's format. */
+	private static final Set<String> PATH_FORMAT_CALL_NAMES = Set.of("load_model", "ModelCheckpoint");
+
+	/** The keyword of a save's or a load's path. */
+	private static final String FILEPATH_KEYWORD = "filepath";
+
+	/** The keyword of a save's format. */
+	private static final String SAVE_FORMAT_KEYWORD = "save_format";
+
+	/** The format saving weights as a checkpoint, which keys nothing by name. */
+	private static final String TF_FORMAT = "tf";
+
+	/**
+	 * The formats, lower-cased, saving a model or its weights to HDF5, which keys them by name, as Keras's {@code save_weights} reads them.
+	 */
+	private static final Set<String> HDF5_FORMATS = Set.of("h5", "hdf5", "keras");
+
+	/** The keyword of whether {@code load_weights} matches weights by name. */
+	private static final String BY_NAME_KEYWORD = "by_name";
+
+	/** The function joining a path's parts, {@code os.path.join}, whose last part names the file. */
+	private static final String JOIN_FUNCTION_NAME = "join";
+
+	/** The keyword the front end puts before a global variable's name. */
+	private static final String GLOBAL_PREFIX = "global ";
+
+	/** The suffixes, lower-cased, of a path that Keras saves to or loads from as HDF5. */
+	private static final List<String> HDF5_SUFFIXES = List.of(".h5", ".hdf5", ".keras");
+
 	/**
 	 * The fields of each object, by object, of each pointer analysis. Built once per pointer analysis, since every method's sublayer walk
 	 * reads it; concurrent because functions may be processed in parallel.
@@ -235,6 +328,18 @@ class LayerBuildAnalysis {
 	 * graph; concurrent because functions may be processed in parallel.
 	 */
 	private static final Map<CallGraph, Map<CGNode, BitSet>> entryPointsCache = new ConcurrentHashMap<>();
+
+	/**
+	 * The calls saving or loading weights by name in the program of each call graph ({@link #getNameKeyedCalls()}). Built once per call
+	 * graph, deciding each method once; concurrent because functions may be processed in parallel.
+	 */
+	private static final Map<CallGraph, NameKeyedCalls> nameKeyedCallsCache = new ConcurrentHashMap<>();
+
+	/**
+	 * The entry points of each call graph that pytest runs in one process ({@link #getTestRun()}). Built once per call graph; concurrent
+	 * because functions may be processed in parallel.
+	 */
+	private static final Map<CallGraph, BitSet> testRunCache = new ConcurrentHashMap<>();
 
 	/** The call graph, whose successors the walk follows. */
 	private final CallGraph callGraph;
@@ -269,11 +374,14 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * Releases the field index of each pointer analysis and the entry points reaching each node of each call graph.
+	 * Releases the field index of each pointer analysis, and the entry points reaching each node, the calls keying weights by name and the
+	 * entry points of pytest's run of each call graph.
 	 */
 	static void clearCaches() {
 		fieldIndexCache.clear();
 		entryPointsCache.clear();
+		nameKeyedCallsCache.clear();
+		testRunCache.clear();
 	}
 
 	/**
@@ -1553,6 +1661,372 @@ class LayerBuildAnalysis {
 	}
 
 	/**
+	 * Finds two sublayers reachable from the receiver of {@code nodes} that may carry the same name
+	 * ({@link #findCollidingSublayerNames(Set)}) when a run reaching the method may save or load weights by name
+	 * ({@link #findNameKeyedCall(Set)}). Only such a run sees the names collide: a SavedModel, a checkpoint, and weights set by position
+	 * key nothing by name.
+	 *
+	 * @param nodes The method's nodes.
+	 * @return {@link LayerBuildShape#COLLIDING_NAMES} with the name and the call keying weights by name, or empty if every name is unique
+	 *         or no run reaching the method keys weights by name.
+	 */
+	private Optional<Verdict> findCollidingNames(Set<CGNode> nodes) {
+		Optional<String> nameKeyedCall = this.findNameKeyedCall(nodes);
+
+		if (nameKeyedCall.isEmpty())
+			return Optional.empty();
+
+		return this.findCollidingSublayerNames(nodes)
+				.map(verdict -> new Verdict(verdict.shape(), verdict.detail() + ", and " + nameKeyedCall.get()));
+	}
+
+	/**
+	 * Describes a call saving or loading weights by name ({@link #keysNames(IR, DefUse, PythonInvokeInstruction, Set)}) in a run reaching
+	 * the method of {@code nodes}: a call in a node that an entry point of the call graph, such as a script or a test, reaches when it
+	 * reaches one of the method's nodes. Each entry point starts its own run, so a save in another script doesn't count, but pytest runs
+	 * its tests in one process ({@link #getTestRun()}). A node no entry point reaches may be in any run, so a method with such a node
+	 * counts as reaching any such call, and such a call in a node, or in a program method with no node, counts as reached by any method.
+	 *
+	 * @param nodes The method's nodes.
+	 * @return A description of the call, or of why the runs reaching the method can't be told, or empty if no run reaching the method keys
+	 *         weights by name.
+	 */
+	private Optional<String> findNameKeyedCall(Set<CGNode> nodes) {
+		Map<CGNode, BitSet> entryPoints = getEntryPointsReaching(this.callGraph);
+		BitSet reaching = new BitSet();
+
+		for (CGNode node : nodes) {
+			BitSet nodeEntryPoints = entryPoints.get(node);
+
+			if (nodeEntryPoints == null)
+				return Optional.of("a run reaching `" + getFunctionName(node)
+						+ "` may save or load weights by name, since its runs can't be determined");
+
+			reaching.or(nodeEntryPoints);
+		}
+
+		// pytest runs every test it collects, and the modules holding them, in one process.
+		BitSet testRun = this.getTestRun();
+
+		if (reaching.intersects(testRun))
+			reaching.or(testRun);
+
+		NameKeyedCalls calls = this.getNameKeyedCalls();
+
+		for (Map.Entry<CGNode, String> call : calls.reached().entrySet()) {
+			BitSet callEntryPoints = entryPoints.get(call.getKey());
+
+			if (callEntryPoints == null || callEntryPoints.intersects(reaching))
+				return Optional.of(call.getValue() + " may save or load weights by name in a run reaching it");
+		}
+
+		if (calls.unreached() != null)
+			return Optional.of(calls.unreached() + ", which no entry point reaches, may save or load weights by name in any run");
+
+		return Optional.empty();
+	}
+
+	/**
+	 * The entry points of the call graph, by their index among the fake root's successors, that pytest runs in one process: every entry
+	 * point that isn't a script, which, with pytest's entry points on, is a test function or the bound method calling a test method, and
+	 * every script holding a test, whose module pytest imports. pytest collects every test module into one process with shared imports, so
+	 * a model a module shares is one object across them. Empty when no entry point is a pytest test's. Built once per call graph.
+	 *
+	 * @return The indices of the entry points of pytest's run.
+	 */
+	private BitSet getTestRun() {
+		return testRunCache.computeIfAbsent(this.callGraph, cg -> {
+			Set<MethodReference> scripts = new HashSet<>();
+			Set<String> testFiles = new HashSet<>();
+
+			for (Entrypoint entrypoint : this.builder.getOptions().getEntrypoints())
+				if (entrypoint instanceof PytesttEntrypoint)
+					testFiles.add(getRelativeFilename(entrypoint.getMethod().getDeclaringClass().getName()));
+				else
+					scripts.add(entrypoint.getMethod().getReference());
+
+			BitSet ret = new BitSet();
+
+			if (testFiles.isEmpty())
+				return ret;
+
+			int index = 0;
+
+			for (Iterator<CGNode> entryPoints = cg.getSuccNodes(cg.getFakeRootNode()); entryPoints.hasNext(); index++) {
+				IMethod method = entryPoints.next().getMethod();
+
+				if (!scripts.contains(method.getReference()) || !Util.isUserCodeClass(method.getDeclaringClass())
+						|| testFiles.contains(getRelativeFilename(method.getDeclaringClass().getName())))
+					ret.set(index);
+			}
+
+			return ret;
+		});
+	}
+
+	/**
+	 * The calls in the program that save or load weights by name ({@link #keysNames(IR, DefUse, PythonInvokeInstruction, Set)}): the
+	 * program nodes of the call graph holding one, each with a description of its first, and one in a program method with no node, such as
+	 * a Keras callback's {@code on_epoch_end}, which the engine's model of {@code fit} doesn't call. Program code is what the engine says
+	 * it is ({@link CallTargets#isProgramCode(CGNode)}): a library's summary is the engine's model, and its saves aren't the program's.
+	 * Built once per call graph.
+	 *
+	 * @return The calls keying weights by name.
+	 */
+	private NameKeyedCalls getNameKeyedCalls() {
+		return nameKeyedCallsCache.computeIfAbsent(this.callGraph, cg -> {
+			Map<CGNode, String> reached = new LinkedHashMap<>();
+			Set<MethodReference> nodeMethods = new HashSet<>();
+
+			for (CGNode node : cg) {
+				nodeMethods.add(node.getMethod().getReference());
+
+				if (!CallTargets.isProgramCode(node) || node.getIR() == null)
+					continue;
+
+				for (SSAInstruction instruction : Iterator2Iterable.make(node.getIR().iterateNormalInstructions()))
+					if (instruction instanceof PythonInvokeInstruction invoke
+							&& keysNames(node.getIR(), node.getDU(), invoke, cg.getPossibleTargets(node, invoke.getCallSite()))) {
+						reached.put(node, describePosition(node.getMethod(), invoke));
+						break;
+					}
+			}
+
+			return new NameKeyedCalls(reached, this.findUnreachedNameKeyedCall(nodeMethods));
+		});
+	}
+
+	/**
+	 * Describes a call saving or loading weights by name in a program method with no call-graph node: a method a script declares, which the
+	 * class hierarchy holds, that is no WALA-synthetic method and none of {@code nodeMethods}. Such a method may still run, as a Keras
+	 * callback's does when {@code fit} calls it. Its IR comes from the builder's cache; one that can't be built may hold any call.
+	 *
+	 * @param nodeMethods The methods of the call graph's nodes.
+	 * @return A description of the first such call, or of a method whose IR can't be built, or {@code null} if there is none.
+	 */
+	private String findUnreachedNameKeyedCall(Set<MethodReference> nodeMethods) {
+		IAnalysisCacheView cache = this.builder.getAnalysisCache();
+
+		for (IClass klass : this.builder.getClassHierarchy()) {
+			if (!Util.isUserCodeClass(klass))
+				continue;
+
+			for (IMethod method : klass.getDeclaredMethods()) {
+				if (!(method instanceof AstMethod) || method.isWalaSynthetic() || nodeMethods.contains(method.getReference()))
+					continue;
+
+				IR ir;
+
+				try {
+					ir = cache.getIR(method);
+				} catch (RuntimeException e) {
+					LOG.warn("Can't build the IR of " + method + ".", e);
+					ir = null;
+				}
+
+				if (ir == null)
+					return "`" + getSimpleName(klass.getName()) + "`, whose code can't be read";
+
+				DefUse defUse = cache.getDefUse(ir);
+
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					if (instruction instanceof PythonInvokeInstruction invoke && keysNames(ir, defUse, invoke, null))
+						return describePosition(method, invoke);
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * True iff {@code invoke} may save or load weights by name: its callee's name ({@link #getCalleeName(IR, DefUse, int, Set)}) says so. A
+	 * call of {@code init_from_checkpoint} or {@code Saver} always does. A call of {@code save}, {@code save_weights} or {@code save_model}
+	 * does when its {@code save_format} is the constant {@code "h5"}, or {@code "hdf5"} or {@code "keras"}, which Keras's
+	 * {@code save_weights} reads as {@code "h5"}, ignoring case, or when it isn't a constant. A call of {@code save_weights} whose
+	 * {@code save_format} is the constant {@code "tf"} doesn't: Keras saves a checkpoint, or raises for a path naming an HDF5 file.
+	 * Otherwise, its path decides ({@link #mayNameHdf5File(IR, DefUse, int)}), even under {@code "tf"} for {@code save} and
+	 * {@code save_model}, which, measured on TensorFlow 2.9.3, save to HDF5 whenever the path's suffix names it. A call of
+	 * {@code load_weights} does when it passes a {@code by_name} that isn't the constant {@code False}; otherwise, its path decides. A call
+	 * of {@code load_model} or {@code ModelCheckpoint} does as its path decides. The path is the {@code filepath} keyword, or else the
+	 * first argument, or the second for {@code save_model}, whose first is the model. A call unpacking {@code **} keywords may pass any
+	 * format and any path, so it does.
+	 *
+	 * @param ir The IR of {@code invoke}.
+	 * @param defUse The def-use chains of {@code ir}.
+	 * @param invoke A call.
+	 * @param targets The call's targets in the call graph, or {@code null} if its method has no node.
+	 * @return True iff the call may save or load weights keyed by their names.
+	 */
+	private static boolean keysNames(IR ir, DefUse defUse, PythonInvokeInstruction invoke, Set<CGNode> targets) {
+		SymbolTable symbolTable = ir.getSymbolTable();
+		String name = getCalleeName(ir, defUse, invoke.getUse(0), targets);
+
+		if (name == null)
+			return false;
+
+		if (NAME_KEYED_CALL_NAMES.contains(name))
+			return true;
+
+		boolean saves = SAVE_CALL_NAMES.contains(name);
+		boolean loadsWeights = name.equals(LOAD_WEIGHTS_METHOD_NAME);
+
+		if (!saves && !loadsWeights && !PATH_FORMAT_CALL_NAMES.contains(name))
+			return false;
+
+		if (unpacksKeywords(invoke))
+			return true;
+
+		int format = invoke.getUse(SAVE_FORMAT_KEYWORD);
+
+		if (saves && format >= 0) {
+			if (!symbolTable.isConstant(format) || symbolTable.isStringConstant(format)
+					&& HDF5_FORMATS.contains(symbolTable.getStringValue(format).strip().toLowerCase(Locale.ROOT)))
+				return true;
+
+			if (name.equals(SAVE_WEIGHTS_METHOD_NAME) && symbolTable.isStringConstant(format)
+					&& symbolTable.getStringValue(format).equals(TF_FORMAT))
+				return false;
+		}
+
+		int byName = invoke.getUse(BY_NAME_KEYWORD);
+
+		if (loadsWeights && byName >= 0 && !(symbolTable.isConstant(byName) && Boolean.FALSE.equals(symbolTable.getConstantValue(byName))))
+			return true;
+
+		int path = invoke.getUse(FILEPATH_KEYWORD);
+
+		if (path < 0) {
+			int position = name.equals(SAVE_MODEL_FUNCTION_NAME) ? 2 : 1;
+
+			// Keras requires a save's or a load's path, so a call passing none, and no starred argument that may supply one, saves or loads
+			// no Keras file. `CheckpointManager.save(checkpoint_number=n)`, which writes an object-based checkpoint, is one.
+			if (position >= invoke.getNumberOfPositionalParameters() && invoke.firstStarredPosition() < 0)
+				return false;
+
+			path = getPositionalArgument(invoke, position);
+		}
+
+		return mayNameHdf5File(ir, defUse, path);
+	}
+
+	/**
+	 * The name of the function or class {@code callee}, a call's callee value, reads: the attribute's name when it is read as an attribute,
+	 * as {@code model.save_weights} and {@code tf.keras.models.load_model} are, or the variable's name when it is read as one, as a
+	 * function imported by name, {@code from tensorflow.keras.models import load_model}, is in a function using it. A global's name is the
+	 * front end's without its {@code global} keyword or any scope before the name. A name read as a variable may be the program's own
+	 * function, as a {@code load_model} a program defines is, so a call whose every target in the call graph is program code has no name
+	 * here: that code's own calls are read in turn.
+	 *
+	 * @param ir The IR of {@code callee}.
+	 * @param defUse The def-use chains of {@code ir}.
+	 * @param callee A call's callee value.
+	 * @param targets The call's targets in the call graph, or {@code null} if its method has no node.
+	 * @return The name read, or {@code null} if the callee is read otherwise or is the program's own function.
+	 */
+	private static String getCalleeName(IR ir, DefUse defUse, int callee, Set<CGNode> targets) {
+		SymbolTable symbolTable = ir.getSymbolTable();
+		SSAInstruction def = defUse.getDef(callee);
+
+		if (def instanceof AstPropertyRead read)
+			return symbolTable.isStringConstant(read.getMemberRef()) ? symbolTable.getStringValue(read.getMemberRef()) : null;
+
+		String ret = null;
+
+		if (def instanceof AstLexicalRead lexical) {
+			for (Access access : lexical.getAccesses())
+				if (access.valueNumber() == callee)
+					ret = access.getName().fst;
+		} else if (def instanceof AstGlobalRead global) {
+			String name = global.getGlobalName();
+			name = name.startsWith(GLOBAL_PREFIX) ? name.substring(GLOBAL_PREFIX.length()) : name;
+			ret = name.substring(name.lastIndexOf('/') + 1);
+		}
+
+		if (ret != null && targets != null && !targets.isEmpty() && targets.stream().allMatch(CallTargets::isProgramCode))
+			return null;
+
+		return ret;
+	}
+
+	/**
+	 * The value {@code invoke} passes at {@code position} among its positional slots, the callee being the first, as the front end lays a
+	 * call out: {@code model.save(path)} passes {@code path} at 1, since its callee, the attribute read, holds the receiver.
+	 *
+	 * @param invoke A call.
+	 * @param position A positional slot.
+	 * @return The value number at the slot, or -1 if the call passes fewer arguments or a starred argument at or before the slot, which may
+	 *         shift it.
+	 */
+	private static int getPositionalArgument(PythonInvokeInstruction invoke, int position) {
+		if (position >= invoke.getNumberOfPositionalParameters()
+				|| invoke.firstStarredPosition() >= 0 && invoke.firstStarredPosition() <= position)
+			return -1;
+
+		return invoke.getUse(position);
+	}
+
+	/**
+	 * True iff {@code value}, a save's or a load's path, may name an HDF5 file, which Keras keys by name. A constant string ending in
+	 * {@code .h5}, {@code .hdf5} or {@code .keras}, ignoring case, does, as Keras infers the format from them, and any other constant
+	 * doesn't. A call of a {@code join} attribute, as {@code os.path.join(directory, "t.h5")} is, names the file by its last argument, so
+	 * it is decided by that argument. A string a {@code format} call fills from a constant template is decided by the template's text after
+	 * its last replacement field, when that text holds a suffix. Any other value, such as a parameter or another computed string, may.
+	 *
+	 * @param ir The IR of {@code value}.
+	 * @param defUse The def-use chains of {@code ir}.
+	 * @param value A value number of {@code ir}, or -1 if the path can't be read.
+	 * @return True iff the path may name an HDF5 file.
+	 */
+	private static boolean mayNameHdf5File(IR ir, DefUse defUse, int value) {
+		if (value < 0)
+			return true;
+
+		SymbolTable symbolTable = ir.getSymbolTable();
+		int file = value;
+
+		if (defUse.getDef(value) instanceof PythonInvokeInstruction join && join.getNumberOfPositionalParameters() > 1
+				&& defUse.getDef(join.getUse(0)) instanceof AstPropertyRead read && symbolTable.isStringConstant(read.getMemberRef())
+				&& symbolTable.getStringValue(read.getMemberRef()).equals(JOIN_FUNCTION_NAME)) {
+			int last = join.getNumberOfPositionalParameters() - 1;
+
+			if (join.isPositionalSlotStarred(last))
+				return true;
+
+			file = join.getUse(last);
+		}
+
+		// A string formatted from a constant template, as `"data/{}_nodes.npy".format(mode)` is, ends in the template's text after its
+		// last replacement field. That text gives the suffix when it holds one; otherwise a field may supply it.
+		if (defUse.getDef(file) instanceof PythonInvokeInstruction format && defUse.getDef(format.getUse(0)) instanceof AstPropertyRead read
+				&& symbolTable.isStringConstant(read.getMemberRef())
+				&& symbolTable.getStringValue(read.getMemberRef()).equals(FORMAT_METHOD_NAME)
+				&& symbolTable.isStringConstant(read.getObjectRef())) {
+			String template = symbolTable.getStringValue(read.getObjectRef());
+			String tail = template.substring(template.lastIndexOf('}') + 1);
+
+			if (!tail.contains("."))
+				return true;
+
+			String lowerCase = tail.toLowerCase(Locale.ROOT);
+			return HDF5_SUFFIXES.stream().anyMatch(lowerCase::endsWith);
+		}
+
+		if (symbolTable.isStringConstant(file)) {
+			String path = symbolTable.getStringValue(file);
+
+			// TODO: Read an f-string's value as computed from the engine once it stops lowering it to its source text
+			// (https://github.com/wala/ML/issues/1231).
+			if (path.startsWith("\"") || path.startsWith("'"))
+				return true;
+
+			String lowerCase = path.toLowerCase(Locale.ROOT);
+			return HDF5_SUFFIXES.stream().anyMatch(lowerCase::endsWith);
+		}
+
+		return !symbolTable.isConstant(file);
+	}
+
+	/**
 	 * Finds two sublayers reachable from the receiver of {@code nodes} that may carry the same name. A sublayer is told apart by the node
 	 * allocating it, a constructor or a summary in its context: the engine allocates the bound methods of a program layer in the layer's
 	 * constructor too, and they stand for the same layer.
@@ -1560,7 +2034,7 @@ class LayerBuildAnalysis {
 	 * @param nodes The method's nodes.
 	 * @return {@link LayerBuildShape#COLLIDING_NAMES} with the name, or empty if every name is unique.
 	 */
-	private Optional<Verdict> findCollidingNames(Set<CGNode> nodes) {
+	private Optional<Verdict> findCollidingSublayerNames(Set<CGNode> nodes) {
 		Set<InstanceKey> receivers = new HashSet<>();
 
 		for (CGNode node : nodes) {
@@ -2490,10 +2964,21 @@ class LayerBuildAnalysis {
 	 * @return The function's name with the file and line, when known.
 	 */
 	private static String describePosition(CGNode node, SSAInstruction instruction) {
-		String ret = "`" + getFunctionName(node) + "`";
+		return describePosition(node.getMethod(), instruction);
+	}
 
-		if (node.getMethod() instanceof AstMethod method && method.debugInfo() != null) {
-			Position position = method.debugInfo().getInstructionPosition(instruction.iIndex());
+	/**
+	 * Describes the source position of {@code instruction} of {@code method}.
+	 *
+	 * @param method A method.
+	 * @param instruction One of its instructions.
+	 * @return The function's name with the file and line, when known.
+	 */
+	private static String describePosition(IMethod method, SSAInstruction instruction) {
+		String ret = "`" + getSimpleName(method.getDeclaringClass().getName()) + "`";
+
+		if (method instanceof AstMethod astMethod && astMethod.debugInfo() != null) {
+			Position position = astMethod.debugInfo().getInstructionPosition(instruction.iIndex());
 
 			if (position != null && position.getURL() != null) {
 				String file = position.getURL().getPath();
