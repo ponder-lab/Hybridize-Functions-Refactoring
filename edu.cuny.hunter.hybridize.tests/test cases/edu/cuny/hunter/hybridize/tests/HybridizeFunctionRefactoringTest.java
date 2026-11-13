@@ -18843,6 +18843,26 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a branch on the {@code training} flag,
+	 * {@code if training: x = self.b(x)}, in layers of plain {@code Sequential} models that the program calls with {@code training=...},
+	 * which Keras passes on to each layer. {@code TrainedGate.call}'s model is called with {@code training=True} twice.
+	 * {@code SwitchedGate.call}'s is called with {@code training=False} and then {@code training=True}. Measured on TensorFlow 2.9.3,
+	 * decorating {@code SwitchedGate.call} raises "tf.function only supports singleton tf.Variables created on the first call" once the
+	 * second call's retrace calls {@code b}, while decorating {@code TrainedGate.call} raises nothing.
+	 */
+	@Test
+	public void testMayBuildLayersSequentialTrainingFlag() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "TrainedGate.call", true, false, null);
+
+		// TODO: Refuse `SwitchedGate.call` for a first call on a retrace once HFR builds against an Ariadne with
+		// https://github.com/wala/ML/issues/1120, which passes a `Sequential`'s `training` on to each of its layers. Until then, nothing
+		// shows the flag taking two values, and `SwitchedGate.call` is converted.
+		assertMayBuildLayers(functions, "SwitchedGate.call", true, false, null);
+		assertEquals("`SwitchedGate.call` is converted.", P1, findFunction(functions, "SwitchedGate.call").getPassingPrecondition());
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a branch on a tensor,
 	 * {@code if tf.reduce_sum(x) > 0: x = self.b(x)}. The engine types the condition as a tensor, and AutoGraph traces both arms of a
 	 * tensor branch, so the first trace calls {@code b}; measured on TensorFlow 2.9.3, decorating {@code Gated.call} retraces without
