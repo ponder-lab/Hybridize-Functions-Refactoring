@@ -14466,6 +14466,60 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A row of a matrix taken at an index that isn't a constant, {@code m[i, :]} with {@code i} a loop variable over {@code range(3)}, has
+	 * one dimension fewer than the matrix, as does the row at a constant index, {@code m[0, :]}. Measured on TensorFlow 2.9.3, each row of
+	 * the {@code (3, 4)} matrix has shape {@code (4,)}, and {@code row_total} and {@code first_total} run under
+	 * {@code TensorSpec(shape=(4,), dtype=tf.float32)}.
+	 */
+	@Test
+	public void testInferInputSignatureRowAtComputedIndex() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function first = findFunction(functions, "first_total");
+		assertTrue("A signature is inferred for `first_total`.", first.getInferredInputSignature().isPresent());
+		assertEquals("`first_total`'s row has one dimension fewer than the matrix.", "[tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
+				first.getInferredInputSignature().get().toTensorSpecList("tf."));
+
+		// TODO: Expect `(4,)` once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1247, which drops the dimension an
+		// index that isn't a constant selects. Until then, the row keeps the matrix's rank, and the inferred spec doesn't match the row.
+		Function row = findFunction(functions, "row_total");
+		assertTrue("A signature is inferred for `row_total`.", row.getInferredInputSignature().isPresent());
+		assertEquals("`row_total`'s row keeps the matrix's rank.", "[tf.TensorSpec(shape=(None, 4), dtype=tf.float32)]",
+				row.getInferredInputSignature().get().toTensorSpecList("tf."));
+	}
+
+	/**
+	 * A tensor sized by a scalar that is a constant on one path and computed on another has an extent no constant fixes. {@code sized}
+	 * takes {@code tf.zeros([n])} with {@code n} either {@code 0} or {@code len(xs)}, and {@code counted} takes {@code tf.zeros([i])} with
+	 * {@code i} a counter starting at {@code 0} and incremented in a loop. {@code fixed} takes {@code tf.zeros([2])}. Measured on
+	 * TensorFlow 2.9.3, {@code sized} and {@code counted} run under {@code TensorSpec(shape=(None,), dtype=tf.float32)} and raise under
+	 * {@code TensorSpec(shape=(0,), dtype=tf.float32)}.
+	 */
+	@Test
+	public void testInferInputSignatureMixedScalarExtent() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function fixed = findFunction(functions, "fixed");
+		assertTrue("A signature is inferred for `fixed`.", fixed.getInferredInputSignature().isPresent());
+		assertEquals("`fixed`'s extent is its constant.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				fixed.getInferredInputSignature().get().toTensorSpecList("tf."));
+
+		// TODO: Expect `(None,)` once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1252, which doesn't read a
+		// points-to set holding scalar constants beside a scalar's type key as its constants. Until then, the extent folds to `0`, and the
+		// inferred spec doesn't match the later calls.
+		for (String identifier : List.of("sized", "counted")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("A signature is inferred for `" + identifier + "`.", function.getInferredInputSignature().isPresent());
+			assertEquals("`" + identifier + "`'s extent folds to its constant.", "[tf.TensorSpec(shape=(0,), dtype=tf.float32)]",
+					function.getInferredInputSignature().get().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
 	 * Pins the framework-supplied parameter rule of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/881, reducing
 	 * TensorFlow2.0-Examples' RPN model: {@code RPNplus.call} declares {@code training} with a default, no source call site passes it, and
 	 * Keras's {@code Layer.__call__} supplies {@code training=False} itself on every invocation, from outside the analyzed program. The
@@ -18786,6 +18840,57 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "Gated.call", true, false, null);
 		assertMayBuildLayers(functions, "Configured.call", true, false, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a branch on the {@code training} flag Keras
+	 * passes, {@code if training: x = self.b(x)}, in sublayers that models call with {@code training=training} and that are reached only
+	 * through {@code fit} and {@code predict}. {@code TrainedGate.call} is reached only through {@code fit}, which passes
+	 * {@code training=True} on every call. {@code ServedGate.call} is reached through {@code predict}, which passes {@code training=False},
+	 * and then through {@code fit}. Measured on TensorFlow 2.9.3, decorating {@code ServedGate.call} raises "tf.function only supports
+	 * singleton tf.Variables created on the first call" once {@code fit}'s retrace calls {@code b}, while decorating
+	 * {@code TrainedGate.call} raises nothing. Decorating {@code Served.call}, which calls {@code ServedGate}, raises the same way, but
+	 * {@code Trained.call} and {@code Served.call} are models' and are not refused.
+	 */
+	@Test
+	public void testMayBuildLayersTrainingFlag() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "TrainedGate.call", true, false, null);
+
+		// TODO: Refuse `ServedGate.call` for a first call on a retrace once HFR builds against an Ariadne with
+		// https://github.com/wala/ML/issues/1248, which models the `training` flag Keras passes from `fit` and `predict`. Until then,
+		// nothing shows the flag taking two values, and `ServedGate.call` is converted.
+		assertMayBuildLayers(functions, "ServedGate.call", true, false, null);
+		assertEquals("`ServedGate.call` is converted.", P1, findFunction(functions, "ServedGate.call").getPassingPrecondition());
+
+		assertMayBuildLayers(functions, "Trained.call", true, true, null);
+
+		// TODO: Refuse `Served.call` for a first call on a retrace once a model's call is exempt only for colliding names
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1285).
+		assertMayBuildLayers(functions, "Served.call", true, true, null);
+		assertEquals("`Served.call` is converted.", P1, findFunction(functions, "Served.call").getPassingPrecondition());
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with a branch on the {@code training} flag,
+	 * {@code if training: x = self.b(x)}, in layers of plain {@code Sequential} models that the program calls with {@code training=...},
+	 * which Keras passes on to each layer. {@code TrainedGate.call}'s model is called with {@code training=True} twice.
+	 * {@code SwitchedGate.call}'s is called with {@code training=False} and then {@code training=True}. Measured on TensorFlow 2.9.3,
+	 * decorating {@code SwitchedGate.call} raises "tf.function only supports singleton tf.Variables created on the first call" once the
+	 * second call's retrace calls {@code b}, while decorating {@code TrainedGate.call} raises nothing.
+	 */
+	@Test
+	public void testMayBuildLayersSequentialTrainingFlag() throws Exception {
+		Set<Function> functions = this.getFunctions();
+		assertMayBuildLayers(functions, "TrainedGate.call", true, false, null);
+
+		// TODO: Refuse `SwitchedGate.call` for a first call on a retrace once HFR builds against an Ariadne with
+		// https://github.com/wala/ML/issues/1120, which passes a `Sequential`'s `training` on to each of its layers, and
+		// https://github.com/wala/ML/issues/1249, which gives a layer called without `training` the value of the call it runs inside in
+		// place of its default. With #1120 alone, `TrainedGate.call` is refused too. Until then, nothing shows the flag taking two values,
+		// and `SwitchedGate.call` is converted.
+		assertMayBuildLayers(functions, "SwitchedGate.call", true, false, null);
+		assertEquals("`SwitchedGate.call` is converted.", P1, findFunction(functions, "SwitchedGate.call").getPassingPrecondition());
 	}
 
 	/**
