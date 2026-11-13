@@ -18820,7 +18820,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code training=True} on every call. {@code ServedGate.call} is reached through {@code predict}, which passes {@code training=False},
 	 * and then through {@code fit}. Measured on TensorFlow 2.9.3, decorating {@code ServedGate.call} raises "tf.function only supports
 	 * singleton tf.Variables created on the first call" once {@code fit}'s retrace calls {@code b}, while decorating
-	 * {@code TrainedGate.call} raises nothing. {@code Trained.call} and {@code Served.call} are models' and are not refused.
+	 * {@code TrainedGate.call} raises nothing. Decorating {@code Served.call}, which calls {@code ServedGate}, raises the same way, but
+	 * {@code Trained.call} and {@code Served.call} are models' and are not refused.
 	 */
 	@Test
 	public void testMayBuildLayersTrainingFlag() throws Exception {
@@ -18834,7 +18835,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`ServedGate.call` is converted.", P1, findFunction(functions, "ServedGate.call").getPassingPrecondition());
 
 		assertMayBuildLayers(functions, "Trained.call", true, true, null);
+
+		// TODO: Refuse `Served.call` for a first call on a retrace once a model's call is exempt only for colliding names
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1285).
 		assertMayBuildLayers(functions, "Served.call", true, true, null);
+		assertEquals("`Served.call` is converted.", P1, findFunction(functions, "Served.call").getPassingPrecondition());
 	}
 
 	/**
