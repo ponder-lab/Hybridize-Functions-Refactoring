@@ -1542,7 +1542,8 @@ public class Function {
 	private boolean unconditionalInvalidNameArguments;
 
 	/**
-	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
+	 * True iff this {@link Function} has at least one parameter that is likely a primitive whose value may vary between calls: neither a
+	 * defaulted parameter that no call supplies nor one bound to the same constant at every call.
 	 */
 	private Boolean hasPrimitiveParameter;
 
@@ -5461,9 +5462,10 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff this {@link Function} has at least one parameter that is likely a primitive.
+	 * Returns true iff this {@link Function} has at least one parameter that is likely a primitive whose value may vary between calls.
 	 *
-	 * @return True iff this {@link Function} has at least one parameter that is likely a primitive.
+	 * @return True iff this {@link Function} has at least one parameter that is likely a primitive whose value may vary between calls:
+	 *         neither a defaulted parameter that no call supplies nor one bound to the same constant at every call.
 	 */
 	public Boolean getHasPrimitiveParameter() {
 		return this.hasPrimitiveParameter;
