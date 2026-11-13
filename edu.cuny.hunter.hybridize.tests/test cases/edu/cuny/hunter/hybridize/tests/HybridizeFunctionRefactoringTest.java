@@ -12351,7 +12351,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * A hybrid function whose parameter has no abstract value is not de-hybridized as having no tensor parameter (P2)
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/997). The argument of {@code p_fmt} comes from
-	 * {@code str.format}, a method the analysis doesn't model, so its "not a tensor" classification concluded nothing
+	 * {@code json.loads}, a function the analysis doesn't model, so its "not a tensor" classification concluded nothing
 	 * ({@link TensorClassificationBasis#NO_ABSTRACT_VALUE}). The argument of {@code p_int} is a modeled literal, so its classification is a
 	 * determination and it still de-hybridizes.
 	 */
@@ -12673,12 +12673,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * Python scalars of unknown value as arguments: the engine represents each by its type's key (wala/ML#1148), which counts as a
-	 * primitive wherever a constant does. {@code scale}'s {@code n} is only ever {@code len(xs)}, and {@code scale_first}'s list holds it,
-	 * so each is a primitive parameter. {@code boxed}'s object of a program class has it in a field, and {@code layered}'s Keras layer has
-	 * it as its units, but neither is a container, so each is keyed by its identity and is no primitive parameter (#1048).
-	 * {@code wrapped}'s tensors and variable are built from {@code len(xs)}, but a tensor is no primitive, whatever it was built from
-	 * (wala/ML#451). {@code summed}'s parameter is a list of tensors at one call and {@code len(xs)} at the other, so the int's key is
-	 * among the values its container reduction reads.
+	 * primitive wherever a constant does. {@code xs} grows by {@code append}, so its length is no constant (wala/ML#1246). {@code scale}'s
+	 * {@code n} is only ever {@code len(xs)}, and {@code scale_first}'s list holds it, so each is a primitive parameter. {@code boxed}'s
+	 * object of a program class has it in a field, and {@code layered}'s Keras layer has it as its units, but neither is a container, so
+	 * each is keyed by its identity and is no primitive parameter (#1048). {@code wrapped}'s tensors and variable are built from
+	 * {@code len(xs)}, but a tensor is no primitive, whatever it was built from (wala/ML#451). {@code summed}'s parameter is a list of
+	 * tensors at one call and {@code len(xs)} at the other, so the int's key is among the values its container reduction reads.
 	 */
 	@Test
 	public void testComputedScalarParameter() throws Exception {
@@ -14482,11 +14482,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`first_total`'s row has one dimension fewer than the matrix.", "[tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
 				first.getInferredInputSignature().get().toTensorSpecList("tf."));
 
-		// TODO: Expect `(4,)` once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1247, which drops the dimension an
-		// index that isn't a constant selects. Until then, the row keeps the matrix's rank, and the inferred spec doesn't match the row.
+		// The engine drops the dimension an index that isn't a constant selects (https://github.com/wala/ML/issues/1247).
 		Function row = findFunction(functions, "row_total");
 		assertTrue("A signature is inferred for `row_total`.", row.getInferredInputSignature().isPresent());
-		assertEquals("`row_total`'s row keeps the matrix's rank.", "[tf.TensorSpec(shape=(None, 4), dtype=tf.float32)]",
+		assertEquals("`row_total`'s row has one dimension fewer than the matrix.", "[tf.TensorSpec(shape=(4,), dtype=tf.float32)]",
 				row.getInferredInputSignature().get().toTensorSpecList("tf."));
 	}
 
@@ -14508,13 +14507,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("`fixed`'s extent is its constant.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
 				fixed.getInferredInputSignature().get().toTensorSpecList("tf."));
 
-		// TODO: Expect `(None,)` once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1252, which doesn't read a
-		// points-to set holding scalar constants beside a scalar's type key as its constants. Until then, the extent folds to `0`, and the
-		// inferred spec doesn't match the later calls.
+		// The engine doesn't read a points-to set holding scalar constants beside a scalar's type key as its constants
+		// (https://github.com/wala/ML/issues/1252).
 		for (String identifier : List.of("sized", "counted")) {
 			Function function = findFunction(functions, identifier);
 			assertTrue("A signature is inferred for `" + identifier + "`.", function.getInferredInputSignature().isPresent());
-			assertEquals("`" + identifier + "`'s extent folds to its constant.", "[tf.TensorSpec(shape=(0,), dtype=tf.float32)]",
+			assertEquals("`" + identifier + "`'s extent is no constant.", "[tf.TensorSpec(shape=(None,), dtype=tf.float32)]",
 					function.getInferredInputSignature().get().toTensorSpecList("tf."));
 		}
 	}
@@ -18857,11 +18855,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "TrainedGate.call", true, false, null);
 
-		// TODO: Refuse `ServedGate.call` for a first call on a retrace once HFR builds against an Ariadne with
-		// https://github.com/wala/ML/issues/1248, which models the `training` flag Keras passes from `fit` and `predict`. Until then,
-		// nothing shows the flag taking two values, and `ServedGate.call` is converted.
-		assertMayBuildLayers(functions, "ServedGate.call", true, false, null);
-		assertEquals("`ServedGate.call` is converted.", P1, findFunction(functions, "ServedGate.call").getPassingPrecondition());
+		// The engine models the `training` flag Keras passes from `fit` and `predict` (https://github.com/wala/ML/issues/1248), so the flag
+		// takes two values.
+		assertMayBuildLayers(functions, "ServedGate.call", true, false, FIRST_CALL_ON_RETRACE);
 
 		assertMayBuildLayers(functions, "Trained.call", true, true, null);
 
@@ -18884,13 +18880,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		assertMayBuildLayers(functions, "TrainedGate.call", true, false, null);
 
-		// TODO: Refuse `SwitchedGate.call` for a first call on a retrace once HFR builds against an Ariadne with
-		// https://github.com/wala/ML/issues/1120, which passes a `Sequential`'s `training` on to each of its layers, and
-		// https://github.com/wala/ML/issues/1249, which gives a layer called without `training` the value of the call it runs inside in
-		// place of its default. With #1120 alone, `TrainedGate.call` is refused too. Until then, nothing shows the flag taking two values,
-		// and `SwitchedGate.call` is converted.
-		assertMayBuildLayers(functions, "SwitchedGate.call", true, false, null);
-		assertEquals("`SwitchedGate.call` is converted.", P1, findFunction(functions, "SwitchedGate.call").getPassingPrecondition());
+		// The engine passes a `Sequential`'s `training` on to each of its layers (https://github.com/wala/ML/issues/1120), and gives a
+		// layer called without `training` the value of the call it runs inside in place of its default
+		// (https://github.com/wala/ML/issues/1249), so the flag takes two values.
+		assertMayBuildLayers(functions, "SwitchedGate.call", true, false, FIRST_CALL_ON_RETRACE);
 	}
 
 	/**
@@ -19369,29 +19362,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with weights saved to HDF5 in
 	 * a Keras callback, {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w.h5"))} in {@code Checkpoint.on_epoch_end}, which
 	 * {@code model.fit(..., callbacks=[Checkpoint()])} calls. Measured on TensorFlow 2.9.3, decorating {@code Inner.call} makes the save
-	 * fail with {@code ValueError: Unable to synchronously create dataset (name already exists)}.
-	 * <p>
-	 * TODO: The engine's summary of {@code fit} doesn't call the callbacks it's passed, so {@code on_epoch_end} has no call-graph node, its
-	 * save isn't read, and {@code Inner.call} is a missed refusal until the engine models those calls
-	 * (https://github.com/wala/ML/issues/1244).
+	 * fail with {@code ValueError: Unable to synchronously create dataset (name already exists)}. The engine's summary of {@code fit} calls
+	 * the hooks of the callbacks it's passed (https://github.com/wala/ML/issues/1244), so the save is in a run reaching {@code Inner.call},
+	 * which is refused for the colliding names.
 	 */
 	@Test
 	public void testMayBuildLayersSavedInCallback() throws Exception {
 		Set<Function> functions = this.getFunctions();
-		assertInnerRefusedIfKeyedByName(functions, false);
+		assertInnerRefusedIfKeyedByName(functions, true);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
 	/**
 	 * Tests the colliding names of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224 with the callback of
 	 * {@link #testMayBuildLayersSavedInCallback()} saving a checkpoint instead,
-	 * {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w"))}, which keys nothing by name. Measured on TensorFlow 2.9.3,
-	 * decorated, the save succeeds.
-	 * <p>
-	 * TODO: The engine's summary of {@code fit} doesn't call the callbacks it's passed (https://github.com/wala/ML/issues/1244), so
-	 * {@code on_epoch_end} has no call-graph node and its save isn't read. Until then, {@code Inner.call} isn't refused because the
-	 * callback isn't in the call graph, as for {@link #testMayBuildLayersSavedInCallback()}, and this test tells a checkpoint from an HDF5
-	 * save only once the engine calls the callback.
+	 * {@code self.model.save_weights(os.path.join(tempfile.mkdtemp(), "w"))}, which keys nothing by name, so {@code Inner.call} isn't
+	 * refused. Measured on TensorFlow 2.9.3, decorated, the save succeeds.
 	 */
 	@Test
 	public void testMayBuildLayersCheckpointInCallback() throws Exception {
