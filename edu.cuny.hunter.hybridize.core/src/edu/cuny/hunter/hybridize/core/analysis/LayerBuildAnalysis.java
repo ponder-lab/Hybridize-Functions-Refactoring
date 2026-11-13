@@ -1520,11 +1520,13 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff the engine shows that {@code value}, a branch's condition, takes the same path on every trace: the engine types it as a
-	 * tensor, and no Python value, in every context of the node's function, so AutoGraph traces both arms of its branch and the first trace
-	 * makes the first call. A Python value, even one constant in every context, may vary: a points-to set may not hold every value a call
-	 * outside the analysis passes. A context whose points-to set is empty but which the engine types as a tensor counts as a tensor with no
-	 * Python value, so a Python value the engine doesn't model, merged there, is hidden.
+	 * True iff the engine shows that {@code value}, a branch's condition, takes the same path on every trace: its points-to set is one
+	 * constant, the same in every context of the node's function, so it is one literal or module constant whatever the call, or the engine
+	 * types it as a tensor, and no Python value, in every context, whose branch AutoGraph traces both arms of, so the first trace makes the
+	 * first call. Anything else may vary: a value whose points-to set is empty or holds two constants, and a mix, such as a tensor in one
+	 * context or call and {@code None} or a Python {@code bool} in another, which takes a Python branch on one trace and a tensor branch on
+	 * another. A context whose points-to set is empty but which the engine types as a tensor counts as a tensor with no Python value, so a
+	 * Python value the engine doesn't model, merged there, is hidden; that is rare, since a Python {@code bool} mostly has a key.
 	 *
 	 * @param node The node of {@code value}.
 	 * @param value A value number of {@code node}.
@@ -1532,23 +1534,28 @@ class LayerBuildAnalysis {
 	 */
 	private boolean isFixedByEngine(CGNode node, int value) {
 		boolean anyTensor = false;
+		Set<InstanceKey> constants = new HashSet<>();
 
 		for (CGNode context : this.callGraph.getNodes(node.getMethod().getReference())) {
 			PointerKey pointerKey = this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(context, value);
+			OrdinalSet<InstanceKey> pointsTo = this.getPointerAnalysis().getPointsToSet(pointerKey);
 			boolean pythonValue = false;
 
-			for (InstanceKey instanceKey : this.getPointerAnalysis().getPointsToSet(pointerKey))
+			for (InstanceKey instanceKey : pointsTo)
 				if (instanceKey instanceof ConstantKey<?> || isPythonScalarKey(instanceKey))
 					pythonValue = true;
 
-			// A Python value may be another on another trace, however few the engine shows; a tensor alongside one is a mix.
-			if (!this.tensorTypedKeys.containsKey(pointerKey) || pythonValue)
+			if (this.tensorTypedKeys.containsKey(pointerKey) && !pythonValue)
+				anyTensor = true;
+			else if (pointsTo.size() == 1 && pointsTo.iterator().next() instanceof ConstantKey<?> constant)
+				constants.add(constant);
+			else
+				// Empty in a context is unknown there; a tensor alongside a Python value is a mix.
 				return false;
-
-			anyTensor = true;
 		}
 
-		return anyTensor;
+		// Every context a tensor, or every context the same one constant.
+		return anyTensor ? constants.isEmpty() : constants.size() == 1;
 	}
 
 	/**
