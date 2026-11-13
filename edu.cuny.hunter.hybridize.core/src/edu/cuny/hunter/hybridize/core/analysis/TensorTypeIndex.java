@@ -53,12 +53,19 @@ final class TensorTypeIndex {
 	/** The analysis's entries for parameter locals of program methods, by the source file declaring the method. */
 	private final Map<String, List<Pair<LocalPointerKey, TensorVariable>>> parameterEntries;
 
+	/** The tensor types of each key that is not a local, such as a container's element key, {@code None} members included. */
+	private final Map<PointerKey, Set<TensorType>> keyTypes;
+
 	private TensorTypeIndex(TensorTypeAnalysis analysis) {
 		Map<CGNode, Map<Integer, Set<TensorType>>> types = new HashMap<>();
 		Map<String, List<Pair<LocalPointerKey, TensorVariable>>> parameters = new HashMap<>();
+		Map<PointerKey, Set<TensorType>> keys = new HashMap<>();
 
 		for (Pair<PointerKey, TensorVariable> pair : analysis)
-			if (pair.fst instanceof LocalPointerKey local) {
+			if (!(pair.fst instanceof LocalPointerKey local)) {
+				if (pair.snd != null)
+					keys.computeIfAbsent(pair.fst, k -> new HashSet<>()).addAll(pair.snd.getTypes());
+			} else {
 				if (pair.snd != null)
 					// A None member is no tensor here; it matters only to the signature (wala/ML#1040).
 					pair.snd.getTypes().stream().filter(type -> !type.isNone())
@@ -82,6 +89,9 @@ final class TensorTypeIndex {
 
 		this.localTypes = unmodifiableMap(frozenTypes);
 		this.parameterEntries = unmodifiableMap(frozenParameters);
+
+		keys.replaceAll((key, set) -> unmodifiableSet(set));
+		this.keyTypes = unmodifiableMap(keys);
 	}
 
 	/**
@@ -93,6 +103,17 @@ final class TensorTypeIndex {
 	 */
 	Set<TensorType> typesOf(CGNode node, int valueNumber) {
 		return this.localTypes.getOrDefault(node, Map.of()).getOrDefault(valueNumber, Set.of());
+	}
+
+	/**
+	 * The tensor types the analysis gives a key that is not a local, such as the element key of a container
+	 * ({@link com.ibm.wala.cast.python.ml.client.Containers#getElementKeys}), {@code None} members included.
+	 *
+	 * @param key A pointer key that is not a local.
+	 * @return The key's tensor types; empty when the analysis gives it none.
+	 */
+	Set<TensorType> typesOf(PointerKey key) {
+		return this.keyTypes.getOrDefault(key, Set.of());
 	}
 
 	/**
