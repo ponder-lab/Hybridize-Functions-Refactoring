@@ -18885,8 +18885,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "TrainedGate.call", true, false, null);
 
 		// TODO: Refuse `SwitchedGate.call` for a first call on a retrace once HFR builds against an Ariadne with
-		// https://github.com/wala/ML/issues/1120, which passes a `Sequential`'s `training` on to each of its layers. Until then, nothing
-		// shows the flag taking two values, and `SwitchedGate.call` is converted.
+		// https://github.com/wala/ML/issues/1120, which passes a `Sequential`'s `training` on to each of its layers, and
+		// https://github.com/wala/ML/issues/1249, which gives a layer called without `training` the value of the call it runs inside in
+		// place of its default. With #1120 alone, `TrainedGate.call` is refused too. Until then, nothing shows the flag taking two values,
+		// and `SwitchedGate.call` is converted.
 		assertMayBuildLayers(functions, "SwitchedGate.call", true, false, null);
 		assertEquals("`SwitchedGate.call` is converted.", P1, findFunction(functions, "SwitchedGate.call").getPassingPrecondition());
 	}
