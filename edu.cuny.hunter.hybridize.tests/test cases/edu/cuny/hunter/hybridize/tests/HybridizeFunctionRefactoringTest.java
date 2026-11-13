@@ -14491,6 +14491,35 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A tensor sized by a scalar that is a constant on one path and computed on another has an extent no constant fixes. {@code sized}
+	 * takes {@code tf.zeros([n])} with {@code n} either {@code 0} or {@code len(xs)}, and {@code counted} takes {@code tf.zeros([i])} with
+	 * {@code i} a counter starting at {@code 0} and incremented in a loop. {@code fixed} takes {@code tf.zeros([2])}. Measured on
+	 * TensorFlow 2.9.3, {@code sized} and {@code counted} run under {@code TensorSpec(shape=(None,), dtype=tf.float32)} and raise under
+	 * {@code TensorSpec(shape=(0,), dtype=tf.float32)}.
+	 */
+	@Test
+	public void testInferInputSignatureMixedScalarExtent() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function fixed = findFunction(functions, "fixed");
+		assertTrue("A signature is inferred for `fixed`.", fixed.getInferredInputSignature().isPresent());
+		assertEquals("`fixed`'s extent is its constant.", "[tf.TensorSpec(shape=(2,), dtype=tf.float32)]",
+				fixed.getInferredInputSignature().get().toTensorSpecList("tf."));
+
+		// TODO: Expect `(None,)` once HFR builds against an Ariadne with https://github.com/wala/ML/issues/1252, which doesn't read a
+		// points-to set holding scalar constants beside a scalar's type key as its constants. Until then, the extent folds to `0`, and the
+		// inferred spec doesn't match the later calls.
+		for (String identifier : List.of("sized", "counted")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("A signature is inferred for `" + identifier + "`.", function.getInferredInputSignature().isPresent());
+			assertEquals("`" + identifier + "`'s extent folds to its constant.", "[tf.TensorSpec(shape=(0,), dtype=tf.float32)]",
+					function.getInferredInputSignature().get().toTensorSpecList("tf."));
+		}
+	}
+
+	/**
 	 * Pins the framework-supplied parameter rule of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/881, reducing
 	 * TensorFlow2.0-Examples' RPN model: {@code RPNplus.call} declares {@code training} with a default, no source call site passes it, and
 	 * Keras's {@code Layer.__call__} supplies {@code training=False} itself on every invocation, from outside the analyzed program. The
