@@ -14801,9 +14801,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Pins the state a Keras {@code RNN} hands its cell when it's called with an explicit initial state, reduced from NLPGNN's
 	 * {@code crf_decode_forward}: the layer wraps the one state tensor in a list, and the cell reads {@code state[0]}. The engine's
-	 * {@code RNN} summary allocates that list, and the container query gives a list a library summary allocates no length unless the
-	 * summary marks its positions exact (wala/ML#1265), so the cell's {@code state} is a container of unknown length and no specification
-	 * is written for it.
+	 * {@code RNN} summary allocates that list and marks its one position exact (wala/ML#1265), so the container query gives it a length,
+	 * and the cell gets a nested specification for its state.
 	 */
 	@Test
 	public void testRnnCellInitialState() throws Exception {
@@ -14818,13 +14817,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertEquals("The cell's state is a container.", TRUE, state.isTensorContainer());
 		assertEquals("`Cell.call` hybridizes (P1).", P1, call.getPassingPrecondition());
 
-		// TODO: https://github.com/ponder-lab/ML/pull/1246 (wala/ML#1265): the `RNN` summary marks the state list's one position exact,
-		// so the state reads [[(2, 3) float32]] and `Cell.call` gets the signature [tf.TensorSpec(shape=(2, 3), dtype=tf.float32),
-		// [tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]]. Flip to it once that's in the snapshot.
-		assertNull("The engine gives the summary's list no length, so no element structure.", state.getContainerElementTypes());
-		assertEquals("No specification is written for a container of unknown length.", Optional.empty(), call.getInferredInputSignature());
-		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
-				call.getInferredInputSignatureAbsenceReason());
+		assertEquals("The state list has its one position.", 1, state.getContainerElementTypes().size());
+		assertEquals("The emitted structure nests the state's one specification.",
+				"[tf.TensorSpec(shape=(2, 3), dtype=tf.float32), [tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]]",
+				call.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 	}
 
 	/**
