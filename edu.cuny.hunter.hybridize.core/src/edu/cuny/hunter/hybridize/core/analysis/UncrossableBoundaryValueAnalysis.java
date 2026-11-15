@@ -6,7 +6,7 @@ import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
-import com.ibm.wala.cast.python.ml.client.ContainerElements;
+import com.ibm.wala.cast.python.ml.client.Containers;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.classLoader.CallSiteReference;
@@ -266,7 +266,7 @@ class UncrossableBoundaryValueAnalysis {
 
 		// A container's elements are the element keys the engine lists, as in `Parameter`'s tensor-container walk. These include the
 		// channel a concatenation or a repetition stores into, which the container's catalog doesn't name.
-		for (PointerKey element : ContainerElements.of(this.builder, instanceKey).allElements())
+		for (PointerKey element : Containers.getElementKeys(this.builder, instanceKey))
 			for (InstanceKey elementValue : this.pointerAnalysis.getPointsToSet(element))
 				if (this.reaches(elementValue, target, seen))
 					return true;

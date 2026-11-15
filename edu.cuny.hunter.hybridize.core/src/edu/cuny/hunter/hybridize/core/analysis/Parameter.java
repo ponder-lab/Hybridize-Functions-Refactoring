@@ -51,7 +51,7 @@ import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.callgraph.PythonSSAPropagationCallGraphBuilder;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.analysis.TensorVariable;
-import com.ibm.wala.cast.python.ml.client.ContainerElements;
+import com.ibm.wala.cast.python.ml.client.Containers;
 import com.ibm.wala.cast.python.ml.types.TensorFlowTypes.DType;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.CompoundDim;
@@ -793,7 +793,7 @@ public final class Parameter {
 		seen.add(instanceKey);
 
 		if (Util.isContainerType(instanceKey.concreteType().getReference()))
-			for (PointerKey element : ContainerElements.of(builder, instanceKey).allElements())
+			for (PointerKey element : Containers.getElementKeys(builder, instanceKey))
 				for (InstanceKey elementValue : builder.getPointerAnalysis().getPointsToSet(element))
 					if (!seen.contains(elementValue) && isTensorContainer(elementValue, tensorContainers, builder, seen))
 						return true;
@@ -814,9 +814,9 @@ public final class Parameter {
 
 	/**
 	 * Returns which {@link InstanceKey}s represent containers of tensors: the containers some element of which, whatever its position, the
-	 * given analysis gives a tensor type ({@link ContainerElements#elementTypes(TensorTypeAnalysis)}). A container that may hold elements
-	 * the analysis does not list ({@link ContainerElements#isComplete()}) is not one on that ground alone: whether a value stored under an
-	 * unlisted key is a tensor is a type fact the engine does not yet publish, so such a container leaves the question open instead
+	 * given analysis gives a tensor type over its element keys ({@link Containers#getElementKeys}). A container that may hold elements the
+	 * analysis does not list ({@link Containers#isComplete}) is not one on that ground alone: whether a value stored under an unlisted key
+	 * is a tensor is a type fact the engine does not yet publish, so such a container leaves the question open instead
 	 * ({@link #receivesIncompleteContainer}). Each answer is cached per analysis.
 	 *
 	 * @param tensorAnalysis The {@link TensorTypeAnalysis}.
@@ -831,14 +831,15 @@ public final class Parameter {
 			if (!Util.isContainerType(k.concreteType().getReference()))
 				return false;
 
-			return !ContainerElements.of(builder, k).elementTypes(tensorAnalysis).isEmpty();
+			TensorTypeIndex index = TensorTypeIndex.of(tensorAnalysis);
+			return Containers.getElementKeys(builder, k).stream().anyMatch(element -> !index.typesOf(element).isEmpty());
 		});
 	}
 
 	/**
-	 * True iff a container that may hold elements the analysis does not list ({@link ContainerElements#isComplete()}) reaches the parameter
-	 * at {@code paramInx} in any of {@code nodes}, directly or as an element of another container. A value stored under an unlisted key may
-	 * be a tensor or not, and the engine does not say which, so such a container decides nothing about the parameter
+	 * True iff a container that may hold elements the analysis does not list ({@link Containers#isComplete}) reaches the parameter at
+	 * {@code paramInx} in any of {@code nodes}, directly or as an element of another container. A value stored under an unlisted key may be
+	 * a tensor or not, and the engine does not say which, so such a container decides nothing about the parameter
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1223).
 	 *
 	 * @param paramInx The index of the parameter under question.
@@ -848,7 +849,7 @@ public final class Parameter {
 	 */
 	private static boolean receivesIncompleteContainer(int paramInx, Set<CGNode> nodes, PythonSSAPropagationCallGraphBuilder builder) {
 		Predicate<InstanceKey> incomplete = k -> Util.isContainerType(k.concreteType().getReference())
-				&& !ContainerElements.of(builder, k).isComplete();
+				&& !Containers.isComplete(builder, k);
 
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
@@ -1023,8 +1024,8 @@ public final class Parameter {
 	 * Extracts the per-position element types of this parameter's sequence containers, populating {@link #getContainerElementTypes()} (and
 	 * {@link #getContainerAritiesDisagree()} for the arity-disagreement case). Runs only after Phase 3 classified this parameter as a
 	 * tensor container. The form is modeled iff every instance key the parameter points to is a list or tuple the tensor analysis knows as
-	 * a container of tensors, the engine knows every such container's length ({@link ContainerElements#arity()}), the containers agree on
-	 * it, and every position carries tensor evidence ({@link ContainerElements#positionTypes(TensorTypeAnalysis)}). Anything else leaves
+	 * a container of tensors, the engine knows every such container's length ({@link Containers#getLength}), the containers agree on it,
+	 * and every position's key ({@link Containers#getPositionKeys}) carries tensor evidence. Anything else leaves
 	 * {@link #getContainerElementTypes()} {@code null}, which the reduction reports as an unsupported container form (#781).
 	 *
 	 * @param tensorAnalysis Ariadne's analysis result.
@@ -1037,10 +1038,7 @@ public final class Parameter {
 		Predicate<InstanceKey> containers = getTensorContainers(tensorAnalysis, builder);
 		SubMonitor.done(monitor);
 
-		// What the engine says of each container's elements, asked once per container.
-		Map<Object, ContainerElements> elementsOf = new HashMap<>();
-		java.util.function.Function<Object, ContainerElements> elements = c -> elementsOf.computeIfAbsent(c,
-				x -> ContainerElements.of(builder, (InstanceKey) x));
+		TensorTypeIndex index = TensorTypeIndex.of(tensorAnalysis);
 
 		/*
 		 * Every check below runs whatever an earlier one found, so that each reason that holds is recorded (an arity disagreement and an
@@ -1110,7 +1108,7 @@ public final class Parameter {
 				// Asked only of a container whose element keys are all of them. Of any other, the engine answers yes because an unlisted
 				// element may be anything, which says the elements are unknown, not that one is None. The arity check below declines
 				// that container as an unsupported form.
-				if (elements.apply(container).isComplete() && elements.apply(container).mayHoldNone()) {
+				if (Containers.isComplete(builder, (InstanceKey) container) && Containers.mayHoldNone(builder, (InstanceKey) container)) {
 					LOG.info("Parameter " + this + " has a container element that is not representable as a tensor: " + container
 							+ "; withholding the signature.");
 					this.containerHoldsUnrepresentableElement = true;
@@ -1128,16 +1126,14 @@ public final class Parameter {
 		Map<Object, List<Set<TensorType>>> positionTypes = new HashMap<>();
 
 		for (Object container : mixed ? sequences : reaching) {
-			ContainerElements containerElements = elements.apply(container);
-
-			if (!containerElements.isComplete()) {
+			if (!Containers.isComplete(builder, (InstanceKey) container)) {
 				LOG.info("Parameter " + this + " has a container that may hold elements the analysis does not list; not reducing: "
 						+ container + ".");
 				addContainerFormReason(reasons, InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED);
 				continue;
 			}
 
-			OptionalInt known = containerElements.arity();
+			OptionalInt known = Containers.getLength(builder, (InstanceKey) container);
 
 			if (known.isEmpty()) {
 				LOG.info(
@@ -1149,7 +1145,8 @@ public final class Parameter {
 			int containerArity = known.getAsInt();
 
 			if (reaching.contains(container))
-				positionTypes.put(container, containerElements.positionTypes(tensorAnalysis));
+				positionTypes.put(container,
+						Containers.getPositionKeys(builder, (InstanceKey) container).stream().map(index::typesOf).toList());
 
 			if (arity == -1)
 				arity = containerArity;

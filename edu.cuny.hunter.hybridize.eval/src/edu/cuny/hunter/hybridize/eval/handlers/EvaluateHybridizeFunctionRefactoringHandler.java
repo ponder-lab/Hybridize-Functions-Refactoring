@@ -717,7 +717,7 @@ public class EvaluateHybridizeFunctionRefactoringHandler extends EvaluateRefacto
 
 	private static String[] buildFunctionAttributeColumnNames() {
 		return buildAttributeColumnNames("method reference", "type reference", "method", "parameters", "tensor parameter",
-				"primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
+				"varying primitive parameter", "hybrid", "side-effects", "recursive", "tensor computation", "eager-only calls",
 				"numpy calls on parameters", "invalid name arguments", "unresolved statically-read axes", "stale variable reads",
 				"tensor parameter iteration", "keras symbolic arguments", "caller covered", "autograph", "experimental_autograph_options",
 				"experimental_follow_type_hints", "experimental_implements", "func", "input_signature", "supplied input_signature",

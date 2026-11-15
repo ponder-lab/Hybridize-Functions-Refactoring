@@ -1,5 +1,5 @@
 # Python scalars of unknown value as arguments (wala/ML#1148). Each is a computed `int`, so each distinct value is a new trace under
-# `tf.function`.
+# `tf.function`. `xs` grows by `append`, so its length is no constant (wala/ML#1246).
 # - `scale`: `n` is only ever `len(xs)`.
 # - `scale_first`: `ns` is a list whose element is `len(xs)`.
 # - `wrapped`: `x` is a tensor or a variable built from `len(xs)`, which is no primitive.
@@ -41,6 +41,7 @@ def layered(x, layer):
 
 t = tf.ones([2])
 xs = [1, 2, 3]
+xs.append(4)
 
 scale(t, len(xs))
 scale_first(t, [len(xs)])

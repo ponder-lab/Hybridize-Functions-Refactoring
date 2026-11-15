@@ -1,9 +1,11 @@
+import json
+
 import tensorflow as tf
 
 
 @tf.function
 def p_fmt(s):
-    # Its argument comes from string formatting, an op the analysis doesn't model, so it has no abstract value.
+    # Its argument comes from `json.loads`, a function the analysis doesn't model, so it has no abstract value.
     return s
 
 
@@ -13,5 +15,5 @@ def p_int(n):
     return n
 
 
-p_fmt("_%d" % 3)
+p_fmt(json.loads('"_3"'))
 p_int(3)

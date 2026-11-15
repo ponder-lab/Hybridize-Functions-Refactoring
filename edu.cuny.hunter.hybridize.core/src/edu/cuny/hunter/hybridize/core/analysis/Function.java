@@ -1542,7 +1542,9 @@ public class Function {
 	private boolean unconditionalInvalidNameArguments;
 
 	/**
-	 * True iff this {@link Function} has at least one parameter that is likely a primitive.
+	 * True iff this {@link Function} has at least one parameter that is likely a primitive, other than a boolean when booleans are ignored,
+	 * whose value may vary between calls: neither a defaulted parameter that no call supplies nor one bound to the same constant at every
+	 * call. A parameter whose points-to set is empty doesn't count.
 	 */
 	private Boolean hasPrimitiveParameter;
 
@@ -5461,9 +5463,12 @@ public class Function {
 	}
 
 	/**
-	 * Returns true iff this {@link Function} has at least one parameter that is likely a primitive.
+	 * Returns true iff this {@link Function} has at least one parameter that is likely a primitive, other than a boolean when booleans are
+	 * ignored, whose value may vary between calls.
 	 *
-	 * @return True iff this {@link Function} has at least one parameter that is likely a primitive.
+	 * @return True iff this {@link Function} has at least one parameter that is likely a primitive, other than a boolean when booleans are
+	 *         ignored, whose value may vary between calls: neither a defaulted parameter that no call supplies nor one bound to the same
+	 *         constant at every call. A parameter whose points-to set is empty doesn't count.
 	 */
 	public Boolean getHasPrimitiveParameter() {
 		return this.hasPrimitiveParameter;
@@ -5610,7 +5615,9 @@ public class Function {
 					subMonitor.worked(1);
 				}
 
-				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)) {
+				if (!pointsToSet.isEmpty() && allInstancesArePrimitive && !this.isDefaultedUnsuppliedPrimitive(paramInx)
+						&& !(isInvariantPrimitive(paramInx, nodes, pointerAnalysis)
+								&& this.isArgumentAlignedAtEveryCallSite(paramInx, nodes, callGraph))) {
 					LOG.info(this + " likely has a primitive parameter.");
 					this.hasPrimitiveParameter = TRUE;
 					subMonitor.done();
@@ -5626,6 +5633,45 @@ public class Function {
 		LOG.info(this + " likely does not have a primitive parameter.");
 		this.hasPrimitiveParameter = FALSE;
 		subMonitor.done();
+	}
+
+	/**
+	 * Returns true iff the parameter at the given IR parameter index is bound to one constant at every call, and so is exempt from
+	 * {@link PreconditionFailure#HAS_PRIMITIVE_PARAMETERS} and from {@link PreconditionSuccess#P3}: in every calling context, its points-to
+	 * set is exactly one {@link ConstantKey}, the same one in each. Such a value can't vary the trace key, so it induces no retracing
+	 * (#1025, #1109). A computed Python scalar points to the engine's key for its type (wala/ML#1148, wala/ML#1149), not to a constant, so
+	 * a value that changes between calls, such as a loop counter, isn't exempt. A context in which the parameter points to nothing isn't
+	 * exempt either, since its value there is unknown.
+	 *
+	 * @param irParamIndex The IR parameter index examined by {@link #inferPrimitiveParameters}.
+	 * @param nodes The {@link CGNode}s representing this {@link Function}, one per calling context.
+	 * @param pointerAnalysis The {@link PointerAnalysis} for the given nodes.
+	 * @return True iff the parameter points to the same single {@link ConstantKey} in every one of the given nodes.
+	 */
+	private static boolean isInvariantPrimitive(int irParamIndex, Set<CGNode> nodes, PointerAnalysis<InstanceKey> pointerAnalysis) {
+		InstanceKey constant = null;
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (irParamIndex >= ir.getNumberOfParameters())
+				return false;
+
+			PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, ir.getParameter(irParamIndex));
+			OrdinalSet<InstanceKey> pointsToSet = pointerAnalysis.getPointsToSet(pointerKey);
+
+			if (pointsToSet.size() != 1)
+				return false;
+
+			InstanceKey instanceKey = pointsToSet.iterator().next();
+
+			if (!(instanceKey instanceof ConstantKey<?>) || constant != null && !constant.equals(instanceKey))
+				return false;
+
+			constant = instanceKey;
+		}
+
+		return constant != null;
 	}
 
 	/**
