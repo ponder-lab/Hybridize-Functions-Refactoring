@@ -14778,8 +14778,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * pair.
 	 * <p>
 	 * The flat specification is not merely imprecise. Bound to it, the parameter arrives as a single tensor and the body's unpacking
-	 * raises, which is why the emitted nested form is executed here rather than compared. No specification is written at all for now, as
-	 * the TODO below explains, which is a lost optimization rather than that hazard.
+	 * raises, which is why the emitted nested form is executed here rather than compared. The engine gives a tuple a library summary
+	 * allocates no length unless the summary marks its positions exact, which `flow_from_directory`'s batch does (wala/ML#1265).
 	 */
 	@Test
 	public void testTensorTypedContainerParameter() throws Exception {
@@ -14790,18 +14790,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		assertEquals("The parameter is tensor-typed by the union of its elements' types.", TRUE, pair.isTensor());
 		assertEquals("The container question is now put to it, and answered.", TRUE, pair.isTensorContainer());
+		assertEquals("Both element positions are surfaced.", 2, pair.getContainerElementTypes().size());
 		assertEquals("The parameter's own typing is the elements flattened, so it is the union of both.", 2, pair.getTensorTypes().size());
+		assertEquals("The emitted structure is nested, one specification per element, rather than one flat specification.",
+				"[[tf.TensorSpec(shape=(None, 8, 8, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, None), dtype=tf.float32)]]",
+				batched.getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
 		assertEquals("`batched` hybridizes (P1).", P1, batched.getPassingPrecondition());
+	}
 
-		// TODO: https://github.com/ponder-lab/ML/pull/1079. The engine now gives a tuple a library summary allocates no length, since a
-		// summary's slots are in general not its run-time elements. This summary's are, as the batch is a pair at run time, so the nested
-		// specification this pinned, [[tf.TensorSpec(shape=(None, 8, 8, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, None),
-		// dtype=tf.float32)]], is lost. Flip back to it once the engine vouches for this summary's length.
-		assertNull("The engine gives the summary's tuple no length, so no element structure.", pair.getContainerElementTypes());
-		assertEquals("No specification is written for a container of unknown length.", Optional.empty(),
-				batched.getInferredInputSignature());
+	/**
+	 * Pins the state a Keras {@code RNN} hands its cell when it's called with an explicit initial state, reduced from NLPGNN's
+	 * {@code crf_decode_forward}: the layer wraps the one state tensor in a list, and the cell reads {@code state[0]}. The engine's
+	 * {@code RNN} summary allocates that list, and the container query gives a list a library summary allocates no length unless the
+	 * summary marks its positions exact (wala/ML#1265), so the cell's {@code state} is a container of unknown length and no specification
+	 * is written for it.
+	 */
+	@Test
+	public void testRnnCellInitialState() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = getFunction("Cell.call");
+		Parameter inputs = call.getParameters().get(1);
+		Parameter state = call.getParameters().get(2);
+
+		assertEquals("The cell's inputs are one time step of the sequence.", "FLOAT32[Constant,2; Constant,3]",
+				inputs.getRenderedTensorTypes());
+		assertEquals("The cell's state is a container.", TRUE, state.isTensorContainer());
+		assertEquals("`Cell.call` hybridizes (P1).", P1, call.getPassingPrecondition());
+
+		// TODO: https://github.com/ponder-lab/ML/pull/1246 (wala/ML#1265): the `RNN` summary marks the state list's one position exact,
+		// so the state reads [[(2, 3) float32]] and `Cell.call` gets the signature [tf.TensorSpec(shape=(2, 3), dtype=tf.float32),
+		// [tf.TensorSpec(shape=(2, 3), dtype=tf.float32)]]. Flip to it once that's in the snapshot.
+		assertNull("The engine gives the summary's list no length, so no element structure.", state.getContainerElementTypes());
+		assertEquals("No specification is written for a container of unknown length.", Optional.empty(), call.getInferredInputSignature());
 		assertEquals("The reason is the unsupported form.", Optional.of(InferenceResult.AbsenceReason.TENSOR_CONTAINER_UNSUPPORTED),
-				batched.getInferredInputSignatureAbsenceReason());
+				call.getInferredInputSignatureAbsenceReason());
 	}
 
 	/**
