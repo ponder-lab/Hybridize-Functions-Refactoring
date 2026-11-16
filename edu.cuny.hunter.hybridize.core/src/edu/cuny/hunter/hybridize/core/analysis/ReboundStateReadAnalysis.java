@@ -196,8 +196,8 @@ class ReboundStateReadAnalysis {
 	 * Whether the function of {@code nodes} reads a tensor-typed or scalar-valued field that another function rebinds.
 	 *
 	 * @param nodes The call-graph nodes of the function in question.
-	 * @return A write rebinding a tensor-typed or scalar-valued field the function reads, made by another function that doesn't set its
-	 *         object up, or empty if there is none.
+	 * @return The first write in source order rebinding a tensor-typed or scalar-valued field the function reads, made by another function
+	 *         that doesn't set its object up, or empty if there is none.
 	 */
 	Optional<ReboundWrite> readsReboundState(Set<CGNode> nodes) {
 		Set<CGNode> closure = new HashSet<>();
