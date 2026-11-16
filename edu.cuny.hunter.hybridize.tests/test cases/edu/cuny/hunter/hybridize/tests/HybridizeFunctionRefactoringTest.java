@@ -15250,6 +15250,39 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1292 (distilling tf-eager-fasterrcnn's
+	 * {@code BBoxHead._get_bboxes_single}): unpacking a parameter-derived tensor fails with
+	 * {@link PreconditionFailure#HAS_TENSOR_PARAMETER_ITERATION}. Python unpacks by iterating, which works eagerly and raises under tracing
+	 * once the parameter is symbolic. {@code tuple_unpack} and the method are that case, and {@code ndarray_unpack} is it fed a NumPy
+	 * array, which crosses the boundary as a tensor. A list target, a nested target and a starred target iterate alike. So does unpacking a
+	 * tensor computed from the parameter ({@code derived_unpack}, {@code shape_op_unpack}), and so do the targets of {@code for a, b in xs}
+	 * over a Python list of tensors ({@code for_target_unpack}): they unpack the loop's element, a tensor, though the loop itself unrolls.
+	 * Unpacking a Python tuple or list of tensors, the tuples such a loop yields ({@code for_pairs}), a tensor's static shape or the list
+	 * {@code tf.split} returns, and reading a tensor by subscript, iterate no tensor and remain P1. Each was run on TensorFlow 2.9.3,
+	 * decorated and not.
+	 */
+	@Test
+	public void testTensorParameterUnpackingBlocksHybridization() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("tuple_unpack", "ndarray_unpack", "list_target_unpack", "nested_unpack", "starred_unpack",
+				"derived_unpack", "shape_op_unpack", "for_target_unpack", "BBoxHead._get_bboxes_single")) {
+			Function function = findFunction(functions, identifier);
+			assertTrue("`" + identifier + "` unpacks a tensor computed from its parameter.", function.getHasTensorParameterIteration());
+			assertNull("`" + identifier + "` must not pass a precondition; tracing cannot iterate a symbolic tensor.",
+					function.getPassingPrecondition());
+			assertNotNull("`" + identifier + "` fails with HAS_TENSOR_PARAMETER_ITERATION.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+		}
+
+		for (String identifier : List.of("pair_unpack", "list_unpack", "for_pairs", "subscript_read", "shape_unpack", "split_unpack")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("`" + identifier + "` unpacks no tensor.", function.getHasTensorParameterIteration());
+			assertEquals("`" + identifier + "` remains convertible (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins the caller-coverage benefit precondition (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/767), promoted
 	 * from the phase-1 advisory to blocking on corpus evidence (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/826):
 	 * a function whose every known call path is dominated by a hybridized caller is already traced, so converting it adds only a redundant
@@ -18003,8 +18036,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code numpy()}: eagerly {@code img_shape[0]} is a NumPy scalar, which the comparison converts to {@code float32}, and traced it is
 	 * an {@code int32} tensor, which the comparison rejects. {@code valid_flags} and the method
 	 * {@code AnchorGenerator._generate_valid_flags} are that case. {@code same_dtype_flags} is passed a {@code float32} array, whose
-	 * element has the other operand's dtype, and {@code tensor_flags} is passed a tensor, so neither is refused. Each was run on TensorFlow
-	 * 2.9.3, decorated and not.
+	 * element has the other operand's dtype, and {@code tensor_flags} is passed a tensor, so neither is refused. {@code proposals} unpacks
+	 * its argument and reads no element by a subscript, so it is not this check's; the iteration check refuses it. Each was run on
+	 * TensorFlow 2.9.3, decorated and not.
 	 */
 	@Test
 	public void testNumpyElementDtypeCoercion() throws Exception {
@@ -18026,14 +18060,15 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("`" + name + "` converts (P1).", P1, function.getPassingPrecondition());
 		}
 
-		// FIXME: Decorated, `proposals` raises, since unpacking its argument iterates a symbolic tensor, which is the iteration
-		// check's hazard (#830), not an element's dtype. The unpacking lowers to the same read as an attribute read, so the iteration
-		// check doesn't see it. With https://github.com/wala/ML/issues/1117, it fails with HAS_TENSOR_PARAMETER_ITERATION.
+		// Decorated, `proposals` raises, since unpacking its argument iterates a symbolic tensor, which is the iteration check's
+		// hazard, not an element's dtype (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1292).
 		Function proposals = findFunction(functions, "proposals");
-		assertEquals("Today, `proposals` doesn't iterate its argument.", FALSE, proposals.getHasTensorParameterIteration());
+		assertEquals("`proposals` iterates its argument by unpacking it.", TRUE, proposals.getHasTensorParameterIteration());
 		assertEquals("`proposals` combines no subscripted element of its NumPy argument.", FALSE,
 				proposals.getHasNumpyElementDtypeCoercions());
-		assertEquals("Today, `proposals` converts (P1).", P1, proposals.getPassingPrecondition());
+		assertNull("`proposals` does not convert.", proposals.getPassingPrecondition());
+		assertNotNull("`proposals` fails with HAS_TENSOR_PARAMETER_ITERATION.", proposals.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 	}
 
 	/**

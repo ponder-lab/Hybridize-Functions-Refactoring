@@ -44,6 +44,13 @@ import com.ibm.wala.ssa.SSAInstruction;
  * {@code list}, and the others of {@link #builtinIterates}) fires too, whether or not a loop iterates the result
  * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098).
  * <p>
+ * Unpacking such a value ({@code h, w = img_shape}) fires too (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1292).
+ * Python unpacks by iterating, and AutoGraph doesn't convert an unpacking, so a symbolic tensor raises
+ * {@code OperatorNotAllowedInGraphError} where an eager tensor or a NumPy array yields its elements. The engine marks the reads an
+ * unpacking lowers to ({@link PythonPropertyRead#isUnpacking()}), which tells them from a subscript and an attribute read. Unpacking a
+ * tensor the body computes from no parameter ({@code a, b = tf.constant([1.0, 2.0])}) raises under tracing as well, but is not seen: the
+ * scan starts at the parameters.
+ * <p>
  * The same scan backs the item-assignment precondition (issue 1098): a subscript store ({@code y[i] = v}, augmented forms included) into a
  * parameter-derived, tensor-typed value works eagerly on a NumPy array, but a symbolic tensor has no {@code __setitem__}, so tracing raises
  * a {@code TypeError}. A slice store ({@code y[1:3] = v}) is not seen: the engine lowers it to a call of the {@code slice} builtin, not to
@@ -77,11 +84,12 @@ class TensorIterationAnalysis {
 	}
 
 	/**
-	 * True iff {@code node}'s body iterates a parameter-derived, tensor-typed value, directly or through a builtin that iterates it.
+	 * True iff {@code node}'s body iterates a parameter-derived, tensor-typed value, directly, through a builtin that iterates it, or by
+	 * unpacking it.
 	 *
 	 * @param node The call-graph node to scan.
 	 * @param method True iff the function is an instance method, in which case the receiver slot is not a source.
-	 * @return True iff a Python {@code for} iterates a parameter-derived tensor.
+	 * @return True iff a Python {@code for}, an iterating builtin or an unpacking iterates a parameter-derived tensor.
 	 */
 	boolean iteratesTensorParameter(CGNode node, boolean method) {
 		return anyTaintedUse(node, method, (use, value) -> {
@@ -101,6 +109,16 @@ class TensorIterationAnalysis {
 			// AutoGraph stages only a loop directly over the range, not one through a builtin.
 			if (use instanceof PythonInvokeInstruction invoke)
 				return this.isTensorTyped(node, value) && !this.pointsToContainer(node, value) && this.builtinIterates(node, invoke, value);
+
+			// An unpacking (`h, w = y`, `[a, b] = y`, `a, *rest = y`, the targets of `for a, b in ys`) lowers to one read of the
+			// unpacked value per target, which the engine marks (https://github.com/wala/ML/issues/1117). Python unpacks by
+			// iterating, and AutoGraph doesn't convert an unpacking, so unpacking a symbolic tensor raises
+			// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1292). For a loop's targets the unpacked value is the
+			// loop's element, which the taint reaches from the iterated parameter. The container exemption still applies, so unpacking
+			// a tuple or list of tensors, or the list `tf.split` returns, does not fire. No tf.range exemption here: on TensorFlow
+			// 2.9.3, `a, b = tf.range(2)` raises under tf.function, since only a loop directly over the range is staged.
+			if (use instanceof PythonPropertyRead read && read.isUnpacking() && read.getObjectRef() == value)
+				return this.isTensorTyped(node, value) && !this.pointsToContainer(node, value);
 
 			return false;
 		});

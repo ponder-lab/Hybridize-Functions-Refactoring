@@ -97,16 +97,18 @@ public enum PreconditionFailure {
 	HAS_STALE_VARIABLE_READS(19),
 
 	/**
-	 * The function's body iterates a parameter-derived, tensor-typed value with a Python {@code for}, or passes it to a Python builtin that
-	 * iterates it, such as {@code enumerate}, {@code zip} or {@code list} (the table is in {@code TensorIterationAnalysis}). Eagerly the
-	 * elements are tensors and the iteration runs; under {@code tf.function} tracing the parameter is symbolic. A builtin that iterates a
-	 * symbolic tensor raises {@code OperatorNotAllowedInGraphError} ({@code reversed} raises a {@code TypeError}). AutoGraph converts a
+	 * The function's body iterates a parameter-derived, tensor-typed value with a Python {@code for}, passes it to a Python builtin that
+	 * iterates it, such as {@code enumerate}, {@code zip} or {@code list} (the table is in {@code TensorIterationAnalysis}), or unpacks it,
+	 * as in {@code h, w = img_shape}. Eagerly the elements are tensors and the iteration runs; under {@code tf.function} tracing the
+	 * parameter is symbolic. A builtin that iterates a symbolic tensor raises {@code OperatorNotAllowedInGraphError} ({@code reversed}
+	 * raises a {@code TypeError}), and so does unpacking one, which iterates it and which AutoGraph doesn't convert. AutoGraph converts a
 	 * {@code for} directly over one to a {@code tf.while_loop}, which raises or traces to a different result when the body can't be staged:
 	 * it mutates Python state, changes a loop-carried value's dtype or shape, returns inside the loop, or converts an element to a Python
 	 * value. The check doesn't decide stageability, so it refuses every such loop. In-body {@code tf.range} loops are AutoGraph-supported
 	 * and do not fire. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/830,
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098 and
-	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1137.
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1098,
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1137 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1292.
 	 */
 	HAS_TENSOR_PARAMETER_ITERATION(20),
 
@@ -401,8 +403,8 @@ public enum PreconditionFailure {
 	 * tensor of its own dtype, and the operation rejects the element with a {@code TypeError}. No input signature repairs this, since one
 	 * casting the array to the imposed dtype changes every other read of it. Whether the argument is an array is Ariadne's fact, the NumPy
 	 * producing-library origin of the value the call site passes, so an element of a tensor's {@code numpy()} result counts. An element
-	 * read by unpacking, such as {@code h, w = shape}, is not covered: the engine doesn't yet tell a destructuring read from an attribute
-	 * read (https://github.com/wala/ML/issues/1117).
+	 * read by unpacking, such as {@code h, w = shape}, is not this check's: unpacking the argument iterates it, which
+	 * {@link #HAS_TENSOR_PARAMETER_ITERATION} refuses (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1292).
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1111">Issue 1111</a>
 	 */
