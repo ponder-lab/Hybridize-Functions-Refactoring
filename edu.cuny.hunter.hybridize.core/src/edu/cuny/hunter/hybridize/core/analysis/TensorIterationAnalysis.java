@@ -49,7 +49,8 @@ import com.ibm.wala.ssa.SSAInstruction;
  * {@code OperatorNotAllowedInGraphError} where an eager tensor or a NumPy array yields its elements. The engine marks the reads an
  * unpacking lowers to ({@link PythonPropertyRead#isUnpacking()}), which tells them from a subscript and an attribute read. Unpacking a
  * tensor the body computes from no parameter ({@code a, b = tf.constant([1.0, 2.0])}) raises under tracing as well, but is not seen: the
- * scan starts at the parameters.
+ * scan starts at the parameters. Nor is an unpacking in a comprehension ({@code [a * b for a, b in x]}): a comprehension's body is its own
+ * call graph node, which this scan, like the loop check, doesn't visit.
  * <p>
  * The same scan backs the item-assignment precondition (issue 1098): a subscript store ({@code y[i] = v}, augmented forms included) into a
  * parameter-derived, tensor-typed value works eagerly on a NumPy array, but a symbolic tensor has no {@code __setitem__}, so tracing raises

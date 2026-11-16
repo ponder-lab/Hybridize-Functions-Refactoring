@@ -15257,8 +15257,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * array, which crosses the boundary as a tensor. A list target, a nested target and a starred target iterate alike. So does unpacking a
 	 * tensor computed from the parameter ({@code derived_unpack}, {@code shape_op_unpack}), and so do the targets of {@code for a, b in xs}
 	 * over a Python list of tensors ({@code for_target_unpack}): they unpack the loop's element, a tensor, though the loop itself unrolls.
-	 * Unpacking a Python tuple or list of tensors, the tuples such a loop yields ({@code for_pairs}), a tensor's static shape or the list
-	 * {@code tf.split} returns, and reading a tensor by subscript, iterate no tensor and remain P1. Each was run on TensorFlow 2.9.3,
+	 * Unpacking a Python tuple or list of tensors, the tuples such a loop yields ({@code for_pairs}), a tensor's static shape, the list
+	 * {@code tf.split} returns or the tuple {@code tf.math.top_k} returns, and reading a tensor by subscript, iterate no tensor and remain
+	 * P1. Four more functions pin what the analysis gets wrong today: {@code lstm_unpack} is refused though it unpacks a list, and an
+	 * unpacking into attribute targets, into subscript targets and in a comprehension is not seen. Each was run on TensorFlow 2.9.3,
 	 * decorated and not.
 	 */
 	@Test
@@ -15275,10 +15277,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 		}
 
-		for (String identifier : List.of("pair_unpack", "list_unpack", "for_pairs", "subscript_read", "shape_unpack", "split_unpack")) {
+		for (String identifier : List.of("pair_unpack", "list_unpack", "for_pairs", "subscript_read", "shape_unpack", "split_unpack",
+				"top_k_unpack")) {
 			Function function = findFunction(functions, identifier);
 			assertFalse("`" + identifier + "` unpacks no tensor.", function.getHasTensorParameterIteration());
 			assertEquals("`" + identifier + "` remains convertible (P1).", P1, function.getPassingPrecondition());
+		}
+
+		// FIXME: `lstm_unpack` unpacks what an LSTM layer returns with `return_state=True`, a Python list of three tensors. That iterates
+		// no tensor, and the function runs under tracing. The engine models the layer's multi-output result as a single tensor, so the
+		// unpacking is taken for a tensor's and the function is refused. The refusal should go away once the engine models the list.
+		Function lstmUnpack = findFunction(functions, "lstm_unpack");
+		assertTrue("Today, `lstm_unpack` is taken to unpack a tensor.", lstmUnpack.getHasTensorParameterIteration());
+		assertNull("Today, `lstm_unpack` passes no precondition.", lstmUnpack.getPassingPrecondition());
+		assertNotNull("Today, `lstm_unpack` fails with HAS_TENSOR_PARAMETER_ITERATION.", lstmUnpack.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
+
+		// FIXME: Each of these unpacks a tensor parameter and raises under tracing as `tuple_unpack` does, so each should fail with
+		// HAS_TENSOR_PARAMETER_ITERATION. The engine emits no unpacking read for an attribute target (`self.h, self.w = img_shape`) or a
+		// subscript target (`d[0], d[1] = img_shape`), and a comprehension's body (`[a * b for a, b in x]`) is its own call graph node,
+		// which the scan doesn't visit.
+		for (String identifier : List.of("ImageMeta.scale", "subscript_targets", "comprehension_unpack")) {
+			Function function = findFunction(functions, identifier);
+			assertFalse("Today, the unpacking in `" + identifier + "` is not seen.", function.getHasTensorParameterIteration());
+			assertEquals("Today, `" + identifier + "` is convertible (P1).", P1, function.getPassingPrecondition());
 		}
 	}
 

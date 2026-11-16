@@ -4,6 +4,8 @@
 # (OperatorNotAllowedInGraphError), so the conversion must be declined. Unpacking a
 # Python tuple or list of tensors, a tensor's static shape, or the list `tf.split`
 # returns, and reading a tensor by subscript, iterate no tensor and remain convertible.
+# The functions from `top_k_unpack` on are a control and cases the analysis gets wrong
+# today; the test says which.
 import numpy as np
 import tensorflow as tf
 
@@ -103,6 +105,44 @@ def split_unpack(x):
     return a + b
 
 
+def top_k_unpack(x):
+    # `tf.math.top_k` returns a tuple of two tensors.
+    values, indices = tf.math.top_k(x, k=2)
+    return values + tf.cast(indices, tf.float32)
+
+
+# Built here, since `tf.function` lets a function create variables only on its first
+# call, which a layer built in `lstm_unpack` would do on every trace.
+lstm = tf.keras.layers.LSTM(4, return_state=True)
+
+
+def lstm_unpack(x):
+    # With `return_state=True` the layer returns a Python list of three tensors, so
+    # unpacking it iterates no tensor, and the function runs under tracing.
+    out, h, c = lstm(x)
+    return out + h + c
+
+
+class ImageMeta:
+    def scale(self, probs, img_shape):
+        # Attribute targets. Under tracing this raises as `tuple_unpack` does.
+        self.h, self.w = img_shape
+        return probs * tf.cast(self.h * self.w, tf.float32)
+
+
+def subscript_targets(probs, img_shape):
+    # Subscript targets. Under tracing this raises as `tuple_unpack` does.
+    d = {}
+    d[0], d[1] = img_shape
+    return probs * tf.cast(d[0] * d[1], tf.float32)
+
+
+def comprehension_unpack(x):
+    # The comprehension iterates the tensor and its targets unpack each row. Under
+    # tracing this raises, since AutoGraph doesn't convert a comprehension.
+    return tf.add_n([a * b for a, b in x])
+
+
 v = tf.constant([1.0, 2.0])
 m = tf.constant([[1.0, 2.0], [3.0, 4.0]])
 probs = tf.ones([2])
@@ -128,3 +168,8 @@ assert float(for_pairs([(tf.constant(1.0), tf.constant(2.0))], tf.zeros(()))) ==
 assert float(subscript_read(v)) == 3.0
 assert shape_unpack(m).numpy().tolist() == [1.0, 2.0, 3.0, 4.0]
 assert split_unpack(v).numpy().tolist() == [3.0]
+assert top_k_unpack(tf.constant([3.0, 1.0, 2.0])).numpy().tolist() == [3.0, 4.0]
+assert lstm_unpack(tf.ones([1, 2, 3])).shape == (1, 4)
+assert ImageMeta().scale(probs, tf.constant([5, 4])).numpy().tolist() == [20.0, 20.0]
+assert subscript_targets(probs, tf.constant([5, 4])).numpy().tolist() == [20.0, 20.0]
+assert float(comprehension_unpack(m)) == 14.0
