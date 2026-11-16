@@ -16481,7 +16481,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * A read through {@code self} of a field another method rebinds stays refused
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1140). Measured on TensorFlow 2.9.3, {@code Streaming.call}
 	 * converted returns {@code [0]} twice after {@code index} rebinds the candidates and identifiers, where the eager call returns
-	 * {@code [0]} then {@code [3]}. The status message names the field and the write.
+	 * {@code [0]} then {@code [3]}. The status message names the field and the write. {@code index} rebinds both fields {@code call} reads,
+	 * and the message names the first write in source order, {@code _candidates} at line 15, in every run; it named either, following the
+	 * fields' hash order, before.
 	 */
 	@Test
 	public void testReboundStateReadsSelfFieldRebound() throws Exception {
@@ -16491,8 +16493,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
 				PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
 		assertNotNull("`Streaming.call` fails with HAS_REBOUND_STATE_READS.", entry);
-		assertTrue("The message names the field and the write: " + entry.getMessage(), entry.getMessage()
-				.matches("(?s).*field `_(candidates|identifiers)` of `.*Streaming`, rebound by `.*Streaming/index` at A\\.py:1[56]\\..*"));
+		assertTrue("The message names the field and the write: " + entry.getMessage(),
+				entry.getMessage().matches("(?s).*field `_candidates` of `.*Streaming`, rebound by `.*Streaming/index` at A\\.py:15\\..*"));
 	}
 
 	/**
