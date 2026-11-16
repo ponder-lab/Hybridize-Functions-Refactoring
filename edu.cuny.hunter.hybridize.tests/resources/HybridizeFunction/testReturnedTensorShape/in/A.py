@@ -13,6 +13,11 @@ def parameter_shape(x):
     return x.shape
 
 
+def sliced_shape(x):
+    # A slice of a shape is a `TensorShape` too.
+    return x.shape[1:]
+
+
 def where_shape(x):
     # Traced, the number of rows `tf.where` finds is unknown, so tracing raises a `TypeError`.
     return tf.where(x > 0).shape
@@ -72,6 +77,7 @@ x = tf.ones([4, 3])
 
 print(attribute_shape(x).as_list())
 print(parameter_shape(x).as_list())
+print(sliced_shape(x).as_list())
 print(where_shape(x).as_list())
 print(constructed_shape(x).as_list())
 print(constructed_defined_shape(x).as_list())

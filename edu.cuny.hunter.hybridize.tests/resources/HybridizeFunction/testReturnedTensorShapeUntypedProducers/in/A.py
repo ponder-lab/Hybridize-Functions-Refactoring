@@ -1,5 +1,9 @@
 import tensorflow as tf
 
+# The analysis gives no value to any shape returned here. For `get_shape`, `element_spec` and
+# `get_output_shapes`, see https://github.com/wala/ML/issues/1280. For `tf.nest.map_structure`,
+# see https://github.com/wala/ML/issues/1067.
+
 
 def method_shape(x):
     # The shape `x.shape` reads, read by `get_shape`. Traced, the caller gets a tensor.
@@ -22,6 +26,12 @@ def legacy_shapes(dataset):
     return tf.compat.v1.data.get_output_shapes(dataset)
 
 
+def moments_shape(x):
+    # The shape of a tensor from a call the analysis gives no value, so the read has none.
+    m, _ = tf.nn.moments(x, [0])
+    return m.shape
+
+
 x = tf.ones([4, 3])
 unknown = tf.data.Dataset.from_tensor_slices(x).batch(2)
 known = tf.data.Dataset.from_tensor_slices(x).batch(2, drop_remainder=True)
@@ -33,3 +43,4 @@ print(spec_shape(unknown).as_list())
 print(spec_shape(known).as_list())
 print(legacy_shapes(unknown).as_list())
 print(legacy_shapes(known).as_list())
+print(moments_shape(x).as_list())

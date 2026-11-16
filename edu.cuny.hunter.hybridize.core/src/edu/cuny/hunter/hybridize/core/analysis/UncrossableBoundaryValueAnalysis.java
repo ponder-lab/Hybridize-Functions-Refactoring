@@ -58,8 +58,9 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * It answers the precondition of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293 as well: whether a function
  * returns a {@code tf.TensorShape}. Measured on TensorFlow 2.9.3, tracing raises a {@code TypeError} on a returned shape with an unknown
  * extent, and converts a fully defined one to a tensor of its extents. The value reached is an allocation of one of the two shape types the
- * engine publishes, so only a shape the engine types is seen: the one a tensor's {@code shape} attribute reads, and the one a call of
- * {@code tf.TensorShape} constructs.
+ * engine publishes, so only a shape the engine types is seen: the one of a {@code shape} attribute read on a tensor the engine allocates,
+ * and the one a call of {@code tf.TensorShape} constructs. A {@code shape} read on a receiver whose points-to set holds no tensor,
+ * variable, or dataset component has no value.
  */
 class UncrossableBoundaryValueAnalysis {
 
@@ -96,8 +97,8 @@ class UncrossableBoundaryValueAnalysis {
 	}
 
 	/**
-	 * True iff the given value is a {@code tf.TensorShape}, by the two types the engine publishes for one: the shape a tensor's
-	 * {@code shape} attribute reads, and the shape a call of {@code tf.TensorShape} constructs. The engine allocates the
+	 * True iff the given value is a {@code tf.TensorShape}, by the two types the engine publishes for one: the shape of a {@code shape}
+	 * attribute read on a tensor the engine allocates, and the shape a call of {@code tf.TensorShape} constructs. The engine allocates the
 	 * {@code tf.TensorShape} class under the second type as well, so the class itself counts; tracing raises on a returned class just the
 	 * same.
 	 *

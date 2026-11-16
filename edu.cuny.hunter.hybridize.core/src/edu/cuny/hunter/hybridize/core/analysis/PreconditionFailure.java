@@ -483,10 +483,11 @@ public enum PreconditionFailure {
 	 * receives a tensor of its extents where it received a shape, so a caller that reads it as one, such as with {@code as_list()}, fails.
 	 * Which of the two happens depends on the shape each trace computes, and the first raises whatever the callers do with the result, so
 	 * the conversion is refused either way. The check reads the types in the returned values' points-to sets, so it covers the shapes the
-	 * engine types: the one a tensor's {@code shape} attribute reads, and the one a call of {@code tf.TensorShape} constructs. A shape from
-	 * a producer the engine does not model, such as {@code get_shape()} or a dataset's {@code element_spec}, has no abstract value and is
-	 * not yet seen. The tensor {@code tf.shape} returns crosses as a tensor and is left alone, and a shape's extents returned as Python
-	 * integers are {@link #RETURNS_PYTHON_PRIMITIVE}'s.
+	 * engine types: the one of a {@code shape} attribute read on a tensor the engine allocates, and the one a call of
+	 * {@code tf.TensorShape} constructs. A shape from a producer the engine does not model, such as {@code get_shape()} or a dataset's
+	 * {@code element_spec}, or read from a tensor the engine gives no value, has no abstract value and is not yet seen. The tensor
+	 * {@code tf.shape} returns crosses as a tensor and is left alone, and a shape's extents returned as Python integers are
+	 * {@link #RETURNS_PYTHON_PRIMITIVE}'s.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293">Issue 1293</a>
 	 */
