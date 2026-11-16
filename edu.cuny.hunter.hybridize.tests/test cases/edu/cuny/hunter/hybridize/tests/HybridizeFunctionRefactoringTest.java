@@ -18066,6 +18066,89 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A function that may return a {@code tf.TensorShape} refuses the conversion
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293). A traced function returns only tensors: on TensorFlow
+	 * 2.9.3, decorated, {@code where_shape}, {@code constructed_shape} and {@code shape_list} raise a {@code TypeError}, since the shape
+	 * each returns has an unknown extent, and {@code attribute_shape}, {@code parameter_shape}, {@code constructed_defined_shape},
+	 * {@code shape_pair}, {@code shape_dict}, {@code either_shape}, {@code shape_of} and {@code helper_shape} return a tensor of the
+	 * extents where each returned a shape, which the caller's {@code as_list()} rejects. The shape is read from a tensor's {@code shape}
+	 * attribute or constructed by calling {@code tf.TensorShape}, and is returned alone, inside a tuple, a dictionary or a list, on one of
+	 * two paths, or from a helper. {@code shape_class} returns the {@code tf.TensorShape} class, which the analysis allocates under the
+	 * type of its instances, so it is refused as they are; decorated, it raises the same {@code TypeError}. {@code parameter_shape} and
+	 * {@code shape_of} compute no tensor, and the refusal is reported in place of that. Each was run on TensorFlow 2.9.3, decorated and
+	 * not.
+	 */
+	@Test
+	public void testReturnedTensorShape() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("attribute_shape", "parameter_shape", "where_shape", "constructed_shape", "constructed_defined_shape",
+				"shape_pair", "shape_dict", "shape_list", "either_shape", "shape_of", "helper_shape", "shape_class")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` may return a tensor shape.", TRUE, function.getReturnsTensorShape());
+			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with RETURNS_TENSOR_SHAPE.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_TENSOR_SHAPE.getCode()));
+		}
+	}
+
+	/**
+	 * The controls of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293: none of these returns a
+	 * {@code tf.TensorShape}, so none is refused for one. {@code doubled} returns a tensor. {@code flattened} reads a static shape but
+	 * returns a tensor. {@code box_shape} returns an attribute named {@code shape} of an object that is no tensor, and the attribute holds
+	 * a tensor. Each converts. {@code dynamic_shape} returns the tensor {@code tf.shape} computes, and {@code shape_sizes} the list of
+	 * Python integers {@code as_list()} returns; each is refused, but by its own precondition. Each was run on TensorFlow 2.9.3, decorated
+	 * and not.
+	 */
+	@Test
+	public void testReturnedTensorShapeControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("doubled", "flattened", "box_shape")) {
+			Function function = findFunction(functions, name);
+			assertEquals("`" + name + "` returns no tensor shape.", FALSE, function.getReturnsTensorShape());
+			assertEquals("`" + name + "` converts (P1).", P1, function.getPassingPrecondition());
+		}
+
+		Function dynamicShape = findFunction(functions, "dynamic_shape");
+		assertEquals("`dynamic_shape` returns no tensor shape.", FALSE, dynamicShape.getReturnsTensorShape());
+		assertNull("`dynamic_shape` does not fail with RETURNS_TENSOR_SHAPE.",
+				dynamicShape.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_TENSOR_SHAPE.getCode()));
+		assertNotNull("`dynamic_shape` fails with PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.", dynamicShape.getStatus()
+				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.PASSES_SHAPE_VALUE_ACROSS_BOUNDARY.getCode()));
+
+		Function shapeSizes = findFunction(functions, "shape_sizes");
+		assertEquals("`shape_sizes` returns no tensor shape.", FALSE, shapeSizes.getReturnsTensorShape());
+		assertNull("`shape_sizes` does not fail with RETURNS_TENSOR_SHAPE.",
+				shapeSizes.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_TENSOR_SHAPE.getCode()));
+		assertNotNull("`shape_sizes` fails with RETURNS_PYTHON_PRIMITIVE.",
+				shapeSizes.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_PYTHON_PRIMITIVE.getCode()));
+	}
+
+	/**
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293 for a {@code tf.TensorShape} from a producer the engine
+	 * gives no value: {@code get_shape()}, a dataset's {@code element_spec} and the {@code shape} of a spec in it,
+	 * {@code tf.compat.v1.data.get_output_shapes}, and the result of {@code tf.nest.map_structure}. {@code dataset_shapes} reduces
+	 * OpenNMT-tf's {@code _get_output_shapes}. On TensorFlow 2.9.3, decorated, each of the three dataset functions raises a
+	 * {@code TypeError} for a dataset batched without {@code drop_remainder}, whose batch extent is unknown, and returns a tensor where it
+	 * returned a shape for one batched with it; {@code method_shape} returns a tensor where it returned a shape.
+	 */
+	@Test
+	public void testReturnedTensorShapeUntypedProducers() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: Refuse each of these with RETURNS_TENSOR_SHAPE once the engine gives the shape it returns an allocation of a tensor shape
+		// type. Today each returned value's points-to set is empty: `get_shape`, `element_spec` and `get_output_shapes` have no summary,
+		// and `tf.nest.map_structure` has none either (https://github.com/wala/ML/issues/1067). The type isn't computed here from the
+		// names read or called.
+		for (String name : List.of("method_shape", "dataset_shapes", "spec_shape", "legacy_shapes")) {
+			Function function = findFunction(functions, name);
+			assertEquals("Today, `" + name + "` returns nothing seen as a tensor shape.", FALSE, function.getReturnsTensorShape());
+			assertEquals("Today, `" + name + "` converts (P1).", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1169 (distilling TensorSpeech-TensorFlowASR's
 	 * {@code WarpRNNTTest._run_rnnt}): passing a tensor parameter's value to {@code tf.constant}, positionally or as its {@code value}
 	 * keyword, fails with {@link PreconditionFailure#HAS_TENSOR_PARAMETER_CONSTANT}. It works eagerly, where the argument is a NumPy array,

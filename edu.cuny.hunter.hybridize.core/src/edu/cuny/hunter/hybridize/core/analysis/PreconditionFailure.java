@@ -475,7 +475,22 @@ public enum PreconditionFailure {
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1199">Issue 1199</a>
 	 */
-	RETURNS_NUMPY_ARRAY(47);
+	RETURNS_NUMPY_ARRAY(47),
+
+	/**
+	 * The function may return a {@code tf.TensorShape}, at the top level or inside a returned list, tuple, or dictionary. A traced function
+	 * returns only tensors. When the shape has an unknown extent, tracing raises a {@code TypeError}. When it is fully defined, the caller
+	 * receives a tensor of its extents where it received a shape, so a caller that reads it as one, such as with {@code as_list()}, fails.
+	 * Which of the two happens depends on the shape each trace computes, and the first raises whatever the callers do with the result, so
+	 * the conversion is refused either way. The check reads the types in the returned values' points-to sets, so it covers the shapes the
+	 * engine types: the one a tensor's {@code shape} attribute reads, and the one a call of {@code tf.TensorShape} constructs. A shape from
+	 * a producer the engine does not model, such as {@code get_shape()} or a dataset's {@code element_spec}, has no abstract value and is
+	 * not yet seen. The tensor {@code tf.shape} returns crosses as a tensor and is left alone, and a shape's extents returned as Python
+	 * integers are {@link #RETURNS_PYTHON_PRIMITIVE}'s.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293">Issue 1293</a>
+	 */
+	RETURNS_TENSOR_SHAPE(48);
 
 	static {
 		// check that the codes are unique.

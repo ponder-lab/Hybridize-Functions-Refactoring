@@ -1,5 +1,8 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
+import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.STATIC_TENSOR_SHAPE;
+import static com.ibm.wala.cast.python.ml.types.TensorFlowTypes.TENSOR_SHAPE;
+
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.BiPredicate;
@@ -19,6 +22,7 @@ import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSAAbstractInvokeInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
+import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 
 /**
@@ -50,6 +54,12 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * a function returns a Python primitive, which the boundary converts to a tensor just the same. There the value reached is a primitive
  * constant rather than an allocation of a given type, and booleans count, since a returned {@code bool} becomes a tensor too. The
  * caller-side walk also asks whether any call site uses the result, since a result every caller discards changes nothing it can see.
+ * <p>
+ * It answers the precondition of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293 as well: whether a function
+ * returns a {@code tf.TensorShape}. Measured on TensorFlow 2.9.3, tracing raises a {@code TypeError} on a returned shape with an unknown
+ * extent, and converts a fully defined one to a tensor of its extents. The value reached is an allocation of one of the two shape types the
+ * engine publishes, so only a shape the engine types is seen: the one a tensor's {@code shape} attribute reads, and the one a call of
+ * {@code tf.TensorShape} constructs.
  */
 class UncrossableBoundaryValueAnalysis {
 
@@ -85,6 +95,20 @@ class UncrossableBoundaryValueAnalysis {
 		return PythonTypes.set.equals(instanceKey.concreteType().getReference());
 	}
 
+	/**
+	 * True iff the given value is a {@code tf.TensorShape}, by the two types the engine publishes for one: the shape a tensor's
+	 * {@code shape} attribute reads, and the shape a call of {@code tf.TensorShape} constructs. The engine allocates the
+	 * {@code tf.TensorShape} class under the second type as well, so the class itself counts; tracing raises on a returned class just the
+	 * same.
+	 *
+	 * @param instanceKey The value in question.
+	 * @return True iff the value is a tensor shape.
+	 */
+	private static boolean isTensorShape(InstanceKey instanceKey) {
+		TypeReference type = instanceKey.concreteType().getReference();
+		return STATIC_TENSOR_SHAPE.equals(type) || TENSOR_SHAPE.equals(type);
+	}
+
 	private final PythonSSAPropagationCallGraphBuilder builder;
 
 	private final PointerAnalysis<InstanceKey> pointerAnalysis;
@@ -115,6 +139,16 @@ class UncrossableBoundaryValueAnalysis {
 	 */
 	Boolean returnsPrimitive(Set<CGNode> nodes) {
 		return this.returns(nodes, instanceKey -> Function.isPrimitiveValue(instanceKey, false));
+	}
+
+	/**
+	 * Whether the body of {@code nodes} may return a {@code tf.TensorShape}, directly or as a container element (issue 1293).
+	 *
+	 * @param nodes The call-graph nodes of the function in question.
+	 * @return {@code TRUE} if some return reaches a tensor shape, {@code FALSE} if none does, or {@code null} if a node has no IR.
+	 */
+	Boolean returnsTensorShape(Set<CGNode> nodes) {
+		return this.returns(nodes, UncrossableBoundaryValueAnalysis::isTensorShape);
 	}
 
 	/**

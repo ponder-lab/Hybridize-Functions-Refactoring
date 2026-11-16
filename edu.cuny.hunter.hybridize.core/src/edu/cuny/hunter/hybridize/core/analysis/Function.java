@@ -1345,6 +1345,12 @@ public class Function {
 	private Boolean hasUsedResults;
 
 	/**
+	 * True iff this {@link Function} may return a {@code tf.TensorShape}, which {@code tf.function} rejects or converts to a tensor (issue
+	 * 1293); null if undetermined.
+	 */
+	private Boolean returnsTensorShape;
+
+	/**
 	 * True iff this {@link Function}'s body, or code it calls, calls {@code tf.reshape} with a shape operand that may be rank 0
 	 * ({@link ScalarShapeReshapeAnalysis}); null if undetermined, in which case the precondition does not block.
 	 */
@@ -1788,6 +1794,14 @@ public class Function {
 								this.addFailure(PreconditionFailure.RETURNS_PYTHON_PRIMITIVE,
 										"Can't hybridize a function that may return a Python int, float, str, or bool, which tf.function "
 												+ "converts to a tensor.");
+							else if (TRUE.equals(this.getReturnsTensorShape()))
+								// A returned tf.TensorShape, at the top level or inside a returned container, makes tracing raise when an
+								// extent is unknown, and is otherwise converted to a tensor at the tf.function boundary (issue 1293). The
+								// first happens whatever the callers do with the result, so a discarded result refuses too. A safety
+								// failure; it precedes the benefit signal.
+								this.addFailure(PreconditionFailure.RETURNS_TENSOR_SHAPE,
+										"Can't hybridize a function that may return a tf.TensorShape, which tf.function rejects when an "
+												+ "extent is unknown and otherwise converts to a tensor.");
 							else if (TRUE.equals(this.getPassesShapeValueAcrossBoundary()))
 								// A shape known only as a tensor value crosses the boundary, inbound into a returned op's shape operand or
 								// outbound from a dynamic shape op: tracing keeps the shape tensor's type but not its value, so a caller's
@@ -3764,7 +3778,8 @@ public class Function {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1075.
 	 * <p>
 	 * The same nodes also decide whether the function may return a Python primitive and whether a caller uses its result, stored for
-	 * {@link #getReturnsPrimitive()} and {@link #getHasUsedResults()} (issue 1117).
+	 * {@link #getReturnsPrimitive()} and {@link #getHasUsedResults()} (issue 1117), and whether it may return a {@code tf.TensorShape},
+	 * stored for {@link #getReturnsTensorShape()} (issue 1293).
 	 *
 	 * @param callGraph The call graph, walked in the caller direction for the arguments.
 	 * @param builder The call-graph builder, whose pointer analysis and object catalogs resolve the values and their elements.
@@ -3801,6 +3816,9 @@ public class Function {
 		this.hasUsedResults = UncrossableBoundaryValueAnalysis.usesResult(nodes, callGraph);
 		LOG.info(this + " returns a Python primitive: " + this.returnsPrimitive + "; a caller uses its result: " + this.hasUsedResults
 				+ ".");
+
+		this.returnsTensorShape = analysis.returnsTensorShape(nodes);
+		LOG.info(this + " returns a tensor shape: " + this.returnsTensorShape + ".");
 	}
 
 	/**
@@ -3830,6 +3848,15 @@ public class Function {
 	 */
 	public Boolean getHasUsedResults() {
 		return this.hasUsedResults;
+	}
+
+	/**
+	 * True iff this {@link Function} may return a {@code tf.TensorShape}, {@code null} if undetermined (issue 1293).
+	 *
+	 * @return True iff this function may return a tensor shape, alone or inside a list, tuple, or dictionary, null if undetermined.
+	 */
+	public Boolean getReturnsTensorShape() {
+		return this.returnsTensorShape;
 	}
 
 	/**

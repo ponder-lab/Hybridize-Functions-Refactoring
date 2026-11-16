@@ -688,8 +688,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 					func.computeKerasSymbolicArguments(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
 
 				// Check whether a returned or passed value does not cross the tf.function boundary as written (issue 1075), and whether
-				// a returned value may be a Python primitive whose result a caller uses (issue 1117). Same reachable region and gate; a
-				// points-to query per return and per caller argument, and a use query per caller result.
+				// a returned value may be a Python primitive whose result a caller uses (issue 1117) or a tf.TensorShape (issue 1293).
+				// Same reachable region and gate; a points-to query per return and per caller argument, and a use query per caller
+				// result.
 				if (barrenCouldDecide)
 					func.computeUncrossableBoundaryValues(callGraph, builder);
 
