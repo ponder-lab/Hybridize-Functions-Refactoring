@@ -5,6 +5,7 @@ import static com.ibm.wala.cast.python.util.Util.isPythonScalarKey;
 
 import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -159,6 +160,16 @@ class ReboundStateReadAnalysis {
 	}
 
 	/**
+	 * Orders rebinding writes for the status message: a write with a source position before one without, then by file, line and column,
+	 * then by the description, which names the field and the writer.
+	 */
+	private static final Comparator<ReboundWrite> WITNESS_ORDER = Comparator
+			.comparing(ReboundWrite::position,
+					Comparator.nullsLast(Comparator.comparing((Position p) -> String.valueOf(p.getURL()))
+							.thenComparingInt(Position::getFirstLine).thenComparingInt(Position::getFirstCol)))
+			.thenComparing(ReboundWrite::describe);
+
+	/**
 	 * The engine constructor that allocated {@code instanceKey}, if one did: the engine allocates an instance of a class the program
 	 * defines in a {@link PythonConstructorFunction} declared by that class.
 	 *
@@ -185,8 +196,8 @@ class ReboundStateReadAnalysis {
 	 * Whether the function of {@code nodes} reads a tensor-typed or scalar-valued field that another function rebinds.
 	 *
 	 * @param nodes The call-graph nodes of the function in question.
-	 * @return A write rebinding a tensor-typed or scalar-valued field the function reads, made by another function that doesn't set its
-	 *         object up, or empty if there is none.
+	 * @return The first write in source order rebinding a tensor-typed or scalar-valued field the function reads, made by another function
+	 *         that doesn't set its object up, or empty if there is none.
 	 */
 	Optional<ReboundWrite> readsReboundState(Set<CGNode> nodes) {
 		Set<CGNode> closure = new HashSet<>();
@@ -213,16 +224,24 @@ class ReboundStateReadAnalysis {
 		if (tensorFieldsRead.isEmpty() && holderFieldsRead.isEmpty())
 			return Optional.empty();
 
+		// Every rebinding write is a witness; the message names the first in source order, as the hash order of the fields varies between
+		// runs.
+		Optional<ReboundWrite> ret = Optional.empty();
+
 		for (CGNode node : this.callGraph)
 			if (!closure.contains(node))
 				for (PointerKey written : Function.getDirectMod(node, this.modRef, this.heapModel, this.pointerAnalysis))
 					if (written instanceof InstanceFieldPointerKey field
 							&& (tensorFieldsRead.contains(field)
 									|| (holderFieldsRead.contains(field) && node.getMethod() instanceof AstMethod))
-							&& !this.setsUp(node, field))
-						return Optional.of(new ReboundWrite(field, node, this.getWritePosition(node, field)));
+							&& !this.setsUp(node, field)) {
+						ReboundWrite write = new ReboundWrite(field, node, this.getWritePosition(node, field));
 
-		return Optional.empty();
+						if (ret.isEmpty() || WITNESS_ORDER.compare(write, ret.get()) < 0)
+							ret = Optional.of(write);
+					}
+
+		return ret;
 	}
 
 	/**
