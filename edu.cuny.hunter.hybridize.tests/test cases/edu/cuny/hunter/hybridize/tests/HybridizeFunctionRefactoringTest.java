@@ -15286,7 +15286,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		// FIXME: `lstm_unpack` unpacks what an LSTM layer returns with `return_state=True`, a Python list of three tensors. That iterates
 		// no tensor, and the function runs under tracing. The engine models the layer's multi-output result as a single tensor, so the
-		// unpacking is taken for a tensor's and the function is refused. The refusal should go away once the engine models the list.
+		// unpacking is taken for a tensor's and the function is refused. The refusal should go away once the engine models the list:
+		// https://github.com/wala/ML/issues/1282.
 		Function lstmUnpack = findFunction(functions, "lstm_unpack");
 		assertTrue("Today, `lstm_unpack` is taken to unpack a tensor.", lstmUnpack.getHasTensorParameterIteration());
 		assertNull("Today, `lstm_unpack` passes no precondition.", lstmUnpack.getPassingPrecondition());
@@ -15294,9 +15295,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_TENSOR_PARAMETER_ITERATION.getCode()));
 
 		// FIXME: Each of these unpacks a tensor parameter and raises under tracing as `tuple_unpack` does, so each should fail with
-		// HAS_TENSOR_PARAMETER_ITERATION. The engine emits no unpacking read for an attribute target (`self.h, self.w = img_shape`) or a
-		// subscript target (`d[0], d[1] = img_shape`), and a comprehension's body (`[a * b for a, b in x]`) is its own call graph node,
-		// which the scan doesn't visit.
+		// HAS_TENSOR_PARAMETER_ITERATION. The engine emits neither an unpacking read nor a write for an attribute target
+		// (`self.h, self.w = img_shape`) or a subscript target (`d[0], d[1] = img_shape`): https://github.com/wala/ML/issues/1281. A
+		// comprehension's body (`[a * b for a, b in x]`) is its own call graph node, which the scan doesn't visit.
 		for (String identifier : List.of("ImageMeta.scale", "subscript_targets", "comprehension_unpack")) {
 			Function function = findFunction(functions, identifier);
 			assertFalse("Today, the unpacking in `" + identifier + "` is not seen.", function.getHasTensorParameterIteration());
