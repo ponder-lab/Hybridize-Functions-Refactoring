@@ -18491,6 +18491,38 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1122 with methods told from functions that are no methods
+	 * by what their first parameter holds, not by its name. Measured on TensorFlow 2.9.3, {@code Block.call}, declared as
+	 * {@code call(this, x)} and called on two instances, runs decorated as {@code Plain.call} does, since each instance traces its own
+	 * function, so neither is refused. Each of these runs plain and raises a {@code ValueError} decorated, so each is refused:
+	 * {@code Shared.project}, declared with {@code this} and called through its class on two instances; {@code Tower.apply} and
+	 * {@code Mast.apply}, each a {@code staticmethod} of a layer passed two instances of its class, the first through the class and the
+	 * second through an instance, which binds no receiver; and {@code Kit.run}, a {@code staticmethod} called through an instance with two
+	 * layers of another class.
+	 */
+	@Test
+	public void testMayBuildLayersReceiverName() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Block.call", "Plain.call"))
+			assertMayBuildLayers(functions, identifier, true, false, null);
+
+		for (String identifier : List.of("Shared.project", "Tower.apply", "Mast.apply")) {
+			assertMayBuildLayers(functions, identifier, true, false, FIRST_CALL_ON_RETRACE);
+			assertTrue("`" + identifier + "` is refused for the function its receivers share.",
+					findFunction(functions, identifier).getStatus()
+							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+							.contains("called unbound on several receivers"));
+		}
+
+		assertMayBuildLayers(functions, "Kit.run", true, null, FIRST_CALL_ON_RETRACE);
+		assertTrue("`Kit.run` is refused for a layer its callers pass.",
+				findFunction(functions, "Kit.run").getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+						.contains("calls a layer passed to it, which may differ on a retrace"));
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a Keras model nested in another. Measured on
 	 * TensorFlow 2.9.3, decorating {@code Inner.call} names both {@code Inner} instances' weights {@code dense/kernel:0}, yet the HDF5 save
 	 * succeeds, since each model's weights are saved apart. Neither {@code call} is refused.

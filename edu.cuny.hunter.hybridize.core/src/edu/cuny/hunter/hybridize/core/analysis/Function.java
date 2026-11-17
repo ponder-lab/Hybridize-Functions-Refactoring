@@ -4184,14 +4184,17 @@ public class Function {
 		LayerBuildAnalysis analysis = new LayerBuildAnalysis(callGraph, builder, tensorTypedKeys);
 		this.mayBuildLayers = nodes.stream().anyMatch(analysis::mayBuildLayers);
 
+		// A method whose first parameter isn't named `self` is one by what the engine shows that parameter to hold.
+		boolean method = this.isMethod() || analysis.hasReceiver(nodes);
+
 		// The receiver is a model iff it is at every node, and not one iff it is not one at every node; otherwise it is unknown.
-		Set<Boolean> receiverIsModel = nodes.stream().map(node -> analysis.receiverIsModel(node, this.isMethod()))
+		Set<Boolean> receiverIsModel = nodes.stream().map(node -> analysis.receiverIsModel(node, method))
 				.collect(Collectors.toCollection(HashSet::new));
 		this.receiverIsModel = receiverIsModel.size() == 1 ? receiverIsModel.iterator().next() : null;
 
 		// Only a function the precondition may refuse is checked for the shapes that change behavior.
 		if (this.mayBuildLayers && !TRUE.equals(this.receiverIsModel))
-			analysis.getShape(nodes, this.isMethod()).ifPresent(verdict -> {
+			analysis.getShape(nodes, method).ifPresent(verdict -> {
 				this.layerBuildShape = verdict.shape();
 				this.layerBuildDetail = verdict.detail();
 			});

@@ -448,6 +448,31 @@ class LayerBuildAnalysis {
 	}
 
 	/**
+	 * True iff the function of {@code nodes} takes a receiver whatever its first parameter is named: at each of its nodes, the second
+	 * parameter slot holds only instances of the class declaring the function ({@link #isReceiver(CGNode, int)}). A method declared as
+	 * {@code def call(this, x)} does. A {@code staticmethod} passed a layer of another class doesn't, nor does a {@code classmethod}, whose
+	 * slot holds the class.
+	 *
+	 * @param nodes The function's nodes.
+	 * @return True iff the second parameter slot of every node holds the function's receiver.
+	 */
+	boolean hasReceiver(Set<CGNode> nodes) {
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (ir == null)
+				return false;
+
+			int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
+
+			if (parameters.length < 2 || !this.isReceiver(node, parameters[1]))
+				return false;
+		}
+
+		return !nodes.isEmpty();
+	}
+
+	/**
 	 * The shape of layer building, if any, for which the function of {@code nodes} is refused, checked in the order of
 	 * {@link LayerBuildShape}'s constants. A function that is no instance method has no receiver, so it isn't checked for a function its
 	 * receivers share, nor for {@link LayerBuildShape#COLLIDING_NAMES}, which reads the sublayers its receiver holds.
@@ -641,9 +666,9 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * Finds a method called through its class, as {@code Block.project(a, x)}, on more than one receiver. Each instance traces its own
-	 * function only when the method is called bound to it ({@link #isCalledBound(CGNode)}); called through its class, it shares one
-	 * function among its receivers, so a retrace with another receiver first calls that receiver's layers.
+	 * Finds a method called unbound, with its receiver among the arguments, as {@code Block.project(a, x)}, on more than one receiver. Each
+	 * instance traces its own function only when the method is called bound to it ({@link #isCalledBound(CGNode)}); called unbound, it
+	 * shares one function among its receivers, so a retrace with another receiver first calls that receiver's layers.
 	 *
 	 * @param nodes The method's nodes.
 	 * @return {@link LayerBuildShape#FIRST_CALL_ON_RETRACE}, or empty if the method is called bound, or on one receiver.
@@ -654,32 +679,60 @@ class LayerBuildAnalysis {
 
 		if (this.mayReceiveSeveral(nodes, 1))
 			return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE,
-					"it's called through its class on several receivers, which share one function"));
+					"it's called unbound on several receivers, which share one function"));
 
 		return Optional.empty();
 	}
 
 	/**
-	 * True iff every call of {@code node} from program code binds its receiver, as {@code a.project(x)} does, rather than passing it
-	 * through the class, as {@code Block.project(a, x)} does, which the engine publishes per call
-	 * ({@link CallTargets#parameterBoundTargets}). A call from the engine's summaries, such as a layer's {@code __call__} calling its
-	 * {@code call}, binds it. That is optimistic for a library function that forwards a method as a plain function, as
-	 * {@code functools.partial} or a {@code Dataset.map} callback may, which passes the receiver unbound.
+	 * True iff every call of {@code node} from program code binds its receiver, as {@code a.project(x)} does, rather than passing it among
+	 * the arguments, as {@code Block.project(a, x)} does, and as a call of a {@code staticmethod} through an instance does. The engine
+	 * publishes which per call ({@link CallTargets#parameterBoundTargets}). A call from the engine's summaries, such as a layer's
+	 * {@code __call__} calling its {@code call}, binds it. That is optimistic for a library function that forwards a method as a plain
+	 * function, as {@code functools.partial} or a {@code Dataset.map} callback may, which passes the receiver unbound.
 	 *
 	 * @param node A method's node.
 	 * @return True iff each call of the node from program code is bound to its receiver.
 	 */
 	private boolean isCalledBound(CGNode node) {
 		for (CGNode caller : Iterator2Iterable.make(this.callGraph.getPredNodes(node))) {
-			if (!CallTargets.isProgramCode(caller))
-				continue;
+			if (CallTargets.isProgramCode(caller)) {
+				if (!this.callsBound(caller, node, node, false))
+					return false;
 
-			for (CallSiteReference site : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, node)))
-				for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(site))
-					if (!(call instanceof PythonInvokeInstruction invoke)
-							|| !Boolean.TRUE.equals(CallTargets.parameterBoundTargets(this.builder, caller, invoke).get(node)))
-						return false;
+				continue;
+			}
+
+			// The engine's code forwards a call of program code here. It binds a receiver unless the engine reports that it forwards the
+			// arguments alone, which it does for a static method called through an instance.
+			for (CGNode origin : Iterator2Iterable.make(this.callGraph.getPredNodes(caller)))
+				if (CallTargets.isProgramCode(origin) && !this.callsBound(origin, caller, node, true))
+					return false;
 		}
+
+		return true;
+	}
+
+	/**
+	 * True iff each call in {@code caller} of {@code callee} binds a receiver before the arguments {@code method} takes, per
+	 * {@link CallTargets#parameterBoundTargets}.
+	 *
+	 * @param caller A program function's node.
+	 * @param callee The node the calls target: {@code method}, or the engine's code forwarding to it.
+	 * @param method A method's node.
+	 * @param unreported What a call for which the engine reports no binding of {@code method} counts as.
+	 * @return True iff no call of {@code callee} in {@code caller} passes {@code method} its arguments alone.
+	 */
+	private boolean callsBound(CGNode caller, CGNode callee, CGNode method, boolean unreported) {
+		for (CallSiteReference site : Iterator2Iterable.make(this.callGraph.getPossibleSites(caller, callee)))
+			for (SSAAbstractInvokeInstruction call : caller.getIR().getCalls(site)) {
+				Boolean bound = call instanceof PythonInvokeInstruction invoke
+						? CallTargets.parameterBoundTargets(this.builder, caller, invoke).get(method)
+						: null;
+
+				if (bound == null ? !unreported : !bound)
+					return false;
+			}
 
 		return true;
 	}
@@ -947,6 +1000,9 @@ class LayerBuildAnalysis {
 		Map<CGNode, Set<Integer>> ret = new HashMap<>();
 		Deque<CGNode> worklist = new ArrayDeque<>();
 
+		// Whether the calls may pass a slot several objects is one answer for the function, whichever node asks.
+		Map<Integer, Boolean> several = new HashMap<>();
+
 		for (CGNode node : nodes) {
 			IR ir = node.getIR();
 
@@ -957,7 +1013,8 @@ class LayerBuildAnalysis {
 			int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
 
 			for (int i = 1; i < parameters.length; i++)
-				if (method ? i > 1 || !this.isReceiver(node, parameters[i]) : this.mayReceiveSeveral(nodes, i))
+				if (method ? i > 1 || !this.isReceiver(node, parameters[i])
+						: several.computeIfAbsent(i, slot -> this.mayReceiveSeveral(nodes, slot)))
 					ret.computeIfAbsent(node, k -> new HashSet<>()).add(parameters[i]);
 
 			worklist.add(node);
@@ -2794,6 +2851,8 @@ class LayerBuildAnalysis {
 		if (ir == null)
 			return true;
 
+		// Some of the engine's keys name a call or a read in the node instead of an allocation, for which `IR.getNew` throws, so the site
+		// is looked up among the node's allocations first (https://github.com/wala/ML/issues/1289).
 		for (NewSiteReference candidate : Iterator2Iterable.make(ir.iterateNewSites()))
 			if (candidate.equals(site.getSite()))
 				return isInLoop(ir, ir.getNew(candidate).iIndex()) || this.mayRunMoreThanOnce(allocator);
