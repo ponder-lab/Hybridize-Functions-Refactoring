@@ -1,7 +1,7 @@
 package edu.cuny.hunter.hybridize.core.analysis;
 
 /**
- * The shapes of layer building that change a method's behavior under {@code tf.function}, each a reason for
+ * The shapes of layer building that change a function's behavior under {@code tf.function}, each a reason for
  * {@link PreconditionFailure#MAY_BUILD_LAYERS} (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224). A method that
  * only calls sublayers constructed in {@code __init__} or {@code build}, on every call, has none of them: Keras builds each sublayer under
  * {@code init_scope} during the first trace, and a retrace builds nothing. See {@link LayerBuildAnalysis}.
