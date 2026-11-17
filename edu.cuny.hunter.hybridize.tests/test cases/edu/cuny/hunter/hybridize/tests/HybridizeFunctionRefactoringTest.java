@@ -13101,11 +13101,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("`" + name + "` hybridizes (P1) until the draw is modeled.", P1, function.getPassingPrecondition());
 		}
 
-		// TODO: `predict_dataset` also calls `numpy()`, which raises under tracing, but inside a lambda passed to
-		// `tf.nest.map_structure`, which has no summary, so the lambda has no call-graph node and the eager-only check cannot see it
-		// (https://github.com/wala/ML/issues/1067). It is refused here for its file I/O instead.
+		// `predict_dataset` also calls `numpy()`, which raises under tracing, inside a lambda passed to `tf.nest.map_structure`. The
+		// engine's summary of that call gives the lambda a call-graph node (https://github.com/wala/ML/issues/1067), so the eager-only
+		// check sees it. The function's status still names only its file I/O, the failure that is checked first.
 		Function predictDataset = findFunction(functions, "predict_dataset");
-		assertEquals("`predict_dataset`'s `numpy()` call is unseen (wala/ML#1067).", FALSE, predictDataset.getHasEagerOnlyCalls());
+		assertEquals("`predict_dataset` calls `numpy()` in a lambda passed to `tf.nest.map_structure`.", TRUE,
+				predictDataset.getHasEagerOnlyCalls());
 
 		for (String name : List.of("draws_tf_random", "prints_tensor", "computes", "reads_user_clock", "calls_local_open")) {
 			Function function = findFunction(functions, name);
@@ -18188,26 +18189,43 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293 for a {@code tf.TensorShape} from a producer the engine
-	 * gives no value: {@code get_shape()}, a dataset's {@code element_spec} and the {@code shape} of a spec in it,
-	 * {@code tf.compat.v1.data.get_output_shapes}, and the result of {@code tf.nest.map_structure}. {@code dataset_shapes} reduces
-	 * OpenNMT-tf's {@code _get_output_shapes}. On TensorFlow 2.9.3, decorated, each of the three dataset functions raises a
-	 * {@code TypeError} for a dataset batched without {@code drop_remainder}, whose batch extent is unknown, and returns a tensor where it
-	 * returned a shape for one batched with it; {@code method_shape} returns a tensor where it returned a shape. So does
-	 * {@code moments_shape}, which reads the {@code shape} attribute of a tensor the engine gives no value.
+	 * gave no value: {@code get_shape()}, a dataset's {@code element_spec} and the {@code shape} of a spec in it,
+	 * {@code tf.compat.v1.data.get_output_shapes}, and the result of {@code tf.nest.map_structure}. The engine now gives the result of
+	 * {@code get_shape()} the type of the shape read by {@code shape}, so {@code method_shape} is refused. It also gives a value to a
+	 * dataset's {@code element_spec}, to the {@code shape} of a spec in it and to the result of {@code tf.nest.map_structure} over it, so
+	 * {@code dataset_shapes} and {@code spec_shape} are refused. {@code dataset_shapes} reduces OpenNMT-tf's {@code _get_output_shapes}. On
+	 * TensorFlow 2.9.3, decorated, each of the three dataset functions raises a {@code TypeError} for a dataset batched without
+	 * {@code drop_remainder}, whose batch extent is unknown, and returns a tensor where it returned a shape for one batched with it;
+	 * {@code method_shape} returns a tensor where it returned a shape. So does {@code moments_shape}, which reads the {@code shape}
+	 * attribute of a tensor the engine gives no value.
 	 */
 	@Test
 	public void testReturnedTensorShapeUntypedProducers() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		// TODO: Refuse each of these with RETURNS_TENSOR_SHAPE once the engine gives the shape it returns an allocation of a tensor shape
-		// type, with https://github.com/wala/ML/issues/1280. Today each returned value's points-to set is empty: `get_shape`,
-		// `element_spec` and `get_output_shapes` have no summary. `dataset_shapes` also needs `tf.nest.map_structure`, which has none
-		// either (https://github.com/wala/ML/issues/1067). The type isn't computed here from the names read or called.
-		for (String name : List.of("method_shape", "dataset_shapes", "spec_shape", "legacy_shapes")) {
+		// The engine gives a call of `get_shape()` the static shape of its receiver (https://github.com/wala/ML/issues/1280).
+		Function methodShape = findFunction(functions, "method_shape");
+		assertEquals("`method_shape` returns a tensor shape.", TRUE, methodShape.getReturnsTensorShape());
+		assertNotNull("`method_shape` fails with RETURNS_TENSOR_SHAPE.",
+				methodShape.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_TENSOR_SHAPE.getCode()));
+		assertNull("`method_shape` passes no precondition.", methodShape.getPassingPrecondition());
+
+		// The engine gives a value to a dataset's `element_spec`, to the `shape` of a spec in it, and to the result of
+		// `tf.nest.map_structure` over it (https://github.com/wala/ML/issues/1280).
+		for (String name : List.of("dataset_shapes", "spec_shape")) {
 			Function function = findFunction(functions, name);
-			assertEquals("Today, `" + name + "` returns nothing seen as a tensor shape.", FALSE, function.getReturnsTensorShape());
-			assertEquals("Today, `" + name + "` converts (P1).", P1, function.getPassingPrecondition());
+			assertEquals("`" + name + "` returns a tensor shape.", TRUE, function.getReturnsTensorShape());
+			assertNotNull("`" + name + "` fails with RETURNS_TENSOR_SHAPE.",
+					function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_TENSOR_SHAPE.getCode()));
+			assertNull("`" + name + "` passes no precondition.", function.getPassingPrecondition());
 		}
+
+		// TODO: Refuse this with RETURNS_TENSOR_SHAPE once the engine gives the shape it returns an allocation of a tensor shape type, with
+		// https://github.com/wala/ML/issues/1280. Today the returned value's points-to set is empty: `get_output_shapes` has no summary.
+		// The type isn't computed here from the name called.
+		Function legacyShapes = findFunction(functions, "legacy_shapes");
+		assertEquals("Today, `legacy_shapes` returns nothing seen as a tensor shape.", FALSE, legacyShapes.getReturnsTensorShape());
+		assertEquals("Today, `legacy_shapes` converts (P1).", P1, legacyShapes.getPassingPrecondition());
 
 		// TODO: Refuse this with RETURNS_TENSOR_SHAPE once the engine gives the result of `tf.nn.moments` a value, with
 		// https://github.com/wala/ML/issues/1283. Today the call has no summary, so its result has no value, the `shape` read on it has
