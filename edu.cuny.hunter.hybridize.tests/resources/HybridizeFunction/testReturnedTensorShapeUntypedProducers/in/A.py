@@ -1,8 +1,8 @@
 import tensorflow as tf
 
-# The analysis gives no value to any shape returned here. For `get_shape`, `element_spec` and
-# `get_output_shapes`, see https://github.com/wala/ML/issues/1280. For `tf.nest.map_structure`,
-# see https://github.com/wala/ML/issues/1067.
+# The analysis gives a value to the shape `method_shape` returns and to none of the others. For
+# `element_spec`, `get_output_shapes` and the result of `tf.nest.map_structure`, see
+# https://github.com/wala/ML/issues/1280.
 
 
 def method_shape(x):

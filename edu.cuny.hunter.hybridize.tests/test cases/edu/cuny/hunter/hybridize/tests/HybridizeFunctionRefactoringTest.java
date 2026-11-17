@@ -13101,11 +13101,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("`" + name + "` hybridizes (P1) until the draw is modeled.", P1, function.getPassingPrecondition());
 		}
 
-		// TODO: `predict_dataset` also calls `numpy()`, which raises under tracing, but inside a lambda passed to
-		// `tf.nest.map_structure`, which has no summary, so the lambda has no call-graph node and the eager-only check cannot see it
-		// (https://github.com/wala/ML/issues/1067). It is refused here for its file I/O instead.
+		// `predict_dataset` also calls `numpy()`, which raises under tracing, inside a lambda passed to `tf.nest.map_structure`. The
+		// engine's summary of that call gives the lambda a call-graph node (https://github.com/wala/ML/issues/1067), so the eager-only
+		// check sees it, and the function is refused for it as well as for its file I/O.
 		Function predictDataset = findFunction(functions, "predict_dataset");
-		assertEquals("`predict_dataset`'s `numpy()` call is unseen (wala/ML#1067).", FALSE, predictDataset.getHasEagerOnlyCalls());
+		assertEquals("`predict_dataset` calls `numpy()` in a lambda passed to `tf.nest.map_structure`.", TRUE,
+				predictDataset.getHasEagerOnlyCalls());
+		assertNotNull("`predict_dataset` fails with HAS_EAGER_ONLY_CALLS.",
+				predictDataset.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_EAGER_ONLY_CALLS.getCode()));
 
 		for (String name : List.of("draws_tf_random", "prints_tensor", "computes", "reads_user_clock", "calls_local_open")) {
 			Function function = findFunction(functions, name);
@@ -18188,8 +18191,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 	/**
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293 for a {@code tf.TensorShape} from a producer the engine
-	 * gives no value: {@code get_shape()}, a dataset's {@code element_spec} and the {@code shape} of a spec in it,
-	 * {@code tf.compat.v1.data.get_output_shapes}, and the result of {@code tf.nest.map_structure}. {@code dataset_shapes} reduces
+	 * gave no value: {@code get_shape()}, a dataset's {@code element_spec} and the {@code shape} of a spec in it,
+	 * {@code tf.compat.v1.data.get_output_shapes}, and the result of {@code tf.nest.map_structure}. The engine now gives the result of
+	 * {@code get_shape()} the type of the shape read by {@code shape}, so {@code method_shape} is refused. {@code dataset_shapes} reduces
 	 * OpenNMT-tf's {@code _get_output_shapes}. On TensorFlow 2.9.3, decorated, each of the three dataset functions raises a
 	 * {@code TypeError} for a dataset batched without {@code drop_remainder}, whose batch extent is unknown, and returns a tensor where it
 	 * returned a shape for one batched with it; {@code method_shape} returns a tensor where it returned a shape. So does
@@ -18199,11 +18203,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	public void testReturnedTensorShapeUntypedProducers() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
+		// The engine gives a call of `get_shape()` the static shape of its receiver (https://github.com/wala/ML/issues/1280).
+		Function methodShape = findFunction(functions, "method_shape");
+		assertEquals("`method_shape` returns a tensor shape.", TRUE, methodShape.getReturnsTensorShape());
+		assertNotNull("`method_shape` fails with RETURNS_TENSOR_SHAPE.",
+				methodShape.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.RETURNS_TENSOR_SHAPE.getCode()));
+		assertNull("`method_shape` passes no precondition.", methodShape.getPassingPrecondition());
+
 		// TODO: Refuse each of these with RETURNS_TENSOR_SHAPE once the engine gives the shape it returns an allocation of a tensor shape
-		// type, with https://github.com/wala/ML/issues/1280. Today each returned value's points-to set is empty: `get_shape`,
-		// `element_spec` and `get_output_shapes` have no summary. `dataset_shapes` also needs `tf.nest.map_structure`, which has none
-		// either (https://github.com/wala/ML/issues/1067). The type isn't computed here from the names read or called.
-		for (String name : List.of("method_shape", "dataset_shapes", "spec_shape", "legacy_shapes")) {
+		// type, with https://github.com/wala/ML/issues/1280. Today each returned value's points-to set is empty: `element_spec` and
+		// `get_output_shapes` have no summary, and the summary of `tf.nest.map_structure`, which `dataset_shapes` also needs, gives its
+		// result no structure. The type isn't computed here from the names read or called.
+		for (String name : List.of("dataset_shapes", "spec_shape", "legacy_shapes")) {
 			Function function = findFunction(functions, name);
 			assertEquals("Today, `" + name + "` returns nothing seen as a tensor shape.", FALSE, function.getReturnsTensorShape());
 			assertEquals("Today, `" + name + "` converts (P1).", P1, function.getPassingPrecondition());
