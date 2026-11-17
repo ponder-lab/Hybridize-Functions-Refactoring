@@ -400,7 +400,7 @@ class LayerBuildAnalysis {
 	 * is the conservative side.
 	 *
 	 * @param node The call-graph node to check.
-	 * @param method True iff the function is an instance method, whose second parameter slot is its receiver.
+	 * @param method True iff the function is an instance method whose second parameter slot is the receiver its calls bind.
 	 * @return True iff the receiver is a Keras model, false iff it is not, {@code null} if unknown.
 	 */
 	Boolean receiverIsModel(CGNode node, boolean method) {
@@ -674,7 +674,7 @@ class LayerBuildAnalysis {
 	 * @return {@link LayerBuildShape#FIRST_CALL_ON_RETRACE}, or empty if the method is called bound, or on one receiver.
 	 */
 	private Optional<Verdict> findSharedFunction(Set<CGNode> nodes) {
-		if (nodes.stream().allMatch(this::isCalledBound))
+		if (this.isCalledBound(nodes))
 			return Optional.empty();
 
 		if (this.mayReceiveSeveral(nodes, 1))
@@ -682,6 +682,16 @@ class LayerBuildAnalysis {
 					"it's called unbound on several receivers, which share one function"));
 
 		return Optional.empty();
+	}
+
+	/**
+	 * True iff every call of the method of {@code nodes} from program code binds its receiver ({@link #isCalledBound(CGNode)}).
+	 *
+	 * @param nodes A method's nodes.
+	 * @return True iff each call of each node from program code is bound to its receiver.
+	 */
+	boolean isCalledBound(Set<CGNode> nodes) {
+		return nodes.stream().allMatch(this::isCalledBound);
 	}
 
 	/**

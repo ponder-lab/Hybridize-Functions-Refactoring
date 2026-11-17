@@ -4187,8 +4187,12 @@ public class Function {
 		// A method whose first parameter isn't named `self` is one by what the engine shows that parameter to hold.
 		boolean method = this.isMethod() || analysis.hasReceiver(nodes);
 
+		// Such a method's receiver is asked for only when every call binds it. A `staticmethod` that is passed a model of its own class is
+		// called as no method of that model, and it shares one function among the models passed, so it isn't exempt as a model's method.
+		boolean bound = this.isMethod() || method && analysis.isCalledBound(nodes);
+
 		// The receiver is a model iff it is at every node, and not one iff it is not one at every node; otherwise it is unknown.
-		Set<Boolean> receiverIsModel = nodes.stream().map(node -> analysis.receiverIsModel(node, method))
+		Set<Boolean> receiverIsModel = nodes.stream().map(node -> analysis.receiverIsModel(node, bound))
 				.collect(Collectors.toCollection(HashSet::new));
 		this.receiverIsModel = receiverIsModel.size() == 1 ? receiverIsModel.iterator().next() : null;
 

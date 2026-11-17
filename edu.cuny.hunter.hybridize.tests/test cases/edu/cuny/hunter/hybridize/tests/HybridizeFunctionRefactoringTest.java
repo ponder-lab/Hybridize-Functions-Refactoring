@@ -18499,6 +18499,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code Mast.apply}, each a {@code staticmethod} of a layer passed two instances of its class, the first through the class and the
 	 * second through an instance, which binds no receiver; and {@code Kit.run}, a {@code staticmethod} called through an instance with two
 	 * layers of another class.
+	 * <p>
+	 * A model's method is exempt only when it is bound to the model. {@code Body.call}, a model's {@code call(this, x)}, runs decorated and
+	 * is exempt as a model's {@code call(self, x)} is. A {@code staticmethod} of a model that is passed a model of its class is no method
+	 * of that model, and each of these raises a {@code ValueError} decorated and is refused: {@code Maker.make}, called through its class,
+	 * constructs a {@code Dense} in its body, and {@code Pair.apply}, called through an instance with two models, calls a layer of the
+	 * model passed.
 	 */
 	@Test
 	public void testMayBuildLayersReceiverName() throws Exception {
@@ -18507,8 +18513,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		for (String identifier : List.of("Block.call", "Plain.call"))
 			assertMayBuildLayers(functions, identifier, true, false, null);
 
-		for (String identifier : List.of("Shared.project", "Tower.apply", "Mast.apply")) {
-			assertMayBuildLayers(functions, identifier, true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "Body.call", true, true, null);
+		assertMayBuildLayers(functions, "Maker.make", true, null, CONSTRUCTED_IN_BODY);
+
+		// A function that not every call binds to its first parameter has no receiver to be a model.
+		for (String identifier : List.of("Shared.project", "Tower.apply", "Mast.apply", "Pair.apply")) {
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
 			assertTrue("`" + identifier + "` is refused for the function its receivers share.",
 					findFunction(functions, identifier).getStatus()
 							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
