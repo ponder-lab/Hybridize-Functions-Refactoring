@@ -52,6 +52,7 @@ import com.ibm.wala.cfg.cdg.ControlDependenceGraph;
 import com.ibm.wala.classLoader.CallSiteReference;
 import com.ibm.wala.classLoader.IClass;
 import com.ibm.wala.classLoader.IMethod;
+import com.ibm.wala.classLoader.NewSiteReference;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.Entrypoint;
@@ -90,7 +91,7 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224). A layer creates its variables on its first call, when its
  * {@code __call__} runs its {@code build}. Under {@code tf.function}, Keras builds a sublayer that a {@code call} invokes on every call
  * under {@code init_scope} during the first trace, and a retrace builds nothing, so such a {@code call} is safe to decorate. Three shapes
- * change behavior, and a method is refused only for one of them ({@link LayerBuildShape}):
+ * change behavior, and a function is refused only for one of them ({@link LayerBuildShape}):
  * <ol>
  * <li>{@link LayerBuildShape#CONSTRUCTED_IN_BODY}: the engine allocates an object of a class reaching {@code tf.keras.layers.Layer} or
  * {@code tf.keras.Model} through its Python bases, at an allocation site in the method or in a callee it reaches other than a layer's own
@@ -175,8 +176,14 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * A call with no targets in the call graph, such as one on a layer read from a dictionary under a computed key
  * (https://github.com/wala/ML/issues/1222), is invisible to {@link #mayBuildLayers(CGNode)} and to every shape here. A Keras model's
  * {@code call} is exempt: decorating it drops the enclosing scopes from its weights' names too, but the save succeeds, whether or not the
- * model is nested in another one. So is a function that is no method, such as a training step: it runs inside no layer's name scope, and a
- * model it calls enters its own scope inside the trace.
+ * model is nested in another one. A function that is no instance method, such as a training step or a helper, is checked for the first two
+ * shapes (issue 1122): one that constructs a layer, or first calls one under a varying condition, raises as a method does. It has no
+ * receiver, so no parameter is fixed as a receiver is, and one decorated function serves every call. A layer passed to it, or read from an
+ * object passed to it, is first called in the first trace only when every call passes the same object, so a parameter varies when the
+ * function's nodes show it more than one object, or one that may be several ({@link #mayReceiveSeveral(Set, int)}). A parameter that every
+ * call passes one object is that object on every trace, but nothing read from it by a loop or a key is taken as fixed, as nothing is for a
+ * callee's parameter. It is exempt from the third shape: it runs inside no layer's name scope, and a model it calls enters its own scope
+ * inside the trace. That is optimistic for a helper called inside a layer's {@code call}, whose scope decorating the helper drops.
  * <p>
  * Every type fact comes from the engine. {@link TensorFlowApis} names the call of {@code tensorflow.keras.layers.Layer.add_weight} both in
  * a program layer's {@code build} and in the engine's summary of a built-in layer's first call (wala/ML#1145). The latter lies inside a
@@ -193,7 +200,7 @@ import com.ibm.wala.util.intset.OrdinalSet;
 class LayerBuildAnalysis {
 
 	/**
-	 * A reason a method is refused: the shape and a description of where it occurs.
+	 * A reason a function is refused: the shape and a description of where it occurs.
 	 *
 	 * @param shape The shape.
 	 * @param detail A description of the occurrence, for a status message.
@@ -441,23 +448,25 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * The shape of layer building, if any, for which the method of {@code nodes} is refused, checked in the order of
-	 * {@link LayerBuildShape}'s constants.
+	 * The shape of layer building, if any, for which the function of {@code nodes} is refused, checked in the order of
+	 * {@link LayerBuildShape}'s constants. A function that is no instance method has no receiver, so it isn't checked for a function its
+	 * receivers share, nor for {@link LayerBuildShape#COLLIDING_NAMES}, which reads the sublayers its receiver holds.
 	 *
-	 * @param nodes The call-graph nodes of an instance method that may build a layer.
+	 * @param nodes The call-graph nodes of a function that may build a layer.
+	 * @param method True iff the function is an instance method.
 	 * @return The first shape that holds, with where it occurs, or empty if none does.
 	 */
-	Optional<Verdict> getShape(Set<CGNode> nodes) {
+	Optional<Verdict> getShape(Set<CGNode> nodes, boolean method) {
 		Set<CGNode> traced = this.getTracedNodes(nodes);
 		Optional<Verdict> ret = this.findConstruction(traced);
 
-		if (ret.isEmpty())
+		if (ret.isEmpty() && method)
 			ret = this.findSharedFunction(nodes);
 
 		if (ret.isEmpty())
-			ret = this.findConditionalBuild(nodes, traced);
+			ret = this.findConditionalBuild(nodes, traced, method);
 
-		if (ret.isEmpty())
+		if (ret.isEmpty() && method)
 			ret = this.findCollidingNames(nodes);
 
 		return ret;
@@ -643,19 +652,7 @@ class LayerBuildAnalysis {
 		if (nodes.stream().allMatch(this::isCalledBound))
 			return Optional.empty();
 
-		Set<InstanceKey> receivers = new HashSet<>();
-
-		for (CGNode node : nodes) {
-			IR ir = node.getIR();
-
-			if (ir != null && ir.getSymbolTable().getParameterValueNumbers().length > 1)
-				this.getPointerAnalysis()
-						.getPointsToSet(
-								this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, ir.getSymbolTable().getParameter(1)))
-						.forEach(receivers::add);
-		}
-
-		if (receivers.size() > 1 || receivers.stream().anyMatch(this::mayBeSeveral))
+		if (this.mayReceiveSeveral(nodes, 1))
 			return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE,
 					"it's called through its class on several receivers, which share one function"));
 
@@ -690,13 +687,14 @@ class LayerBuildAnalysis {
 	/**
 	 * Finds a call that may build a layer under a condition that can differ between traces, in a program function among {@code traced}.
 	 *
-	 * @param nodes The method's nodes.
+	 * @param nodes The function's nodes.
 	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
+	 * @param method True iff the function is an instance method.
 	 * @return {@link LayerBuildShape#FIRST_CALL_ON_RETRACE} with the call's position, or empty if every call that may build a layer runs
 	 *         under conditions that are fixed across traces.
 	 */
-	private Optional<Verdict> findConditionalBuild(Set<CGNode> nodes, Set<CGNode> traced) {
-		Map<CGNode, Set<Integer>> varying = this.getVaryingParameters(nodes, traced);
+	private Optional<Verdict> findConditionalBuild(Set<CGNode> nodes, Set<CGNode> traced, boolean method) {
+		Map<CGNode, Set<Integer>> varying = this.getVaryingParameters(nodes, traced, method);
 
 		for (CGNode node : traced) {
 			// Only program code: a summary's branches, such as `__call__`'s test of whether the layer is built, are the engine's model.
@@ -752,7 +750,7 @@ class LayerBuildAnalysis {
 						continue;
 					}
 
-					// A layer passed to the method, or read from an object passed to it, may be another on each call, which the engine
+					// A layer passed to the function, or read from an object passed to it, may be another on each call, which the engine
 					// shows only across the nodes of the function receiving it, one per call site, not within one.
 					if (readsVarying(node, call.getUse(0), varying))
 						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE, "its call at " + describePosition(node, call)
@@ -932,18 +930,20 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * The parameters, by value number, of each of {@code traced} that may be another object on each call of the method of {@code nodes}: a
-	 * parameter of the method other than its receiver, which its caller passes, and a parameter of a traced callee to which a call in a
-	 * traced node passes a value read from one ({@link #readsVarying(CGNode, int, Map)}). The engine gives a function a node per call site,
-	 * so within one node such a parameter may be a single object even when the calls pass different ones. A callee's parameter that its
-	 * callers pass a fixed value, as {@code apply(self.dense, x)} does, doesn't vary. A starred argument spreads a sequence whose elements
-	 * the analysis doesn't follow, so in a function with a varying parameter it may pass one to any parameter.
+	 * The parameters, by value number, of each of {@code traced} that may be another object on each call of the function of {@code nodes}:
+	 * a parameter of a method other than its receiver, which its caller passes, a parameter of a function that is no method that its calls
+	 * may pass several objects ({@link #mayReceiveSeveral(Set, int)}), and a parameter of a traced callee to which a call in a traced node
+	 * passes a value read from one ({@link #readsVarying(CGNode, int, Map)}). The engine gives a function a node per call site, so within
+	 * one node such a parameter may be a single object even when the calls pass different ones. A callee's parameter that its callers pass
+	 * a fixed value, as {@code apply(self.dense, x)} does, doesn't vary. A starred argument spreads a sequence whose elements the analysis
+	 * doesn't follow, so in a function with a varying parameter it may pass one to any parameter.
 	 *
-	 * @param nodes The method's nodes.
+	 * @param nodes The function's nodes.
 	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
+	 * @param method True iff the function is an instance method.
 	 * @return Each traced node's varying parameters.
 	 */
-	private Map<CGNode, Set<Integer>> getVaryingParameters(Set<CGNode> nodes, Set<CGNode> traced) {
+	private Map<CGNode, Set<Integer>> getVaryingParameters(Set<CGNode> nodes, Set<CGNode> traced, boolean method) {
 		Map<CGNode, Set<Integer>> ret = new HashMap<>();
 		Deque<CGNode> worklist = new ArrayDeque<>();
 
@@ -957,7 +957,7 @@ class LayerBuildAnalysis {
 			int[] parameters = ir.getSymbolTable().getParameterValueNumbers();
 
 			for (int i = 1; i < parameters.length; i++)
-				if (i > 1 || !this.isReceiver(node, parameters[i]))
+				if (method ? i > 1 || !this.isReceiver(node, parameters[i]) : this.mayReceiveSeveral(nodes, i))
 					ret.computeIfAbsent(node, k -> new HashSet<>()).add(parameters[i]);
 
 			worklist.add(node);
@@ -997,6 +997,33 @@ class LayerBuildAnalysis {
 		}
 
 		return ret;
+	}
+
+	/**
+	 * True iff parameter slot {@code slot} of the function of {@code nodes} may be another object on another call: over the function's
+	 * nodes, one per call site, the slot may be more than one object, an object that may be several ({@link #mayBeSeveral(InstanceKey)}),
+	 * as one allocated in a loop is, or one whose allocation the engine doesn't place. A function that is no method has no receiver to
+	 * trace a function per instance for, so one decorated function serves every call, and a layer it is passed is first called in the first
+	 * trace only when every call passes the same one: {@code step(model, x)} for one {@code model} is, and a helper that two calls pass a
+	 * list of layers each isn't. The calls are those the call graph holds, so an object only a call outside the analysis passes isn't seen.
+	 *
+	 * @param nodes The function's nodes.
+	 * @param slot A parameter slot; slot 0 is the function object.
+	 * @return True iff the calls of the function may pass the slot more than one object.
+	 */
+	private boolean mayReceiveSeveral(Set<CGNode> nodes, int slot) {
+		Set<InstanceKey> objects = new HashSet<>();
+
+		for (CGNode node : nodes) {
+			IR ir = node.getIR();
+
+			if (ir != null && slot < ir.getSymbolTable().getParameterValueNumbers().length)
+				this.getPointerAnalysis().getPointsToSet(
+						this.getPointerAnalysis().getHeapModel().getPointerKeyForLocal(node, ir.getSymbolTable().getParameter(slot)))
+						.forEach(objects::add);
+		}
+
+		return objects.size() > 1 || objects.stream().anyMatch(this::mayBeSeveral);
 	}
 
 	/**
@@ -1084,9 +1111,9 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code value} of {@code node} is one of its varying parameters ({@link #getVaryingParameters(Set, Set)}), a field or
-	 * property read from one, at any depth, a phi merging one, or the result of a call passed one, which may return it. It is asked only of
-	 * a callee value of a call that may reach {@code add_weight}, which a tensor parameter can't be.
+	 * True iff {@code value} of {@code node} is one of its varying parameters ({@link #getVaryingParameters(Set, Set, boolean)}), a field
+	 * or property read from one, at any depth, a phi merging one, or the result of a call passed one, which may return it. It is asked only
+	 * of a callee value of a call that may reach {@code add_weight}, which a tensor parameter can't be.
 	 *
 	 * @param node A traced node.
 	 * @param value A value number of {@code node}.
@@ -2748,8 +2775,9 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code object} may stand for more than one object at run time: the site allocating it lies in a loop, or its node may run
-	 * more than once ({@link #mayRunMoreThanOnce(CGNode)}).
+	 * True iff {@code object} may stand for more than one object at run time: the site allocating it lies in a loop, its node may run more
+	 * than once ({@link #mayRunMoreThanOnce(CGNode)}), or its node's code doesn't hold the site, as for an element of a dataset, which the
+	 * engine places in the node producing the dataset.
 	 *
 	 * @param object An object.
 	 * @return True iff the object's allocation may run more than once.
@@ -2762,8 +2790,15 @@ class LayerBuildAnalysis {
 
 		CGNode allocator = site.getNode();
 		IR ir = allocator.getIR();
-		SSANewInstruction allocation = ir == null ? null : ir.getNew(site.getSite());
-		return allocation == null || isInLoop(ir, allocation.iIndex()) || this.mayRunMoreThanOnce(allocator);
+
+		if (ir == null)
+			return true;
+
+		for (NewSiteReference candidate : Iterator2Iterable.make(ir.iterateNewSites()))
+			if (candidate.equals(site.getSite()))
+				return isInLoop(ir, ir.getNew(candidate).iIndex()) || this.mayRunMoreThanOnce(allocator);
+
+		return true;
 	}
 
 	/**

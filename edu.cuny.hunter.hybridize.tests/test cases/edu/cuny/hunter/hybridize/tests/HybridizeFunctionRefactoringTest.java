@@ -18405,11 +18405,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172 with a free function that first calls a model,
 	 * building it inside the trace. Measured on TensorFlow 2.9.3, decorating {@code step} keeps every weight's name distinct, such as
 	 * {@code net/stack/inner/dense/kernel:0}, since the model's own {@code __call__} enters its scope inside the trace, and the HDF5 save
-	 * succeeds. A function that is no method runs inside no layer's scope, so {@code step} is not refused, though it has no receiver.
-	 * {@code Inner.call} is a layer's and is refused: decorated, both instances name their kernels {@code dense/kernel:0}.
-	 * {@code Stack.call} isn't: its {@code Inner}s carry no name, so Keras names them apart, and measured on TensorFlow 2.9.3, decorating
-	 * it names the kernels {@code inner/dense/kernel:0} and {@code inner_1/dense/kernel:0}, and the save succeeds. {@code Net.call} is a
-	 * model's and is not refused.
+	 * succeeds. A function that is no method runs inside no layer's scope, so {@code step} is not refused for the names, and it calls the
+	 * one model on every call, so it first calls no layer on a retrace. {@code Inner.call} is a layer's and is refused: decorated, both
+	 * instances name their kernels {@code dense/kernel:0}. {@code Stack.call} isn't: its {@code Inner}s carry no name, so Keras names them
+	 * apart, and measured on TensorFlow 2.9.3, decorating it names the kernels {@code inner/dense/kernel:0} and
+	 * {@code inner_1/dense/kernel:0}, and the save succeeds. {@code Net.call} is a model's and is not refused.
 	 */
 	@Test
 	public void testMayBuildLayersFreeFunction() throws Exception {
@@ -18417,6 +18417,76 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertMayBuildLayers(functions, "step", true, null, null);
 		assertMayBuildLayers(functions, "Inner.call", true, false, COLLIDING_NAMES);
 		assertMayBuildLayers(functions, "Stack.call", true, false, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1122 with functions that are no instance methods and are
+	 * passed the layers they call. Such a function has no receiver, so one decorated function serves every call, and a retrace that first
+	 * calls a layer creates its variables. Measured on TensorFlow 2.9.3, each of these runs plain and raises a {@code ValueError}
+	 * decorated, so each is refused: {@code cnn_stack}, which {@code Encoder.call} passes two lists of layers in turn; {@code apply},
+	 * passed two layers; {@code apply_each}, passed the layer a loop allocates; {@code apply_if}, which calls its one layer under a flag
+	 * that is false on the first call; {@code construct}, which constructs a layer on every trace; and {@code Tools.run} and
+	 * {@code Tools.run_class}, a {@code staticmethod} and a {@code classmethod} passed two layers each. These run decorated and are not
+	 * refused: {@code apply_one}, passed one layer twice; {@code apply_last}, passed one layer after a tensor that differs between its
+	 * calls; {@code train_step}, passed one model; and {@code run_named}, whose layer names its weights {@code named/a_dense/kernel:0}
+	 * decorated as it does plain, since the layer's own {@code __call__} enters its scope inside the trace, so the computed name refuses
+	 * {@code Named.call} but not the function, though the run saves to HDF5. {@code stack_one} runs decorated too, since both calls pass
+	 * the same list, and is refused all the same: its loop selects the layer it calls among several, and nothing read from a function's
+	 * parameter by a loop is taken as fixed.
+	 */
+	@Test
+	public void testMayBuildLayersHelperFunction() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("cnn_stack", "apply", "apply_each", "Tools.run", "Tools.run_class")) {
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
+			assertTrue("`" + identifier + "` is refused for a layer its callers pass.",
+					findFunction(functions, identifier).getStatus()
+							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+							.contains("calls a layer passed to it, which may differ on a retrace"));
+		}
+
+		assertMayBuildLayers(functions, "apply_if", true, null, FIRST_CALL_ON_RETRACE);
+		assertTrue("`apply_if` is refused for its flag.",
+				findFunction(functions, "apply_if").getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+						.contains("runs under a condition that can differ between traces"));
+		assertMayBuildLayers(functions, "construct", true, null, CONSTRUCTED_IN_BODY);
+
+		for (String identifier : List.of("apply_one", "apply_last", "train_step", "run_named"))
+			assertMayBuildLayers(functions, identifier, true, null, null);
+
+		assertMayBuildLayers(functions, "Named.call", true, false, COLLIDING_NAMES);
+		assertMayBuildLayers(functions, "stack_one", true, null, FIRST_CALL_ON_RETRACE);
+		assertTrue("`stack_one` is refused for the layer its loop selects.",
+				findFunction(functions, "stack_one").getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+						.contains("may call a different layer on a retrace"));
+		assertMayBuildLayers(functions, "Encoder.call", true, false, FIRST_CALL_ON_RETRACE);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1122 with two functions that are no methods and are called
+	 * inside the {@code call} of two layers, one nested in the other, each with a sublayer named {@code dense}. Measured on TensorFlow
+	 * 2.9.3, the kernels are named {@code net/block/inner/dense/kernel:0} and {@code net/block/dense/kernel:0} plain and the HDF5 save
+	 * succeeds. With both functions decorated, each layer is built inside a trace, outside the scopes of the layers calling the functions,
+	 * both kernels are named {@code dense/kernel:0}, and the save raises
+	 * {@code ValueError: Unable to synchronously create dataset (name already exists)}.
+	 */
+	@Test
+	public void testMayBuildLayersHelperFunctionInLayerScope() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// FIXME: Both should be refused for colliding names. A function that is no method isn't checked for them, since it has no receiver
+		// to reach the sublayers from (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1122).
+		for (String identifier : List.of("helper_a", "helper_b"))
+			assertMayBuildLayers(functions, identifier, true, null, null);
+
+		for (String identifier : List.of("Inner.call", "Block.call"))
+			assertMayBuildLayers(functions, identifier, true, false, null);
+
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 

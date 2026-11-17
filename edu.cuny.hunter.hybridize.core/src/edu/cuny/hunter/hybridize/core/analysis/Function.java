@@ -1370,14 +1370,14 @@ public class Function {
 
 	/**
 	 * True iff this {@link Function}'s receiver is known to be a Keras model, false iff it is known not to be one, null if unknown,
-	 * including when this {@link Function} is no instance method ({@link LayerBuildAnalysis}). Of the instance methods that may build a
-	 * layer, only one whose receiver is a known model is exempt from the precondition; a function that is no instance method is exempt too.
+	 * including when this {@link Function} is no instance method ({@link LayerBuildAnalysis}). Of the functions that may build a layer,
+	 * only an instance method whose receiver is a known model is exempt from the precondition.
 	 */
 	private Boolean receiverIsModel;
 
 	/**
 	 * The shape of layer building for which this {@link Function} is refused ({@link LayerBuildAnalysis}), null if none holds or it was not
-	 * checked. Only an instance method that may build a layer and whose receiver isn't known to be a model is checked.
+	 * checked. Only a function that may build a layer and whose receiver isn't known to be a model is checked.
 	 */
 	private LayerBuildShape layerBuildShape;
 
@@ -1825,14 +1825,14 @@ public class Function {
 								this.addFailure(PreconditionFailure.RESHAPES_WITH_SCALAR_SHAPE,
 										"Can't hybridize a function that calls tf.reshape with a scalar shape, such as -1; tracing requires "
 												+ "a rank-1 shape.");
-							else if (TRUE.equals(this.getMayBuildLayers()) && this.isMethod() && !TRUE.equals(this.getReceiverIsModel())
+							else if (TRUE.equals(this.getMayBuildLayers()) && !TRUE.equals(this.getReceiverIsModel())
 									&& this.getLayerBuildShape() != null)
 								// Builds a Keras layer in a shape that changes behavior under tf.function: it constructs one in its
 								// trace, may first call one on a retrace, or reaches sublayers whose names may collide once the
 								// enclosing scopes are dropped, in a run that may save or load weights by name (issues 1172 and 1224).
-								// A model's call saves regardless, and so does a function that is no method, which runs inside no
-								// layer's scope, so both are exempt; a method whose receiver is unknown is checked. A safety failure; it
-								// precedes the benefit signal.
+								// A model's call saves regardless, so it is exempt; a method whose receiver is unknown is checked. A
+								// function that is no method is checked for the first two shapes (issue 1122); it runs inside no
+								// layer's scope, so it has no names to collide. A safety failure; it precedes the benefit signal.
 								this.addFailure(PreconditionFailure.MAY_BUILD_LAYERS, "Can't hybridize a function that "
 										+ this.getLayerBuildShape().getReason() + ": " + this.layerBuildDetail + ".");
 							else if (this.tracingChangesGuardedException().isPresent() || this.bodyHandlerChange.isPresent())
@@ -4154,8 +4154,8 @@ public class Function {
 	/**
 	 * Computes whether this {@link Function}'s body, or code it calls, may create a Keras layer's variables ({@link LayerBuildAnalysis}),
 	 * storing the result for {@link #getMayBuildLayers()}, whether its receiver is a Keras model, for {@link #getReceiverIsModel()}, and,
-	 * for an instance method that may build a layer and whose receiver isn't known to be a model, the shape of layer building that changes
-	 * its behavior, for {@link #getLayerBuildShape()}. When the function has no call-graph node, the result is left undetermined, mirroring
+	 * for a function that may build a layer and whose receiver isn't known to be a model, the shape of layer building that changes its
+	 * behavior, for {@link #getLayerBuildShape()}. When the function has no call-graph node, the result is left undetermined, mirroring
 	 * {@link #computeReshapesWithScalarShape(CallGraph, PythonSSAPropagationCallGraphBuilder, TensorTypeAnalysis)}.
 	 *
 	 * @param callGraph The call graph, holding the function's nodes.
@@ -4189,9 +4189,9 @@ public class Function {
 				.collect(Collectors.toCollection(HashSet::new));
 		this.receiverIsModel = receiverIsModel.size() == 1 ? receiverIsModel.iterator().next() : null;
 
-		// Only a method the precondition may refuse is checked for the shapes that change behavior.
-		if (this.mayBuildLayers && this.isMethod() && !TRUE.equals(this.receiverIsModel))
-			analysis.getShape(nodes).ifPresent(verdict -> {
+		// Only a function the precondition may refuse is checked for the shapes that change behavior.
+		if (this.mayBuildLayers && !TRUE.equals(this.receiverIsModel))
+			analysis.getShape(nodes, this.isMethod()).ifPresent(verdict -> {
 				this.layerBuildShape = verdict.shape();
 				this.layerBuildDetail = verdict.detail();
 			});
@@ -4204,8 +4204,8 @@ public class Function {
 	/**
 	 * The shape of layer building for which this {@link Function} is refused with {@link PreconditionFailure#MAY_BUILD_LAYERS},
 	 * {@code null} if none holds or it was not checked. Computed by
-	 * {@link #computeMayBuildLayers(CallGraph, PythonSSAPropagationCallGraphBuilder, Map)} for an instance method that may build a layer
-	 * and whose receiver isn't known to be a model.
+	 * {@link #computeMayBuildLayers(CallGraph, PythonSSAPropagationCallGraphBuilder, Map)} for a function that may build a layer and whose
+	 * receiver isn't known to be a model.
 	 *
 	 * @return The shape that holds, or null.
 	 */
