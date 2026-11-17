@@ -18070,21 +18070,23 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1293). A traced function returns only tensors: on TensorFlow
 	 * 2.9.3, decorated, {@code where_shape}, {@code constructed_shape} and {@code shape_list} raise a {@code TypeError}, since the shape
 	 * each returns has an unknown extent, and {@code attribute_shape}, {@code parameter_shape}, {@code sliced_shape},
-	 * {@code constructed_defined_shape}, {@code shape_pair}, {@code shape_dict}, {@code either_shape}, {@code shape_of} and
-	 * {@code helper_shape} return a tensor of the extents where each returned a shape, which the caller's {@code as_list()} rejects. The
-	 * shape is read from a tensor's {@code shape} attribute, sliced from one, or constructed by calling {@code tf.TensorShape}, and is
-	 * returned alone, inside a tuple, a dictionary or a list, on one of two paths, or from a helper. {@code shape_class} returns the
-	 * {@code tf.TensorShape} class, which the analysis allocates under the type of its instances, so it is refused as they are; decorated,
-	 * it raises the same {@code TypeError}. {@code parameter_shape} and {@code shape_of} compute no tensor, and the refusal is reported in
-	 * place of that. Each was run on TensorFlow 2.9.3, decorated and not.
+	 * {@code constructed_defined_shape}, {@code rebuilt_shape}, {@code shape_pair}, {@code shape_dict}, {@code either_shape},
+	 * {@code shape_of} and {@code helper_shape} return a tensor of the extents where each returned a shape, which the caller's
+	 * {@code as_list()} rejects. The shape is read from a tensor's {@code shape} attribute, sliced from one, or constructed by calling
+	 * {@code tf.TensorShape}, and is returned alone, inside a tuple, a dictionary or a list, on one of two paths, or from a helper.
+	 * {@code rebuilt_shape} constructs its shape from the list another call returns, as {@code WeightNormalization.compute_output_shape} in
+	 * TensorFlowTTS does, and is refused whatever that call resolves to. {@code shape_class} returns the {@code tf.TensorShape} class,
+	 * which the analysis allocates under the type of its instances, so it is refused as they are; decorated, it raises the same
+	 * {@code TypeError}. {@code parameter_shape} and {@code shape_of} compute no tensor, and the refusal is reported in place of that. Each
+	 * was run on TensorFlow 2.9.3, decorated and not.
 	 */
 	@Test
 	public void testReturnedTensorShape() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
 		for (String name : List.of("attribute_shape", "parameter_shape", "sliced_shape", "where_shape", "constructed_shape",
-				"constructed_defined_shape", "shape_pair", "shape_dict", "shape_list", "either_shape", "shape_of", "helper_shape",
-				"shape_class")) {
+				"constructed_defined_shape", "rebuilt_shape", "shape_pair", "shape_dict", "shape_list", "either_shape", "shape_of",
+				"helper_shape", "shape_class")) {
 			Function function = findFunction(functions, name);
 			assertEquals("`" + name + "` may return a tensor shape.", TRUE, function.getReturnsTensorShape());
 			assertNull("`" + name + "` does not convert.", function.getPassingPrecondition());

@@ -33,6 +33,11 @@ def constructed_defined_shape(x):
     return tf.TensorShape([2, x.shape[1]])
 
 
+def rebuilt_shape(layer, x):
+    # Constructed from the list another call returns, not from a list literal. Fully defined, so the caller gets a tensor.
+    return tf.TensorShape(layer.compute_output_shape(x.shape).as_list())
+
+
 def shape_pair(x):
     # A shape inside a returned tuple.
     y = x * 2
@@ -81,6 +86,7 @@ print(sliced_shape(x).as_list())
 print(where_shape(x).as_list())
 print(constructed_shape(x).as_list())
 print(constructed_defined_shape(x).as_list())
+print(rebuilt_shape(tf.keras.layers.Dense(2), x).as_list())
 print(shape_pair(x)[1].as_list())
 print(shape_dict(x)["shape"].as_list())
 print(shape_list(x)[1].as_list())
