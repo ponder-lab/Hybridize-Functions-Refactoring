@@ -18151,8 +18151,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertEquals("Today, `" + name + "` converts (P1).", P1, function.getPassingPrecondition());
 		}
 
-		// TODO: Refuse this with RETURNS_TENSOR_SHAPE once the engine gives the result of `tf.nn.moments` a value. Today the result has
-		// none, so the `shape` read on it has none either, and the returned value's points-to set is empty.
+		// TODO: Refuse this with RETURNS_TENSOR_SHAPE once the engine gives the result of `tf.nn.moments` a value, with
+		// https://github.com/wala/ML/issues/1283. Today the call has no summary, so its result has no value, the `shape` read on it has
+		// none either, and the returned value's points-to set is empty.
 		Function momentsShape = findFunction(functions, "moments_shape");
 		assertEquals("Today, `moments_shape` returns nothing seen as a tensor shape.", FALSE, momentsShape.getReturnsTensorShape());
 		assertEquals("Today, `moments_shape` converts (P1).", P1, momentsShape.getPassingPrecondition());
