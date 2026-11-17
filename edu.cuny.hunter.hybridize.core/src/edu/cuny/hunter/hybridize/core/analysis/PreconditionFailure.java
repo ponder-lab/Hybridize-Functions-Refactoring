@@ -437,7 +437,7 @@ public enum PreconditionFailure {
 	 * shape that changes its behavior under {@code tf.function} ({@link LayerBuildShape}). The engine names the variable creation of a
 	 * program layer's {@code build} and of a built-in layer's first call alike. Calling, on every call, sublayers constructed in
 	 * {@code __init__} or {@code build} is safe: Keras builds them under {@code init_scope} during the first trace, and a retrace builds
-	 * nothing. A method is refused only for one of three shapes, which the failure's message names:
+	 * nothing. A function is refused only for one of three shapes, which the failure's message names:
 	 * <ol>
 	 * <li>{@link LayerBuildShape#CONSTRUCTED_IN_BODY}: it, or a function it calls other than a layer's {@code __init__} or {@code build},
 	 * constructs a layer that may create variables, so each trace creates new ones, and the second raises. A model always may; a layer
@@ -458,9 +458,9 @@ public enum PreconditionFailure {
 	 * {@code "tf"} keys nothing by name, and neither does a program that saves a SavedModel or sets weights by position.</li>
 	 * </ol>
 	 * A Keras model's {@code call} saves regardless, so a method whose receiver the engine knows to be a model is exempt; one whose
-	 * receiver is unknown is checked. A function that is no method runs inside no layer's name scope, so it is exempt too. Neither is a
-	 * {@code staticmethod} or {@code classmethod} helper on a nested layer refused, as it has no {@code self} receiver. See
-	 * {@link LayerBuildAnalysis}.
+	 * receiver is unknown is checked. A function that is no instance method, a {@code staticmethod} or {@code classmethod} helper on a
+	 * nested layer included, runs inside no layer's name scope and has no {@code self} receiver, so it is exempt from the third shape and
+	 * checked for the first two. See {@link LayerBuildAnalysis}.
 	 *
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1172">Issue 1172</a>
 	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1224">Issue 1224</a>
