@@ -33,6 +33,7 @@ import org.eclipse.core.runtime.ILog;
 import com.ibm.wala.cast.ir.ssa.AstGlobalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
+import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.ir.ssa.AstPropertyRead;
 import com.ibm.wala.cast.ir.ssa.EachElementGetInstruction;
 import com.ibm.wala.cast.ir.ssa.EachElementHasNextInstruction;
@@ -83,6 +84,7 @@ import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.collections.Iterator2Iterable;
+import com.ibm.wala.util.collections.Pair;
 import com.ibm.wala.util.intset.OrdinalSet;
 
 /**
@@ -182,8 +184,11 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * object passed to it, is first called in the first trace only when every call passes the same object, so a parameter varies when the
  * function's nodes show it more than one object, or one that may be several ({@link #mayReceiveSeveral(Set, int)}). A parameter that every
  * call passes one object is that object on every trace, but nothing read from it by a loop or a key is taken as fixed, as nothing is for a
- * callee's parameter. It is exempt from the third shape: it runs inside no layer's name scope, and a model it calls enters its own scope
- * inside the trace. That is optimistic for a helper called inside a layer's {@code call}, whose scope decorating the helper drops.
+ * callee's parameter. Such a function is exempt from the third shape: it runs inside no layer's name scope, and a model it calls enters its
+ * own scope inside the trace. That is optimistic for a helper called inside a layer's {@code call}, whose scope decorating the helper
+ * drops. A function defined in another one is defined anew by each call of that function, so a layer it reads from a variable that each
+ * such call binds once is one layer for each function object, as a receiver's is for each instance, however many objects the calls bind
+ * ({@link #readsEnclosingBinding(CGNode, int)}).
  * <p>
  * Every type fact comes from the engine. {@link TensorFlowApis} names the call of {@code tensorflow.keras.layers.Layer.add_weight} both in
  * a program layer's {@code build} and in the engine's summary of a built-in layer's first call (wala/ML#1145). The latter lies inside a
@@ -353,6 +358,12 @@ class LayerBuildAnalysis {
 
 	/** Which fields are written only while their objects are set up, for {@link #isFixed(CGNode, int)}; created on first use. */
 	private ReboundStateReadAnalysis reboundState;
+
+	/**
+	 * The variables, as (name, defining scope), that each call of the function defining them binds once ({@link #isBoundOnce(Pair)});
+	 * created on first use.
+	 */
+	private Set<Pair<String, String>> boundOnce;
 
 	/**
 	 * Creates the analysis.
@@ -820,7 +831,7 @@ class LayerBuildAnalysis {
 								+ " calls a layer passed to it, which may differ on a retrace"));
 
 					// A callee chosen among several layers by a value that may differ between traces may first call one on a retrace.
-					if (!this.isSelectedFixedly(node, call.getUse(0), ir, cfg, controlDependence, new HashSet<>()))
+					if (!this.isSelectedFixedly(node, call.getUse(0), ir, cfg, controlDependence, nodes.contains(node), new HashSet<>()))
 						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE,
 								"its call at " + describePosition(node, call) + " may call a different layer on a retrace"));
 
@@ -866,7 +877,8 @@ class LayerBuildAnalysis {
 	 * be, a layer or another, such as a bound method of an object holding one, told apart by allocating node, and not several, or it is
 	 * read by a fixed selection ({@link #isReadFixedly(CGNode, int)}), or it merges several at a phi whose choosing branches are fixed
 	 * ({@link #varies(CGNode, ISSABasicBlock, IR)}) and each of whose operands is selected fixedly in turn, or it reads a field only set up
-	 * ({@link #readsSetUpField(CGNode, int)}). A value that may be several layers and that no phi selects, such as an element holding
+	 * ({@link #readsSetUpField(CGNode, int)}), or, in the function itself, a variable that the function enclosing it binds once
+	 * ({@link #readsEnclosingBinding(CGNode, int)}). A value that may be several layers and that no phi selects, such as an element holding
 	 * several, or a field another method rebinds, has no selecting value the engine shows fixed, so it isn't. A single layer called through
 	 * a local alias is the same value and is.
 	 *
@@ -875,11 +887,12 @@ class LayerBuildAnalysis {
 	 * @param ir The node's IR.
 	 * @param cfg The node's control-flow graph, without exceptional edges.
 	 * @param controlDependence The control dependence graph of {@code cfg}.
+	 * @param own Whether {@code node} is a node of the function itself, not of a function it reaches.
 	 * @param seen The values already visited, along a cycle of phis.
 	 * @return True iff the value is one layer on every trace.
 	 */
 	private boolean isSelectedFixedly(CGNode node, int callee, IR ir, PrunedCFG<SSAInstruction, ISSABasicBlock> cfg,
-			ControlDependenceGraph<ISSABasicBlock> controlDependence, Set<Integer> seen) {
+			ControlDependenceGraph<ISSABasicBlock> controlDependence, boolean own, Set<Integer> seen) {
 		if (!seen.add(callee))
 			return true;
 
@@ -912,7 +925,8 @@ class LayerBuildAnalysis {
 			return true;
 
 		if (!(node.getDU().getDef(callee) instanceof SSAPhiInstruction phi))
-			return allocators.size() == 1 && this.isReadFixedly(node, callee) || this.readsSetUpField(node, callee);
+			return allocators.size() == 1 && this.isReadFixedly(node, callee) || this.readsSetUpField(node, callee)
+					|| own && this.readsEnclosingBinding(node, callee);
 
 		ISSABasicBlock merge = null;
 
@@ -940,7 +954,7 @@ class LayerBuildAnalysis {
 				return false;
 
 		for (int i = 0; i < phi.getNumberOfUses(); i++)
-			if (!this.isSelectedFixedly(node, phi.getUse(i), ir, cfg, controlDependence, seen))
+			if (!this.isSelectedFixedly(node, phi.getUse(i), ir, cfg, controlDependence, own, seen))
 				return false;
 
 		return true;
@@ -972,6 +986,109 @@ class LayerBuildAnalysis {
 		int[] parameters = node.getIR().getSymbolTable().getParameterValueNumbers();
 		return parameters.length > 1 && parameters[1] == object && this.receivesOwnInstances(node)
 				&& this.getReboundState().readsSetUpStateOnly(node, def);
+	}
+
+	/**
+	 * True iff {@code value} of a node of the function itself reads a variable of a function enclosing it that each call of that function
+	 * binds once ({@link #isBoundOnce(Pair)}), or a field, not an element, of such a variable's object that is written only while the
+	 * object is set up ({@link ReboundStateReadAnalysis#readsSetUpStateOnly(CGNode, SSAInstruction)}). Each call of the enclosing function
+	 * defines the function anew, so each function object reads the one object its own call bound, as each instance of a method reads its
+	 * own receiver, and first calls it on its first trace: {@code model} in a {@code step} defined in {@code sample(model, x)} is, however
+	 * many models the calls of {@code sample} pass. A function the decorated one calls is no such reader: one decorated function runs it
+	 * for every object its own variables are bound to.
+	 *
+	 * @param node A node of the function itself.
+	 * @param value A value number of {@code node}.
+	 * @return True iff the value is one object for each function object.
+	 */
+	private boolean readsEnclosingBinding(CGNode node, int value) {
+		SSAInstruction def = node.getDU().getDef(value);
+
+		if (def instanceof AstLexicalRead)
+			return this.isEnclosingBinding(node, value);
+
+		int object;
+
+		if (def instanceof SSAGetInstruction get && !get.isStatic())
+			object = get.getRef();
+		else if (def instanceof AstPropertyRead read && node.getIR().getSymbolTable().isConstant(read.getMemberRef()))
+			object = read.getObjectRef();
+		else
+			return false;
+
+		return this.isEnclosingBinding(node, object) && this.getReboundState().readsSetUpStateOnly(node, def);
+	}
+
+	/**
+	 * True iff {@code value} of {@code node} is read lexically, as a function reads a variable of a scope enclosing it, and each call of
+	 * the function defining the variable binds it once ({@link #isBoundOnce(Pair)}).
+	 *
+	 * @param node A program node.
+	 * @param value A value number of {@code node}.
+	 * @return True iff the value reads such a variable.
+	 */
+	private boolean isEnclosingBinding(CGNode node, int value) {
+		if (!(node.getDU().getDef(value) instanceof AstLexicalRead read))
+			return false;
+
+		for (Access access : read.getAccesses())
+			if (access.valueNumber() == value)
+				return this.isBoundOnce(access.getName());
+
+		return false;
+	}
+
+	/**
+	 * True iff each call of the function defining {@code variable} binds it once: every lexical write of it in the call graph lies in that
+	 * function's own code, and that code writes it by one instruction outside any loop, which is the write of a parameter on entry or a
+	 * single assignment. The front end writes a variable that a nested function reads lexically at each of its bindings, and names the
+	 * scope defining it in every access. A write in another function's code would be a nested function's assignment under {@code nonlocal}.
+	 * <p>
+	 * TODO: The front end drops a {@code nonlocal} declaration, so such an assignment binds a local of the nested function and is no write
+	 * of the variable here or in the points-to sets (https://github.com/wala/ML/issues/1304). A function reading a variable that only such
+	 * an assignment rebinds is taken as reading one object until it does.
+	 *
+	 * @param variable A variable, as (name, defining scope).
+	 * @return True iff the variable is defined by a function, not a script, and bound once per call of it.
+	 */
+	private boolean isBoundOnce(Pair<String, String> variable) {
+		if (this.boundOnce == null) {
+			Set<Pair<String, String>> written = new HashSet<>();
+			Set<Pair<String, String>> rebound = new HashSet<>();
+
+			for (CGNode node : this.callGraph) {
+				IR ir = node.getIR();
+
+				if (ir == null || !(node.getMethod() instanceof AstMethod))
+					continue;
+
+				String type = NumpyParameterFlowAnalysis.stripTypePrefix(node.getMethod().getDeclaringClass().getName().toString());
+				Set<Pair<String, String>> own = new HashSet<>();
+
+				for (SSAInstruction instruction : Iterator2Iterable.make(ir.iterateNormalInstructions()))
+					if (instruction instanceof AstLexicalWrite write)
+						for (Access access : write.getAccesses()) {
+							Pair<String, String> name = access.getName();
+
+							if (name.snd == null)
+								continue;
+
+							// A second write in the defining function, one in a loop, or one from another function rebinds it.
+							if (!NumpyParameterFlowAnalysis.stripTypePrefix(name.snd).equals(type) || !own.add(name)
+									|| isInLoop(ir, write.iIndex()))
+								rebound.add(name);
+						}
+
+				written.addAll(own);
+			}
+
+			written.removeAll(rebound);
+			this.boundOnce = written;
+		}
+
+		// A script's variable may also be bound by a write that is no lexical one, as under `global`
+		// (https://github.com/wala/ML/issues/1116), so only a function's is taken as bound once.
+		return variable.snd != null && !variable.snd.equals(Util.scriptOf(variable.snd)) && this.boundOnce.contains(variable);
 	}
 
 	/**

@@ -18486,6 +18486,79 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1122 with functions defined in other functions, each
+	 * calling a layer it reads from a variable of the function enclosing it, as the {@code step} of a sampling loop calls the model its
+	 * enclosing function is passed. Each call of the enclosing function defines the function anew, so each function object reads the one
+	 * object that call bound. Measured on TensorFlow 2.9.3, each of these runs decorated and is not refused: {@code step},
+	 * {@code step_direct} and {@code step_field}, which call a method of, the model in, and a layer in a field of a parameter of a function
+	 * called with two models; {@code step_local}, whose variable one assignment binds; {@code step_either}, whose variable is bound once to
+	 * either of two models; and {@code inner}, whose enclosing function is called with two layers. Each of these raises a
+	 * {@code ValueError} decorated and is refused: {@code step_rebound}, whose variable a second assignment binds between its calls;
+	 * {@code step_loop} and {@code step_while}, whose variable a loop binds on each iteration; {@code step_indexed}, whose layer an index
+	 * that differs between its calls selects; {@code step_field_rebound}, whose layer is in a field the enclosing function writes between
+	 * its calls, which {@link PreconditionFailure#HAS_REBOUND_STATE_READS} refuses first; {@code step_global} and
+	 * {@code step_global_field}, each one function for the program, reading a variable of the script that another function binds under
+	 * {@code global}; {@code apply_inner}, one function whose {@code inner} reads another layer on each call; {@code run}, passed the
+	 * functions; {@code sample}, {@code sample_direct}, {@code sample_field} and {@code sample_either}, which pass them on; and
+	 * {@code sample_local} and {@code sample_indexed}. {@code sample_rebound}, {@code sample_loop} and {@code sample_while} run decorated,
+	 * each being called once, and are refused all the same.
+	 * <p>
+	 * {@code step_nonlocal} and {@code step_nonlocal_once}, whose variable another nested function binds under {@code nonlocal} between
+	 * their calls, raise a {@code ValueError} decorated too and are not refused.
+	 */
+	@Test
+	public void testMayBuildLayersClosure() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("sample.step", "sample_direct.step_direct", "sample_field.step_field", "sample_local.step_local",
+				"sample_either.step_either", "apply_inner.inner")) {
+			assertMayBuildLayers(functions, identifier, true, null, null);
+			assertFalse("`" + identifier + "` is not refused.", findFunction(functions, identifier).getStatus().hasError());
+			assertTrue("`" + identifier + "` is converted.",
+					findFunction(functions, identifier).getTransformations().contains(CONVERT_TO_HYBRID));
+		}
+
+		for (String identifier : List.of("sample_rebound.step_rebound", "sample_loop.step_loop", "sample_while.step_while",
+				"sample_indexed.step_indexed", "step_global", "step_global_field", "apply_inner", "sample", "sample_direct", "sample_field",
+				"sample_either", "sample_rebound", "sample_indexed")) {
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
+			assertTrue("`" + identifier + "` is refused for the layer it may call.",
+					findFunction(functions, identifier).getStatus()
+							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+							.contains("may call a different layer on a retrace"));
+		}
+
+		// The field's rebinding refuses the function before its layer does.
+		Function fieldRebound = findFunction(functions, "sample_field_rebound.step_field_rebound");
+		assertEquals(FIRST_CALL_ON_RETRACE, fieldRebound.getLayerBuildShape());
+		assertNotNull("`step_field_rebound` reads a rebound field.",
+				fieldRebound.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+
+		assertMayBuildLayers(functions, "run", true, null, FIRST_CALL_ON_RETRACE);
+		assertTrue("`run` is refused for a layer its callers pass.",
+				findFunction(functions, "run").getStatus()
+						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+						.contains("calls a layer passed to it, which may differ on a retrace"));
+		assertMayBuildLayers(functions, "sample_local", true, null, CONSTRUCTED_IN_BODY);
+
+		for (String identifier : List.of("sample_loop", "sample_while")) {
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
+			assertTrue("`" + identifier + "` is refused for its loop.",
+					findFunction(functions, identifier).getStatus()
+							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+							.contains("runs under a condition that can differ between traces"));
+		}
+
+		// TODO: Refuse these once the front end keeps a `nonlocal` declaration (https://github.com/wala/ML/issues/1304). It drops it
+		// today, so the assignment under it binds a local of the function making it, and the variable looks bound once.
+		for (String identifier : List.of("sample_nonlocal.step_nonlocal", "sample_nonlocal_once.step_nonlocal_once"))
+			assertMayBuildLayers(functions, identifier, true, null, null);
+
+		assertMayBuildLayers(functions, "Net.predict_one", true, true, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
 	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1122 with two functions that are no methods and are called
 	 * inside the {@code call} of two layers, one nested in the other, each with a sublayer named {@code dense}. Measured on TensorFlow
 	 * 2.9.3, the kernels are named {@code net/block/inner/dense/kernel:0} and {@code net/block/dense/kernel:0} plain and the HDF5 save

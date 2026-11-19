@@ -729,7 +729,7 @@ public class Util {
 	 * The script that a declaring-class or scope name belongs to: the name up to and including its {@code .py}, so that
 	 * {@code Lscript pkg/m.py/C/f} gives {@code Lscript pkg/m.py}.
 	 */
-	private static String scriptOf(String name) {
+	static String scriptOf(String name) {
 		int end = name.indexOf(".py/");
 		return end < 0 ? name : name.substring(0, end + ".py".length());
 	}
