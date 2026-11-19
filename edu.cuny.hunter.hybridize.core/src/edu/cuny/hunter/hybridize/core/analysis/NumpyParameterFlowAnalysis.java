@@ -1058,7 +1058,7 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/** The name with a leading {@code L} type-descriptor prefix removed, so a scope's entity name and its type name compare equal. */
-	private static String stripTypePrefix(String name) {
+	static String stripTypePrefix(String name) {
 		return name.startsWith("L") ? name.substring(1) : name;
 	}
 
