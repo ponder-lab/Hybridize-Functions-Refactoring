@@ -1043,6 +1043,8 @@ class LayerBuildAnalysis {
 	 * function's own code, and that code writes it by one instruction outside any loop, which is the write of a parameter on entry or a
 	 * single assignment. The front end writes a variable that a nested function reads lexically at each of its bindings, and names the
 	 * scope defining it in every access. A write in another function's code would be a nested function's assignment under {@code nonlocal}.
+	 * Only the program's own code is scanned: a node that is no {@code AstMethod}, such as one the engine synthesizes for a summary, is
+	 * read for no write.
 	 * <p>
 	 * TODO: The front end drops a {@code nonlocal} declaration, so such an assignment binds a local of the nested function and is no write
 	 * of the variable here or in the points-to sets (https://github.com/wala/ML/issues/1304). A function reading a variable that only such

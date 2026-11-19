@@ -18495,21 +18495,30 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * either of two models; and {@code inner}, whose enclosing function is called with two layers. Each of these raises a
 	 * {@code ValueError} decorated and is refused: {@code step_rebound}, whose variable a second assignment binds between its calls;
 	 * {@code step_loop} and {@code step_while}, whose variable a loop binds on each iteration; {@code step_indexed}, whose layer an index
-	 * that differs between its calls selects; {@code step_field_rebound}, whose layer is in a field the enclosing function writes between
-	 * its calls, which {@link PreconditionFailure#HAS_REBOUND_STATE_READS} refuses first; {@code step_global} and
-	 * {@code step_global_field}, each one function for the program, reading a variable of the script that another function binds under
-	 * {@code global}; {@code apply_inner}, one function whose {@code inner} reads another layer on each call; {@code run}, passed the
-	 * functions; {@code sample}, {@code sample_direct}, {@code sample_field} and {@code sample_either}, which pass them on; and
-	 * {@code sample_local} and {@code sample_indexed}. {@code sample_rebound}, {@code sample_loop} and {@code sample_while} run decorated,
-	 * each being called once, and are refused all the same.
+	 * that differs between its calls selects; {@code step_for_parameter} and {@code step_for_then_assigned}, whose variable a {@code for}
+	 * loop binds, the first a parameter and the second one assigned once more after the loop; {@code step_unpacked}, whose variable an
+	 * unpacking assignment binds between its calls; {@code step_with}, whose variable a {@code with} statement binds between its calls;
+	 * {@code step_field_rebound}, whose layer is in a field the enclosing function writes between its calls, which
+	 * {@link PreconditionFailure#HAS_REBOUND_STATE_READS} refuses first; {@code step_global} and {@code step_global_field}, each one
+	 * function for the program, reading a variable of the script that another function binds under {@code global}; {@code apply_inner}, one
+	 * function whose {@code inner} reads another layer on each call; {@code run}, passed the functions; {@code sample},
+	 * {@code sample_direct}, {@code sample_field} and {@code sample_either}, which pass them on; and {@code sample_local} and
+	 * {@code sample_indexed}. {@code sample_for_then_assigned}, which returns the model it makes, raises a {@code TypeError} decorated and
+	 * is refused. {@code sample_rebound}, {@code sample_loop}, {@code sample_while}, {@code sample_for_parameter}, {@code sample_unpacked}
+	 * and {@code sample_with} run decorated, each being called once, and are refused all the same.
 	 * <p>
 	 * {@code step_nonlocal} and {@code step_nonlocal_once}, whose variable another nested function binds under {@code nonlocal} between
 	 * their calls, raise a {@code ValueError} decorated too and are not refused.
+	 * <p>
+	 * {@code step_past} and {@code step_past_short} call a method of a model whose {@code call} runs as many of its blocks as the
+	 * {@code past} passed to it has entries, as a decoder passed its cached state does. Decorated, {@code step_past} runs, every trace of
+	 * it running every block, and {@code step_past_short}, whose first call passes a shorter {@code past}, raises a {@code ValueError}.
+	 * Only the lengths of the lists tell the two apart, so both are refused. {@code Wrapped.predict_past}, {@code Wrapped.call} and
+	 * {@code Stack.call} raise a {@code ValueError} decorated too, through {@code sample_past_short}, and are not refused.
 	 */
 	@Test
 	public void testMayBuildLayersClosure() throws Exception {
 		Set<Function> functions = this.getFunctions();
-
 		for (String identifier : List.of("sample.step", "sample_direct.step_direct", "sample_field.step_field", "sample_local.step_local",
 				"sample_either.step_either", "apply_inner.inner")) {
 			assertMayBuildLayers(functions, identifier, true, null, null);
@@ -18519,8 +18528,9 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		for (String identifier : List.of("sample_rebound.step_rebound", "sample_loop.step_loop", "sample_while.step_while",
-				"sample_indexed.step_indexed", "step_global", "step_global_field", "apply_inner", "sample", "sample_direct", "sample_field",
-				"sample_either", "sample_rebound", "sample_indexed")) {
+				"sample_indexed.step_indexed", "sample_for_parameter.step_for_parameter", "sample_for_then_assigned.step_for_then_assigned",
+				"sample_unpacked.step_unpacked", "sample_with.step_with", "step_global", "step_global_field", "apply_inner", "sample",
+				"sample_direct", "sample_field", "sample_either", "sample_rebound", "sample_indexed", "sample_unpacked", "sample_with")) {
 			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
 			assertTrue("`" + identifier + "` is refused for the layer it may call.",
 					findFunction(functions, identifier).getStatus()
@@ -18539,9 +18549,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				findFunction(functions, "run").getStatus()
 						.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
 						.contains("calls a layer passed to it, which may differ on a retrace"));
-		assertMayBuildLayers(functions, "sample_local", true, null, CONSTRUCTED_IN_BODY);
+		for (String identifier : List.of("sample_local", "sample_for_then_assigned"))
+			assertMayBuildLayers(functions, identifier, true, null, CONSTRUCTED_IN_BODY);
 
-		for (String identifier : List.of("sample_loop", "sample_while")) {
+		for (String identifier : List.of("sample_loop", "sample_while", "sample_for_parameter")) {
 			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
 			assertTrue("`" + identifier + "` is refused for its loop.",
 					findFunction(functions, identifier).getStatus()
@@ -18553,6 +18564,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// today, so the assignment under it binds a local of the function making it, and the variable looks bound once.
 		for (String identifier : List.of("sample_nonlocal.step_nonlocal", "sample_nonlocal_once.step_nonlocal_once"))
 			assertMayBuildLayers(functions, identifier, true, null, null);
+
+		// `Stack.call` runs as many blocks as its `past` has entries, and each of these passes its own `past` on to it.
+		for (String identifier : List.of("sample_past.step_past", "sample_past_short.step_past_short")) {
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
+			assertTrue("`" + identifier + "` is refused for the blocks its `past` selects.",
+					findFunction(functions, identifier).getStatus()
+							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+							.contains("calls a layer passed to it, which may differ on a retrace"));
+		}
+
+		// TODO: Refuse these once a model's method is checked for a first call on a retrace
+		// (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1285). Each is exempt today as a method of a model.
+		for (String identifier : List.of("Wrapped.predict_past", "Wrapped.call", "Stack.call")) {
+			assertMayBuildLayers(functions, identifier, true, true, null);
+			assertFalse("`" + identifier + "` is not refused.", findFunction(functions, identifier).getStatus().hasError());
+		}
 
 		assertMayBuildLayers(functions, "Net.predict_one", true, true, null);
 		assertMayBuildLayers(functions, "Net.call", true, true, null);

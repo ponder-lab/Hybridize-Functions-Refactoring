@@ -161,6 +161,119 @@ def sample_indexed(model, x):
     return first, step_indexed(tf.concat([x, x], axis=0))
 
 
+def sample_for_parameter(model, models, x):
+    def step_for_parameter(y):
+        return model(y)
+
+    outs = []
+
+    # The loop binds the parameter again on each iteration.
+    for model in models:
+        outs.append(step_for_parameter(x))
+        x = tf.concat([x, x], axis=0)
+
+    return outs
+
+
+def sample_for_then_assigned(models, make, x):
+    def step_for_then_assigned(y):
+        return model(y)
+
+    outs = []
+
+    for model in models:
+        outs.append(step_for_then_assigned(x))
+        x = tf.concat([x, x], axis=0)
+
+    # The loop's variable, assigned once more after the loop.
+    model = make()
+    return outs, model
+
+
+def sample_unpacked(model, other, x):
+    def step_unpacked(y):
+        return model(y)
+
+    first = step_unpacked(x)
+    # The second call of `step_unpacked` reads the other model, which an unpacking assignment binds.
+    model, _ = other, None
+    return first, step_unpacked(tf.concat([x, x], axis=0))
+
+
+class Holder:
+
+    def __init__(self, model):
+        self.model = model
+
+    def __enter__(self):
+        return self.model
+
+    def __exit__(self, *args):
+        return False
+
+
+def sample_with(model, other, x):
+    def step_with(y):
+        return model(y)
+
+    first = step_with(x)
+
+    # The second call of `step_with` reads the other model, which the `with` statement binds.
+    with Holder(other) as model:
+        second = step_with(tf.concat([x, x], axis=0))
+
+    return first, second
+
+
+class Stack(tf.keras.Model):
+
+    def __init__(self):
+        super().__init__()
+        self.blocks = [tf.keras.layers.Dense(2), tf.keras.layers.Dense(2)]
+
+    def call(self, x, past=None):
+        # As many blocks run as `past` has entries along its second axis.
+        pasts = tf.unstack(past, axis=1) if past is not None else [None] * 2
+        outs = []
+
+        for i, (block, layer_past) in enumerate(zip(self.blocks, pasts)):
+            x = block(x)
+            outs.append(x)
+
+        return tf.stack(outs, axis=1)
+
+
+class Wrapped(tf.keras.Model):
+
+    def __init__(self):
+        super().__init__()
+        self.model = Stack()
+
+    def call(self, inputs, past=None):
+        return self.model(inputs, past)
+
+    def predict_past(self, inputs, past=None):
+        return self(inputs, past)
+
+
+def sample_past(model, x):
+    def step_past(tokens, past=None):
+        return model.predict_past(tokens, past)
+
+    # The second call passes a tensor where the first passed `None`, so a decorated `step_past` is traced twice, running both blocks.
+    past = step_past(x)
+    return step_past(x, past)
+
+
+def sample_past_short(model, x):
+    def step_past_short(tokens, past=None):
+        return model.predict_past(tokens, past)
+
+    # The first call runs one block and the second both, so a decorated `step_past_short` first calls the second block on a retrace.
+    first = step_past_short(x, tf.ones([1, 1, 2]))
+    return first, step_past_short(x)
+
+
 def apply_inner(layer, x):
     # One function for every call, so the layer `inner` reads differs between the calls.
     def inner(y):
@@ -231,6 +344,12 @@ sample_field_rebound(make_first(), make_second(), x)
 sample_loop([make_first(), make_second()], x)
 sample_indexed(make_first(), x)
 sample_indexed(make_second(), x)
+sample_for_parameter(make_first(), [make_first(), make_second()], x)
+sample_for_then_assigned([make_first(), make_second()], make_first, x)
+sample_unpacked(make_first(), make_second(), x)
+sample_with(make_first(), make_second(), x)
+sample_past(Wrapped(), x)
+sample_past_short(Wrapped(), x)
 
 apply_inner(make_first(), x)
 apply_inner(make_second(), tf.concat([x, x], axis=0))
