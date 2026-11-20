@@ -18096,6 +18096,53 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the type of a tensor created from a number, or from a list of numbers, that another module binds at its top level. The module
+	 * {@code B.py} binds {@code PAD = 388} and {@code PADS = [388, 389]}, and {@code A.py} reads them as {@code B.PAD}, as {@code PAD}
+	 * after {@code from B import PAD}, and as {@code B.PADS}. Measured on TensorFlow 2.9.3 and NumPy 1.23.5, every tensor has the dtype and
+	 * shape of its {@code local_*} twin, whose number {@code A.py} binds itself: int32 from {@code tf.constant}, and int64 from
+	 * {@code np.array}, {@code np.full} and {@code np.append}.
+	 * <p>
+	 * TODO: The engine gives a value that a module binds by assignment no value where another module reads it
+	 * (https://github.com/wala/ML/issues/1243), so each {@code imported_*} tensor has an unknown dtype, and no input signature is inferred
+	 * for a function receiving one. Expect what the {@code local_*} twin reads once a release carries a fix.
+	 */
+	@Test
+	public void testImportedModuleValueDtype() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+
+		// The controls: the number is bound in the reading module, or returned by a function of the other one.
+		assertEquals("A tensor of a local `int` is an int32 scalar.", "INT32[scalar]", renderedParameter(functions, "local_constant"));
+		assertEquals("An array of a local `int` is an int64 scalar.", "INT64[scalar]", renderedParameter(functions, "local_array"));
+		assertEquals("An array filled with a local `int` is int64.", "INT64[Constant,2]", renderedParameter(functions, "local_full"));
+		assertEquals("Appending a local `int` to an int64 array keeps int64.", "INT64[Constant,5]",
+				renderedParameter(functions, "local_append"));
+		assertEquals("An input signature is inferred for `local_append`.", "[tf.TensorSpec(shape=(5,), dtype=tf.int64)]",
+				findFunction(functions, "local_append").getInferredInputSignature().orElseThrow().toTensorSpecList("tf."));
+		assertEquals("Appending an `int` that a function of the other module returns keeps int64.", "INT64[Constant,5]",
+				renderedParameter(functions, "imported_call_append"));
+
+		// Today, the same number read from the other module's top level has no dtype.
+		assertEquals("A tensor of an imported `int` has no dtype or shape.", "UNKNOWN[TOP]",
+				renderedParameter(functions, "imported_constant"));
+		assertEquals("An array of an imported `int` has no dtype or shape.", "UNKNOWN[TOP]",
+				renderedParameter(functions, "imported_array"));
+		assertEquals("An array filled with an imported `int` has no dtype.", "UNKNOWN[Constant,2]",
+				renderedParameter(functions, "imported_full"));
+
+		for (String name : List.of("imported_append", "from_imported_append", "imported_list_append")) {
+			assertEquals("`" + name + "` receives an array of no dtype or length.", "UNKNOWN[Unresolved]",
+					renderedParameter(functions, name));
+			assertTrue("No input signature is inferred for `" + name + "`.",
+					findFunction(functions, name).getInferredInputSignature().isEmpty());
+		}
+	}
+
+	private static String renderedParameter(Set<Function> functions, String identifier) {
+		return findFunction(functions, identifier).getParameters().get(0).getRenderedTensorTypes();
+	}
+
+	/**
 	 * A function that returns a NumPy array to a caller refuses the conversion
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1199). The fixture reduces TensorFlow2.0-Examples'
 	 * {@code get_wh_from_boxes}, which slices and subtracts the array it is passed, and whose caller indexes the result with an integer
