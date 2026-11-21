@@ -16525,15 +16525,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * method rebinds, used only as an op's name, which matches but is refused for the same reason, as its TODO says. Two more controls
 	 * match: {@code sums_list} reads the elements of a list argument, which {@code tf.function} passes in afresh, and
 	 * {@code uses_fresh_holder} creates, sets, and reads a {@code Holder} within one call. {@code Holder.get}, decorated on its own,
-	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads; it is refused. Four
-	 * more cases pin how the engine's {@code dict.copy} model reaches this precondition, each against the same body, which fills in its
-	 * {@code features} dictionary unless that already holds {@code "tensor"}. Under {@code tf.function}, {@code make_features_of_copy},
-	 * passed a copy of a dictionary lacking that key, raises the {@code ValueError} and is refused. {@code make_features_of_full_copy},
-	 * passed a copy that holds it, as OpenNMT-tf's {@code Model.serve_function} passes one, returns before any write and runs, but is
-	 * refused. {@code RecordInputter.make_features}, passed each of the empty dictionaries a caller makes per inputter, as OpenNMT-tf's
-	 * {@code ParallelInputter} does, raises and is refused. {@code make_features_fresh}, passed no dictionary, fills in its own and runs.
-	 * The full copy's comment says why its refusal is a lost conversion. {@code Resetting.read}, whose field is set only in a helper that
-	 * only {@code __init__} calls, matches but is refused, for the precision reason its TODO gives.
+	 * matches in this program, whose holders are each read once, and diverges once one holder is set between two reads. Its holder is set
+	 * only by the function that has just created it, before anything reads it, so it is not refused
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165). Four more cases pin how the engine's {@code dict.copy}
+	 * model reaches this precondition, each against the same body, which fills in its {@code features} dictionary unless that already holds
+	 * {@code "tensor"}. Under {@code tf.function}, {@code make_features_of_copy}, passed a copy of a dictionary lacking that key, raises
+	 * the {@code ValueError} and is refused. {@code make_features_of_full_copy}, passed a copy that holds it, as OpenNMT-tf's
+	 * {@code Model.serve_function} passes one, returns before any write and runs, but is refused. {@code RecordInputter.make_features},
+	 * passed each of the empty dictionaries a caller makes per inputter, as OpenNMT-tf's {@code ParallelInputter} does, raises and is
+	 * refused. {@code make_features_fresh}, passed no dictionary, fills in its own and runs. The full copy's comment says why its refusal
+	 * is a lost conversion. {@code Resetting.read}, whose field is set only in a helper that only {@code __init__} calls, matches but is
+	 * refused, for the precision reason its TODO gives.
 	 */
 	@Test
 	public void testReboundStateReads() throws Exception {
@@ -16556,13 +16558,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("`make_features` fails with HAS_PYTHON_SIDE_EFFECTS.",
 				makeFeatures.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS.getCode()));
 
-		// The analysis tells objects apart by allocation site, so a holder created afresh on each call is one object to it, and its getter
-		// is
-		// refused although this program never rebinds a holder between two of its reads.
-		Function get = findFunction(functions, "Holder.get");
-		assertEquals("`Holder.get` reads a field `Holder.set` writes.", TRUE, get.getHasReboundStateReads());
-		assertNotNull("`Holder.get` fails with HAS_REBOUND_STATE_READS.",
-				get.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+		// The analysis tells objects apart by allocation site, so a holder created afresh on each call is one object to it. Its only write
+		// is `set`, called on a holder that `uses_fresh_holder` has just created and that nothing has read yet, so it is part of the
+		// holder's construction and its getter is not refused.
+		assertNotRefusedForReboundState(findFunction(functions, "Holder.get"));
 
 		// A rebound `int` field is read stale under tracing too, and a scalar read counts since
 		// https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1048.
@@ -16845,6 +16844,198 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotNull("`" + reader.getKey() + "` fails with HAS_REBOUND_STATE_READS.", entry);
 			assertTrue("The message names the field and the write: " + entry.getMessage(),
 					entry.getMessage().matches("(?s).*" + reader.getValue() + ".*"));
+		}
+	}
+
+	/**
+	 * Asserts that the rebound-state check ran on the given {@link Function} and found no rebinding write.
+	 *
+	 * @param function The {@link Function} to check.
+	 */
+	private static void assertNotRefusedForReboundState(Function function) {
+		String identifier = function.getIdentifier();
+		assertEquals("`" + identifier + "` reads no rebound state.", FALSE, function.getHasReboundStateReads());
+		assertNull("`" + identifier + "` is not refused for rebound state.",
+				function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_REBOUND_STATE_READS.getCode()));
+	}
+
+	/**
+	 * Asserts that the given {@link Function} is refused for reading rebound state, with a message naming the field and the write.
+	 *
+	 * @param function The {@link Function} to check.
+	 * @param witness A regular expression matching the part of the message that names the field and the write.
+	 */
+	private static void assertRefusedForReboundState(Function function, String witness) {
+		String identifier = function.getIdentifier();
+		assertEquals("`" + identifier + "` reads a rewritten field.", TRUE, function.getHasReboundStateReads());
+		assertNull("`" + identifier + "` must not pass a precondition.", function.getPassingPrecondition());
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.HAS_REBOUND_STATE_READS.getCode());
+		assertNotNull("`" + identifier + "` fails with HAS_REBOUND_STATE_READS.", entry);
+		assertTrue("The message names the field and the write: " + entry.getMessage(),
+				entry.getMessage().matches("(?s).*" + witness + ".*"));
+	}
+
+	/**
+	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165: a field written outside its class's {@code __init__},
+	 * but only as part of its object's construction, by the function that has just created the object or by a method called on it there,
+	 * before anything that reads the field runs. Each object's field then holds one value from its first read on. {@code tf.function}
+	 * traces a method once per instance and keys a trace on the identity of an object passed as an argument, so no trace reads the field
+	 * stale. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function}, the program prints what it prints eagerly:
+	 * {@code Trainer.step} reads the optimizer that {@code create_optimizer} creates and the fields {@code train} stores before training
+	 * starts (gpt-2's {@code _train_step}), {@code Streaming.call} and its nested {@code top_scores} read the candidates that
+	 * {@code Retrieval.__init__} indexes on the model it creates in the same expression, and {@code Retrieval.call} calls that model
+	 * (deep_recommenders' retrieval layers). {@code Index.search} reads a field filled once before a loop of searches, {@code Dense.search}
+	 * and {@code Scaled.search} one filled on an object whose class is a parameter of the creating function, {@code Looped.search} one
+	 * filled on the object each loop iteration creates, and {@code Refilled.search} one a loop fills again and again before the first
+	 * search. {@code search_in} reads the field of an index passed as its argument, and {@code Holding.search} calls {@code Held.search} on
+	 * the index stored into the holder that the same function created. {@code Twinned.search} reads a field of a class that two functions
+	 * each instantiate and fill.
+	 * <p>
+	 * The cases also pin the engine conventions the check reads: a bound-method call reaches its method through an instance-method
+	 * trampoline, the method called is read from a field of the receiver that only the engine's constructor writes, storing a trampoline it
+	 * allocates there, the trampoline's {@code $function} field holds the function the method's class defines, and each class
+	 * instantiation's targets are the engine's constructors. Were any of these to change, the check would refuse these readers.
+	 */
+	@Test
+	public void testReboundStateReadsBeforeFirstCall() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Trainer.step", "Streaming.call", "Streaming.call.top_scores", "Retrieval.call", "Index.search",
+				"Dense.search", "Scaled.search", "Looped.search", "Refilled.search", "search_in", "Held.search", "Holding.search",
+				"Twinned.search")) {
+			Function function = findFunction(functions, identifier);
+			assertNotRefusedForReboundState(function);
+			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * The controls of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165: a field written again after something has
+	 * read it, or whose object is reached through a variable or a field that is rebound, stays refused. Measured on TensorFlow 2.9.3, with
+	 * each reader alone under {@code tf.function}, the second search returns the first's result where the eager one returns the second's.
+	 * {@code Reindexed.search} reads a field its creator fills again after a search, {@code Shared.search} one filled by a function the
+	 * index is passed to, {@code Registered.search} one filled on an index read from a module variable, and {@code Owned.search} and {@code
+	 * Owner.search} one filled on an index read from another object's field. {@code Searching.search} reads a field filled after the
+	 * constructor has searched, and {@code Probing.search} one filled by a method that searches first. {@code Borrowed.search} and {@code
+	 * Patched.search} read a field filled through the {@code index} method of another index, stored in a field that program source writes,
+	 * so the method called on a new object writes an old one. {@code Stepped.search} reads a field filled by a generator, whose caller
+	 * searches between two of its steps. {@code Rewritten.search} reads a field its creator sets itself again after a search, {@code
+	 * Assigned.search} one set by a plain function the index is passed to, {@code Yielded.search} one set by the generator that created the
+	 * index, between handing it out twice, and {@code Fetched.search} one filled on an index that a call hands out, the same one each time.
+	 * {@code Keeper.search} reads the index its keeper replaces, {@code Lister.search} the last index of a list its lister appends to, and
+	 * {@code Pairer.search} the first index of a tuple its pairer replaces: each index is filled once, by the function that created it, but
+	 * the keeper's trace, keyed on the keeper, keeps the first index. {@code search_current} reads the index a module variable holds, which
+	 * is rebound (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1112), {@code search_declared} the index of a module
+	 * variable that it declares {@code global}, rebound likewise, {@code search_renewed.search_enclosing} the index its enclosing
+	 * function's variable holds, which that function rebinds, and {@code search_carried} the index of a carrier that a module variable
+	 * holds, which is rebound. The searches of the indexes themselves, {@code Kept.search}, {@code Listed.search}, {@code Paired.search},
+	 * {@code Current.search}, {@code Declared.search}, {@code Renewed.search} and {@code Carried.search}, are traced per index and match.
+	 * <p>
+	 * In four more, the method called on an object just created is another object's. {@code Relooped.search} reads a field filled through
+	 * the {@code index} that the loop creating each index set on it to that of the index created before it. {@code Packed.search} reads one
+	 * filled through an index's method that the engine's constructor of a {@code NamedTuple} stored in the tuple just created. {@code
+	 * search_classed} reads one filled through a class attribute, which the class's body sets to a call's result, a method of another
+	 * object, and the program then to that of the index created before it, and which the engine's constructor copies onto each new index.
+	 * {@code search_renamed} reads one filled through the class's own {@code index}, after the program replaced it on the class by that of
+	 * the index created before it: the call graph still shows the defined method run on the new index, where Python runs the replacement on
+	 * the old one.
+	 * <p>
+	 * {@code Stepped.search} also pins that the engine lowers a {@code yield} to a write of its generator-content field, by which the check
+	 * tells a generator.
+	 */
+	@Test
+	public void testReboundStateReadsBeforeFirstCallControls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String index : List.of("Reindexed", "Shared", "Registered", "Owned", "Searching", "Probing", "Borrowed", "Patched", "Stepped",
+				"Fetched", "Relooped", "Packed"))
+			assertRefusedForReboundState(findFunction(functions, index + ".search"),
+					"field `candidates` of `.*" + index + "`, rebound by `.*" + index + "/index` at A\\.py:\\d+\\.");
+
+		// The fields that a function other than a method of the index sets.
+		for (Entry<String, String> writer : Map.of("Rewritten", "search_then_rewrite", "Assigned", "assign", "Yielded", "set_in_steps")
+				.entrySet())
+			assertRefusedForReboundState(findFunction(functions, writer.getKey() + ".search"), "field `candidates` of `.*" + writer.getKey()
+					+ "`, rebound by `Lscript A\\.py/" + writer.getValue() + "` at A\\.py:\\d+\\.");
+
+		// The readers that reach an index through an object or a variable that outlives it.
+		for (Entry<String, String> reader : Map.of("Owner.search",
+				"field `candidates` of `.*Owned`, rebound by `.*Owned/index` at A\\.py:\\d+\\.", "Keeper.search",
+				"field `index` of `.*Keeper`, rebound by `.*Keeper/replace` at A\\.py:\\d+\\.", "Lister.search",
+				"field `candidates` of `.*Listed`, rebound by `.*Listed/index` at A\\.py:\\d+\\.", "Pairer.search",
+				"field `candidates` of `.*Paired`, rebound by `.*Paired/index` at A\\.py:\\d+\\.", "search_current",
+				"field `candidates` of `.*Current`, rebound by `.*Current/index` at A\\.py:\\d+\\.", "search_renewed.search_enclosing",
+				"field `candidates` of `.*Renewed`, rebound by `.*Renewed/index` at A\\.py:\\d+\\.", "search_carried",
+				"field `candidates` of `.*Carried`, rebound by `.*Carried/index` at A\\.py:\\d+\\.", "search_declared",
+				"field `candidates` of `.*Declared`, rebound by `.*Declared/index` at A\\.py:\\d+\\.", "search_classed",
+				"field `candidates` of `.*Classed`, rebound by `.*Classed/index` at A\\.py:\\d+\\.", "search_renamed",
+				"field `candidates` of `.*Renamed`, rebound by `.*Renamed/index` at A\\.py:\\d+\\.").entrySet())
+			assertRefusedForReboundState(findFunction(functions, reader.getKey()), reader.getValue());
+
+		for (String identifier : List.of("Kept.search", "Listed.search", "Paired.search", "Current.search", "Renewed.search",
+				"Carried.search", "Declared.search")) {
+			Function function = findFunction(functions, identifier);
+			assertNotRefusedForReboundState(function);
+			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: Refuse `Dated.search`, whose second search returns the first's result under `tf.function`. The call filling the second
+		// index goes through a field that the dataclass's constructor sets to the method of the index created before it. The engine
+		// doesn't model a dataclass's construction (https://github.com/wala/ML/issues/1260), so that call has no target and the write it
+		// makes isn't seen.
+		assertNotRefusedForReboundState(findFunction(functions, "Dated.search"));
+
+		// TODO: Refuse `search_aliased`, whose second search returns the first's result under `tf.function`. Its class is that of
+		// `search_classed`, except that the class's body names the other object's method itself. The engine's constructor doesn't copy
+		// an attribute so assigned onto the new index, so the call through it has no target and the write it makes isn't seen.
+		assertNotRefusedForReboundState(findFunction(functions, "search_aliased"));
+	}
+
+	/**
+	 * The limits of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165: fields written only before their first read,
+	 * in ways the check doesn't follow. Measured on TensorFlow 2.9.3, each reader alone under {@code tf.function} prints what it prints
+	 * eagerly, so each refusal here is a lost conversion.
+	 */
+	@Test
+	public void testReboundStateReadsBeforeFirstCallLimits() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// TODO: Convert `Either.search`. Its index is one of two created under a condition, so the value written through isn't defined by
+		// one creating call; following it needs the check to see through the merge of the two.
+		assertRefusedForReboundState(findFunction(functions, "Either.search"),
+				"field `candidates` of `.*Either`, rebound by `.*Either/index` at A\\.py:\\d+\\.");
+
+		// TODO: Convert `Delegating.search`. Its `index` fills the field through a helper it calls on `self`, a receiver the helper's
+		// caller didn't create; following it needs the check to carry the creation through a chain of methods.
+		assertRefusedForReboundState(findFunction(functions, "Delegating.search"),
+				"field `candidates` of `.*Delegating`, rebound by `.*Delegating/_store` at A\\.py:\\d+\\.");
+
+		// TODO: Convert `Plain.search`. A plain function fills the index it is passed, which is neither an object it created nor a
+		// receiver; following it needs the check to match a parameter with the argument at each call.
+		assertRefusedForReboundState(findFunction(functions, "Plain.search"),
+				"field `candidates` of `.*Plain`, rebound by `Lscript A\\.py/fill` at A\\.py:\\d+\\.");
+
+		// TODO: Convert `Unbound.search`. Its `index` is called through the class, with the index as an explicit argument, so the call
+		// doesn't go through the engine's bound-method trampoline.
+		assertRefusedForReboundState(findFunction(functions, "Unbound.search"),
+				"field `candidates` of `.*Unbound`, rebound by `.*Unbound/index` at A\\.py:\\d+\\.");
+
+		// TODO: Convert `search_global`. Its module variable is bound once, which the check doesn't establish for a global: an object
+		// read through one counts as shared (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1112).
+		assertRefusedForReboundState(findFunction(functions, "search_global"),
+				"field `candidates` of `.*Global`, rebound by `.*Global/index` at A\\.py:\\d+\\.");
+
+		// TODO: Convert `make_search.search_enclosed`. It reads its creator's variable, bound once per closure, which the check doesn't
+		// establish for a variable of an enclosing function: an object read through one counts as shared.
+		assertRefusedForReboundState(findFunction(functions, "make_search.search_enclosed"),
+				"field `candidates` of `.*Enclosed`, rebound by `.*Enclosed/index` at A\\.py:\\d+\\.");
+
+		// The indexes' own searches are traced per index.
+		for (String identifier : List.of("Global.search", "Enclosed.search")) {
+			Function function = findFunction(functions, identifier);
+			assertNotRefusedForReboundState(function);
+			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
 		}
 	}
 
