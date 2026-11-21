@@ -13515,6 +13515,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Pins the unresolved statically-read-axis condition through a unary operator
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1312). Each function reads the last axis of its parameter,
+	 * which its call sites leave unresolved, so a signature has a wildcard there and the axis is {@code None} while the function is traced.
+	 * {@code negated_unused}, {@code positive_unused} and {@code inverted_unused} apply {@code -}, {@code +} and {@code ~} to the axis and
+	 * never use the result, and each raises on {@code None}. {@code suffix_variable} slices the shape vector from the negation of a local
+	 * that holds a literal and subtracts from the first axis of the slice, which is the last axis of the shape. Resolving the bound takes
+	 * the negation operator and the literal, which no points-to set holds. These four were not withheld while the operator went unmatched.
+	 * {@code absent} applies {@code not}, which raises nothing and answers {@code True} for {@code None} where it answered {@code False}
+	 * for the extent, so the function returns zeros where it returned its argument. It, {@code negated} and {@code suffix_literal} were
+	 * withheld before and stay so. {@code prefix_variable} is the negative case: its slice covers the first axis, which the call sites
+	 * agree on, so its signature is not withheld.
+	 */
+	@Test
+	public void testUnresolvedStaticallyReadAxesThroughUnaryOperator() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : new String[] { "negated", "negated_unused", "positive_unused", "inverted_unused", "absent", "suffix_literal",
+				"suffix_variable" }) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` reads the last axis of its parameter, which its call sites leave unresolved.",
+					function.getHasUnresolvedStaticallyReadAxes());
+			assertEquals("`" + name + "` hybridizes bare (P1).", P1, function.getPassingPrecondition());
+			assertEquals("`" + name + "`'s signature is withheld.",
+					Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+					function.getInferredInputSignatureAbsenceReason());
+		}
+
+		Function prefixVariable = findFunction(functions, "prefix_variable");
+		assertFalse("`prefix_variable` reads only the first axis, which its signature pins.",
+				prefixVariable.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`prefix_variable` hybridizes (P1).", P1, prefixVariable.getPassingPrecondition());
+	}
+
+	/**
 	 * Pins the Keras lazy-{@code build} reach of the unresolved statically-read-axis precondition
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): a static read need not sit in the decorated function's
 	 * own body. {@code Proj.call} never touches a shape, but its class's {@code build} passes {@code input_shape[-1]} to {@code add_weight}
@@ -15853,6 +15888,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Function twoShapes = findFunction(functions, "two_shapes");
 		assertFalse("`two_shapes` applies numpy to one of two shape vectors, each static.", twoShapes.getHasNumpyCallsOnParameters());
 		assertEquals("`two_shapes` hybridizes (P1).", P1, twoShapes.getPassingPrecondition());
+	}
+
+	/**
+	 * Pins the numpy-on-parameter condition over a suffix of a shape vector whose bound is a negation
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1312). One feed of each function is a {@code tf.keras.Input},
+	 * whose leading axis is unknown and whose last axis is 4. {@code tail_parameter} and {@code tail_local} apply numpy to {@code [-k:]} of
+	 * the shape, where {@code k} is a parameter that the call site binds to 1 and a local that holds 1. The slice covers the last axis
+	 * only, which is shape metadata that a traced function reads as an eager one does, so numpy over it is permitted. While the bound went
+	 * unresolved, the slice was taken for the whole vector and both functions were refused over the leading axis. {@code tail_inverted}
+	 * bounds its slice by {@code ~k}, which is -2 and covers both axes. Only a negation is resolved, so the slice is still taken for the
+	 * whole vector and the function is refused, as it must be: numpy over the unknown leading axis raises in a traced function.
+	 * {@code lead_local} is the control for the feed: its prefix slice covers the leading axis and is refused. Every function here is also
+	 * refused for its symbolic argument, as {@code testNumpyOnDynamicShapeSliceAcrossRanks} explains, so only the numpy condition is
+	 * pinned.
+	 */
+	@Test
+	public void testNumpyOnShapeSuffixBoundedByNegation() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : new String[] { "tail_parameter", "tail_local" }) {
+			Function function = findFunction(functions, name);
+			assertFalse("`" + name + "` applies numpy to the last axis of its parameter's shape, which is static.",
+					function.getHasNumpyCallsOnParameters());
+			assertNull("`" + name + "` does not fail with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
+
+		for (String name : new String[] { "tail_inverted", "lead_local" }) {
+			Function function = findFunction(functions, name);
+			assertTrue("`" + name + "` applies numpy to the leading axis of its parameter's shape, which is unknown.",
+					function.getHasNumpyCallsOnParameters());
+			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
+			assertNotNull("`" + name + "` fails with HAS_NUMPY_CALLS_ON_PARAMETERS.", function.getStatus()
+					.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.HAS_NUMPY_CALLS_ON_PARAMETERS.getCode()));
+		}
 	}
 
 	/**
