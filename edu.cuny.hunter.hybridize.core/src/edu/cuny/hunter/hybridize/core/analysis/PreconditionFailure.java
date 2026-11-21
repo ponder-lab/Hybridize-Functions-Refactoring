@@ -354,9 +354,11 @@ public enum PreconditionFailure {
 	 * A write is part of an object's construction when the function making it has just created the object, or when it is made by a method
 	 * called only on an object its caller has just created, and nothing that may run the reading function is called between the creation
 	 * and the write (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165). Such a write doesn't fail this
-	 * precondition, since each object's field then holds one value from the reading function's first run on it. This rests on the call
-	 * graph holding every caller: a caller outside it that writes the field again after a read, such as a client of a library, leaves a
-	 * converted function returning the value it was traced with, without an error.
+	 * precondition, since each object's field then holds one value from the reading function's first run on it. A write to an object whose
+	 * class declares a special method other than {@code __init__} and {@code __call__}, or a property's setter or deleter, still fails it:
+	 * Python runs such a member with no call in the program, so what runs between the creation and the write isn't known. The rule rests on
+	 * the call graph holding every caller: a caller outside it that writes the field again after a read, such as a client of a library,
+	 * leaves a converted function returning the value it was traced with, without an error.
 	 * <p>
 	 * The guide documents this: a trace is keyed on the arguments, so changing a Python global or free variable, a field of {@code self}
 	 * among them, does not retrace, and the value read when the function was traced persists.

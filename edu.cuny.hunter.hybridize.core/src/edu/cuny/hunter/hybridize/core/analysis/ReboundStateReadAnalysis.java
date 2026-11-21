@@ -25,11 +25,15 @@ import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
 import com.ibm.wala.cast.loader.AstMethod;
 import com.ibm.wala.cast.python.ipa.summaries.PythonConstructorFunction;
 import com.ibm.wala.cast.python.ipa.summaries.PythonInstanceMethodTrampoline;
+import com.ibm.wala.cast.python.loader.IPythonClass;
+import com.ibm.wala.cast.python.loader.PythonLoader.PythonSummaryShellClass;
 import com.ibm.wala.cast.python.ml.types.TensorOrigin;
 import com.ibm.wala.cast.python.ssa.PythonInvokeInstruction;
 import com.ibm.wala.cast.python.types.PythonTypes;
 import com.ibm.wala.cast.tree.CAstSourcePositionMap.Position;
 import com.ibm.wala.classLoader.CallSiteReference;
+import com.ibm.wala.classLoader.IClass;
+import com.ibm.wala.classLoader.IField;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.propagation.AllocationSiteInNode;
@@ -39,6 +43,7 @@ import com.ibm.wala.ipa.callgraph.propagation.InstanceFieldPointerKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
 import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
+import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.ipa.modref.DelegatingExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ExtendedHeapModel;
 import com.ibm.wala.ipa.modref.ModRef;
@@ -52,8 +57,10 @@ import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSANewInstruction;
 import com.ibm.wala.ssa.SSAPutInstruction;
 import com.ibm.wala.ssa.SymbolTable;
+import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeName;
 import com.ibm.wala.types.TypeReference;
+import com.ibm.wala.types.annotations.Annotation;
 import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.intset.IntIterator;
 import com.ibm.wala.util.intset.IntSet;
@@ -97,21 +104,33 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * bound method of an object its caller has just created. In both cases, no call that reaches the reader lies on a path of the creating
  * function's control-flow graph between the creation and the write, or from the creation through the call making it, so that a method that
  * itself reaches the reader isn't such a writer. Each object's field is then written only before the reader first runs on that object, so a
- * trace of the reader that a new object brings reads it live: {@code tf.function} traces a method once per instance, and keys a trace on
- * the identity of an object passed as an argument. The reader must therefore meet the object as its receiver, an argument, or a field of
- * one. An object its closure may reach through a global, through a variable of a function outside the closure, or through a container,
- * directly or through fields, may be replaced under a trace that stays, so a write to it counts however it is made. So does a write the
- * rule doesn't follow: one in a generator, whose caller runs between two of its instructions, one through a value that is neither the
- * object created nor the writer's receiver, one in a method reached other than through the engine's bound-method trampoline, such as a call
- * through the class, and one in a method that may be another object's. Such a method is one read from a field that program source also
- * writes, from a field that the engine's constructor sets to anything but a method it binds to the new object, such as an attribute it
- * copies from the class, or from a field holding a method that was given anything but the function its class defines, as when the program
- * has replaced that function on the class.
+ * trace of the reader that a new object brings reads it live: {@code tf.function} traces a method once per instance, and keys a trace on an
+ * object passed as an argument, by its identity unless its class defines equality. The reader must therefore meet the object as its
+ * receiver, an argument, or a field of one. An object its closure may reach through a global, through a variable of a function outside the
+ * closure, or through a container, directly or through fields, may be replaced under a trace that stays, so a write to it counts however it
+ * is made. A tuple that the closure itself creates is no such container: each run creates it anew and it never changes, so it holds only
+ * objects the run reached some other way. A write also counts when the rule doesn't follow it: one in a generator, whose caller runs
+ * between two of its instructions, one through a value that is neither the object created nor the writer's receiver, one in a method
+ * reached other than through the engine's bound-method trampoline, such as a call through the class, and one in a method that may be
+ * another object's. Such a method is one read from a field that program source also writes, from a field that the engine's constructor sets
+ * to anything but a method it binds to the new object, such as an attribute it copies from the class, or from a field holding a method that
+ * was given anything but the function its class defines, as when the program has replaced that function on the class.
+ * <p>
+ * Nor is a write part of the construction of an object whose class, or a base class in program source, declares a member that Python may
+ * run with no call in the program: a special method other than {@code __init__} and {@code __call__}, a special name that the class's body
+ * assigns, or the setter or deleter of a property. An operator applied to the new object, a {@code with} statement entering it, or the
+ * write itself may run such a member between the creation and the write, and the call graph holds no call for it, so the paths between the
+ * two don't show it. Objects of a class that defines equality also share one trace when they compare equal, whichever was created last.
+ * Measured on TensorFlow 2.9.3, a reader converted in each of these cases returns the value its field held before the write. A class
+ * declaring such a member that the program never uses is refused with them, a known over-refusal.
  * <p>
  * That rule rests on the call graph being the whole program. The functions that may write a field, and the calls that may run between a
  * creation and a write, are those the call graph holds, so a caller it lacks, such as a client of a library that fills an object again
- * after reading it, makes a converted reader return the value it was traced with, silently. The writes that count without this rule need no
- * such assumption about callers.
+ * after reading it, makes a converted reader return the value it was traced with, silently. So does code that Python runs with no call and
+ * that the members a new object's class declares don't show: a special method of another object that reaches the new one, a special method
+ * assigned onto a class outside its body, a descriptor that a class attribute holds, a metaclass, and a library function that runs a method
+ * of an object it is passed where the engine's summary of it doesn't. The writes that count without this rule need no such assumption about
+ * callers.
  * <p>
  * The elements of a list, tuple, dictionary, or set are not read as state: {@code tf.function} passes a container argument's tensors in
  * afresh on each call, and the code building a container writes its elements as fields. A container held in a field is missed with them,
@@ -148,6 +167,9 @@ class ReboundStateReadAnalysis {
 
 	/** Each summary node's fields, with whether all its writes to each are to its own allocation (see {@link #getOwnAllocationWrites}). */
 	private final Map<CGNode, Map<InstanceFieldPointerKey, Boolean>> ownAllocationWrites = new HashMap<>();
+
+	/** Whether Python may run code of each class that the call graph holds no call of (see {@link #mayRunUnseenCode(InstanceKey)}). */
+	private final Map<TypeName, Boolean> unseenCode = new HashMap<>();
 
 	/** The fields some node writes outside the methods setting their objects up, over the whole program; computed on first use. */
 	private Set<InstanceFieldPointerKey> reboundFields;
@@ -675,7 +697,70 @@ class ReboundStateReadAnalysis {
 			any = true;
 		}
 
-		return any && !this.getShared(reader).contains(field.getInstanceKey());
+		return any && !this.getShared(reader).contains(field.getInstanceKey()) && !this.mayRunUnseenCode(field.getInstanceKey());
+	}
+
+	/**
+	 * True iff Python may run code of the given object's class that the call graph holds no call of. An operator applied to the object, a
+	 * {@code with} statement entering it, an access to an attribute of it, and a comparison of it each run a special method of its class,
+	 * and a write to a property runs the property's setter. The engine gives none of them a call (https://github.com/wala/ML/issues/399 for
+	 * the operators), so no path of a control-flow graph shows whether one of them runs a reader. A class defining equality or hashing also
+	 * shares one trace among its objects that compare equal. Only a call of the object itself is dispatched, to {@code __call__}, and so is
+	 * in the call graph, as are the calls a class the engine summarizes makes.
+	 *
+	 * @param instanceKey The object.
+	 * @return True iff the object's class, or a class of program source that it extends, defines a special method other than
+	 *         {@code __init__} and {@code __call__}, assigns a special attribute in its body, or defines a property's setter or deleter.
+	 */
+	private boolean mayRunUnseenCode(InstanceKey instanceKey) {
+		return this.unseenCode.computeIfAbsent(getClassName(instanceKey), className -> {
+			IClassHierarchy classHierarchy = this.callGraph.getClassHierarchy();
+
+			for (TypeName name : Function.getClassAndBaseNames(classHierarchy, className)) {
+				IClass cls = classHierarchy.lookupClass(TypeReference.findOrCreate(PythonTypes.pythonLoader, name));
+
+				// A class the engine summarizes is library code: the methods it lists are those its summary happens to model, not the
+				// program's.
+				if (!(cls instanceof IPythonClass pythonClass) || cls instanceof PythonSummaryShellClass)
+					continue;
+
+				for (IField attribute : cls.getDeclaredStaticFields())
+					if (isSpecialName(attribute.getName().toString()))
+						return true;
+
+				for (MethodReference method : pythonClass.getMethodReferences()) {
+					String methodName = method.getName().toString();
+
+					// An object's `__init__` runs only as the object is created, and a call of the object is in the call graph.
+					if (isSpecialName(methodName) && !methodName.equals(PythonTypes.INIT_METHOD_NAME)
+							&& !methodName.equals(PythonTypes.CALLABLE_METHOD_NAME))
+						return true;
+
+					IClass function = classHierarchy.lookupClass(method.getDeclaringClass());
+
+					// The engine names a method's decorators in the annotations of its function's class.
+					if (function != null && function.getAnnotations() != null)
+						for (Annotation annotation : function.getAnnotations()) {
+							String decorator = annotation.getType().getName().toString();
+
+							if (decorator.endsWith(".setter") || decorator.endsWith(".deleter"))
+								return true;
+						}
+				}
+			}
+
+			return false;
+		});
+	}
+
+	/**
+	 * True iff the given name is one Python reserves for the methods and attributes it uses itself.
+	 *
+	 * @param name An attribute's name.
+	 * @return True iff the name begins and ends with two underscores.
+	 */
+	private static boolean isSpecialName(String name) {
+		return name.length() > 4 && name.startsWith("__") && name.endsWith("__");
 	}
 
 	/**
@@ -1005,7 +1090,8 @@ class ReboundStateReadAnalysis {
 
 	/**
 	 * The objects the function of {@code reader} may reach through a place that can be rebound between its calls without a new trace: a
-	 * global, a variable of a function outside its closure, or a container it handles, and from there through fields.
+	 * global, a variable of a function outside its closure, or a container it handles other than a tuple it creates itself, and from there
+	 * through fields.
 	 *
 	 * @param reader The function whose reads are decided.
 	 * @return The objects reached from such a place.
@@ -1043,7 +1129,7 @@ class ReboundStateReadAnalysis {
 
 				for (int value = 1; value <= ir.getSymbolTable().getMaxValueNumber(); value++)
 					for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(this.heapModel.getPointerKeyForLocal(node, value)))
-						if (Util.isContainerType(instanceKey.concreteType().getReference()))
+						if (Util.isContainerType(instanceKey.concreteType().getReference()) && !isOwnTuple(reader, instanceKey))
 							worklist.add(instanceKey);
 			}
 
@@ -1059,5 +1145,19 @@ class ReboundStateReadAnalysis {
 		}
 
 		return reader.shared;
+	}
+
+	/**
+	 * True iff the given object is a tuple that the function of {@code reader}, or a function it reaches, allocates. Each run creates such
+	 * a tuple anew and a tuple never changes, so it holds only objects that the run reached some other way. It is then no place that can be
+	 * rebound between the function's calls.
+	 *
+	 * @param reader The function whose reads are decided.
+	 * @param instanceKey An object.
+	 * @return True iff the object is a tuple allocated in a node that the function reaches in the call graph.
+	 */
+	private static boolean isOwnTuple(Reader reader, InstanceKey instanceKey) {
+		return instanceKey instanceof AllocationSiteInNode site && PythonTypes.tuple.equals(site.concreteType().getReference())
+				&& reader.closure.contains(site.getNode());
 	}
 }

@@ -16880,17 +16880,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * Pins https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165: a field written outside its class's {@code __init__},
 	 * but only as part of its object's construction, by the function that has just created the object or by a method called on it there,
 	 * before anything that reads the field runs. Each object's field then holds one value from its first read on. {@code tf.function}
-	 * traces a method once per instance and keys a trace on the identity of an object passed as an argument, so no trace reads the field
-	 * stale. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function}, the program prints what it prints eagerly:
-	 * {@code Trainer.step} reads the optimizer that {@code create_optimizer} creates and the fields {@code train} stores before training
-	 * starts (gpt-2's {@code _train_step}), {@code Streaming.call} and its nested {@code top_scores} read the candidates that
-	 * {@code Retrieval.__init__} indexes on the model it creates in the same expression, and {@code Retrieval.call} calls that model
-	 * (deep_recommenders' retrieval layers). {@code Index.search} reads a field filled once before a loop of searches, {@code Dense.search}
-	 * and {@code Scaled.search} one filled on an object whose class is a parameter of the creating function, {@code Looped.search} one
-	 * filled on the object each loop iteration creates, and {@code Refilled.search} one a loop fills again and again before the first
-	 * search. {@code search_in} reads the field of an index passed as its argument, and {@code Holding.search} calls {@code Held.search} on
-	 * the index stored into the holder that the same function created. {@code Twinned.search} reads a field of a class that two functions
-	 * each instantiate and fill.
+	 * traces a method once per instance and keys a trace on an object passed as an argument, by its identity unless its class defines
+	 * equality, so no trace reads the field stale. Measured on TensorFlow 2.9.3, with each reader alone under {@code tf.function}, the
+	 * program prints what it prints eagerly: {@code Trainer.step} reads the optimizer that {@code create_optimizer} creates and the fields
+	 * {@code train} stores before training starts (gpt-2's {@code _train_step}), {@code Streaming.call} and its nested {@code top_scores}
+	 * read the candidates that {@code Retrieval.__init__} indexes on the model it creates in the same expression, and
+	 * {@code Retrieval.call} calls that model (deep_recommenders' retrieval layers). {@code Index.search} reads a field filled once before
+	 * a loop of searches, {@code Dense.search} and {@code Scaled.search} one filled on an object whose class is a parameter of the creating
+	 * function, {@code Looped.search} one filled on the object each loop iteration creates, and {@code Refilled.search} one a loop fills
+	 * again and again before the first search. {@code search_in} reads the field of an index passed as its argument, and
+	 * {@code Holding.search} calls {@code Held.search} on the index stored into the holder that the same function created.
+	 * {@code Twinned.search} reads a field of a class that two functions each instantiate and fill.
 	 * <p>
 	 * The cases also pin the engine conventions the check reads: a bound-method call reaches its method through an instance-method
 	 * trampoline, the method called is read from a field of the receiver that only the engine's constructor writes, storing a trampoline it
@@ -17037,6 +17037,126 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 			assertNotRefusedForReboundState(function);
 			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
 		}
+	}
+
+	/**
+	 * Pins code that Python runs with no call in the program, for
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165. Each function here fills the object it has just created,
+	 * yet, measured on TensorFlow 2.9.3, each of these readers alone under {@code tf.function} prints the value its field held before the
+	 * write. {@code Adder.add} is run by the {@code +} that the creating function applies to the new object, {@code Derived.add} by the
+	 * same operator inherited from a base class, {@code Aliased.add} by one that the class's body assigns, {@code Entered.add} by the
+	 * {@code with} statement entering the object, and {@code Settered.add} by the property setter that the write itself runs. {@code
+	 * add_equal} is passed two objects that compare equal, which share one trace. The call graph shows none of this, so no write is part of
+	 * the construction of an object whose class, or a base class in program source, declares a special method other than {@code __init__}
+	 * and {@code __call__}, assigns a special name in its body, or declares a property's setter or deleter.
+	 * <p>
+	 * {@code Called.add}, {@code Invoked.add}, {@code Invoked.__call__} and {@code Summed.add} print the earlier value likewise, and are
+	 * refused for what lies between the creation and the write: a call of the method, a call of the object, which the engine resolves to
+	 * its {@code __call__}, and a read of a property whose getter calls the method. {@code Plain.add}, whose class declares no such member,
+	 * {@code add_distinct}, whose arguments define no equality and so have a trace each, and {@code Applied.add} and {@code
+	 * Applied.__call__}, whose class declares only {@code __call__} and is filled before any call, print what they print eagerly.
+	 * <p>
+	 * The cases also pin the engine conventions the check reads: a class of program source lists the methods it declares by name and the
+	 * attributes its body assigns as static fields, and the class of a method's function carries an annotation for each decorator, named as
+	 * the decorator is written. Were any of these to change, the check would stop refusing these readers.
+	 */
+	@Test
+	public void testReboundStateReadsBeforeFirstCallImplicitCalls() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		// Refused for a member that the class of the written object declares.
+		for (Entry<String, String> reader : Map.of("Adder.add", "field `addend` of `.*Adder`, rebound by `.*make_adder` at A\\.py:\\d+\\.",
+				"Derived.add", "field `addend` of `.*Derived`, rebound by `.*make_derived` at A\\.py:\\d+\\.", "Aliased.add",
+				"field `addend` of `.*Aliased`, rebound by `.*make_aliased` at A\\.py:\\d+\\.", "Entered.add",
+				"field `addend` of `.*Entered`, rebound by `.*make_entered` at A\\.py:\\d+\\.", "Settered.add",
+				"field `addend` of `.*Settered`, rebound by `.*make_settered` at A\\.py:\\d+\\.", "add_equal",
+				"field `addend` of `.*Equal`, rebound by `.*make_equal` at A\\.py:\\d+\\.").entrySet())
+			assertRefusedForReboundState(findFunction(functions, reader.getKey()), reader.getValue());
+
+		// Refused for what the creating function does between the creation and the write.
+		for (Entry<String, String> reader : Map
+				.of("Called.add", "field `addend` of `.*Called`, rebound by `.*make_called` at A\\.py:\\d+\\.", "Invoked.add",
+						"field `addend` of `.*Invoked`, rebound by `.*make_invoked` at A\\.py:\\d+\\.", "Invoked.__call__",
+						"field `addend` of `.*Invoked`, rebound by `.*make_invoked` at A\\.py:\\d+\\.", "Summed.add",
+						"field `addend` of `.*Summed`, rebound by `.*make_summed` at A\\.py:\\d+\\.")
+				.entrySet())
+			assertRefusedForReboundState(findFunction(functions, reader.getKey()), reader.getValue());
+
+		// TODO: Convert `Unapplied.add`, which prints what it prints eagerly. Its class is that of `Adder.add`, but the program never
+		// applies the operator, so nothing reads the field before the write. Telling the two apart needs a call for each operator applied,
+		// which the call graph lacks (https://github.com/wala/ML/issues/399).
+		assertRefusedForReboundState(findFunction(functions, "Unapplied.add"),
+				"field `addend` of `.*Unapplied`, rebound by `.*make_unapplied` at A\\.py:\\d+\\.");
+
+		for (String identifier : List.of("Plain.add", "add_distinct", "Applied.add", "Applied.__call__")) {
+			Function function = findFunction(functions, identifier);
+			assertNotRefusedForReboundState(function);
+			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
+		}
+	}
+
+	/**
+	 * Pins objects that a class attribute, or a field of an instance, holds, for
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165. Each object is filled only as part of its construction,
+	 * but what holds it is rebound to another object after a read. Measured on TensorFlow 2.9.3, {@code Scaler.scale}, {@code
+	 * Multiplier.scale}, {@code Initializing.scale} and {@code Lodging.scale}, each alone under {@code tf.function}, print the first
+	 * object's value after the rebinding. {@code Scaler.scale} and {@code Multiplier.scale}, which reads a Python scalar, are refused
+	 * because they reach the object through their class: a method reads its class from a variable of the enclosing scope, and an object
+	 * reached through such a variable counts as shared however it was filled. {@code Lodging.scale} is refused for the write of its own
+	 * field, which the module makes after a call of it.
+	 * <p>
+	 * The first two also pin the engine convention behind their refusal, that a method's body reads its class from the enclosing scope's
+	 * variable. Were it to change, they would be converted.
+	 */
+	@Test
+	public void testReboundStateReadsBeforeFirstCallClassAttributes() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (Entry<String, String> reader : Map
+				.of("Scaler.scale", "field `scale` of `.*Setting`, rebound by `.*make_setting` at A\\.py:\\d+\\.", "Multiplier.scale",
+						"field `scale` of `.*Factor`, rebound by `.*make_factor` at A\\.py:\\d+\\.", "Lodging.scale",
+						"field `setting` of `.*Lodging`, rebound by `Lscript A\\.py` at A\\.py:\\d+\\.")
+				.entrySet())
+			assertRefusedForReboundState(findFunction(functions, reader.getKey()), reader.getValue());
+
+		// TODO: Convert `Fixing.scale`, which prints what it prints eagerly. Its class attribute is never rebound, which the check doesn't
+		// establish for a variable of an enclosing scope, nor for what is reached through one: an object read that way counts as shared.
+		assertRefusedForReboundState(findFunction(functions, "Fixing.scale"),
+				"field `scale` of `.*Fixed`, rebound by `.*make_fixed` at A\\.py:\\d+\\.");
+
+		// TODO: Refuse `Initializing.scale`, which prints the first setting's scale after the class attribute is rebound, as `Scaler.scale`
+		// does. Its setting's scale is written only by `__init__`, whose writes never count, and the module rebinds the attribute on the
+		// class where the method reads it through `self`. It is converted without the construction rule, too.
+		assertNotRefusedForReboundState(findFunction(functions, "Initializing.scale"));
+	}
+
+	/**
+	 * Pins a reader that puts the fields it reads in a tuple, for
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165. {@code Stream.call} zips the two fields that {@code
+	 * Stream.index} fills, on an index that {@code Metric.__init__} or {@code measure} creates and fills at once (deep_recommenders'
+	 * streaming index). An object the reader reaches through a container it handles counts as shared, and the pointer analysis reaches the
+	 * index itself through that tuple. A tuple that the reader's closure allocates is created anew by each run and never changes, though,
+	 * so it is no place an object can be replaced in, and the check leaves it out. Measured on TensorFlow 2.9.3, {@code Stream.call},
+	 * {@code Metric.update}, which calls the index it holds, and {@code Brute.call}, the search of another index class that {@code measure}
+	 * may be passed, each alone under {@code tf.function}, print what they print eagerly. So do {@code Lone.call} and {@code Gauge.update},
+	 * the same classes with a search that creates no tuple.
+	 */
+	@Test
+	public void testReboundStateReadsBeforeFirstCallOwnTuple() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("Stream.call", "Metric.update", "Brute.call", "Lone.call", "Gauge.update")) {
+			Function function = findFunction(functions, identifier);
+			assertNotRefusedForReboundState(function);
+			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
+		}
+
+		// TODO: Convert `Boxed.call` and `Crate.update`, which print what they print eagerly. Their search puts its fields in a list, which
+		// stays a container an object may be replaced in: a list can change after it is created, and the lists allocated at one site are
+		// one object here.
+		for (String identifier : List.of("Boxed.call", "Crate.update"))
+			assertRefusedForReboundState(findFunction(functions, identifier),
+					"field `_candidates` of `.*Boxed`, rebound by `.*Boxed/index` at A\\.py:\\d+\\.");
 	}
 
 	/**
