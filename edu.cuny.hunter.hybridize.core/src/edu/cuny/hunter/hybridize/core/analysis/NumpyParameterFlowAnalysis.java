@@ -19,6 +19,7 @@ import com.ibm.wala.cast.ir.ssa.AstLexicalAccess.Access;
 import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
+import com.ibm.wala.cast.ir.ssa.CAstUnaryOp;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
 import com.ibm.wala.cast.python.ml.client.CallTargets;
 import com.ibm.wala.cast.python.ml.types.TensorType;
@@ -99,12 +100,6 @@ class NumpyParameterFlowAnalysis {
 
 	/** The built-in {@code slice} constructor, into which a Python {@code x[a:b:c]} subscript is lowered. */
 	private static final String SLICE_BUILTIN_NAME = "slice";
-
-	/**
-	 * The unary-negation operator, matched by name: the operator enum ({@code IUnaryOpInstruction.Operator}) lives in a non-exported WALA
-	 * package, so its type cannot be referenced here, but its {@code toString()} is stable.
-	 */
-	private static final String NEGATION_OPERATOR_NAME = "neg";
 
 	/**
 	 * True iff {@code node} (transitively through user-defined callees) applies a numpy/scipy API to a value flowing from its parameters.
@@ -275,46 +270,57 @@ class NumpyParameterFlowAnalysis {
 	}
 
 	/**
-	 * Resolves {@code value} in {@code node} to an integer constant, or {@code null} if it cannot be resolved. Handles a literal integer in
+	 * Resolves {@code value} in {@code node} to an integer constant, or {@code null} if it cannot be resolved. Handles a literal number in
 	 * the symbol table, a unary negation of a resolvable value, and an interprocedural constant surfaced by the pointer analysis (a
 	 * {@link ConstantKey} in the value's points-to set), mirroring how {@link Function#inferPrimitiveParameters} recovers literal arguments
 	 * across call sites.
+	 *
+	 * @param node The node whose IR defines {@code value}.
+	 * @param value The value number to resolve.
+	 * @param defUse The definitions and uses of {@code node}'s IR.
+	 * @param pointerAnalysis The pointer analysis of the call graph that {@code node} belongs to.
+	 * @return The integer that {@code value} is, or {@code null} if it has none or more than one.
 	 */
-	private Integer resolveIntConstant(CGNode node, int value, DefUse defUse) {
+	static Integer resolveIntConstant(CGNode node, int value, DefUse defUse, PointerAnalysis<InstanceKey> pointerAnalysis) {
 		SymbolTable symbolTable = node.getIR().getSymbolTable();
 
-		if (symbolTable.isIntegerConstant(value))
-			return symbolTable.getIntValue(value);
+		// A Python integer literal is a `Long` here, so the symbol table's own integer test is false for it. A literal that is only
+		// negated, such as the `k` of `[-k:]`, has an empty points-to set, so this is the one place it can be read.
+		if (symbolTable.isConstant(value) && symbolTable.getConstantValue(value) instanceof Number literal)
+			return toIntExact(literal);
 
-		SSAInstruction def = defUse.getDef(value);
-
-		// A unary negation (the `-k` in a `[-k:]` slice); matched by name since the operator enum's type cannot be referenced here.
-		if (def instanceof SSAUnaryOpInstruction unary && NEGATION_OPERATOR_NAME.equalsIgnoreCase(String.valueOf(unary.getOpcode()))) {
-			Integer operand = this.resolveIntConstant(node, unary.getUse(0), defUse);
+		// A unary negation (the `-k` in a `[-k:]` slice). Python's `not` is a different operator and negates nothing.
+		if (defUse.getDef(value) instanceof SSAUnaryOpInstruction unary && unary.getOpcode() == CAstUnaryOp.MINUS) {
+			Integer operand = resolveIntConstant(node, unary.getUse(0), defUse, pointerAnalysis);
 			return operand == null ? null : -operand;
 		}
 
-		PointerKey pointerKey = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
+		PointerKey pointerKey = pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
 		Integer resolved = null;
 
-		for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(pointerKey))
+		for (InstanceKey instanceKey : pointerAnalysis.getPointsToSet(pointerKey))
 			if (instanceKey instanceof ConstantKey<?> constantKey && constantKey.getValue() instanceof Number number) {
-				// Only an integral value in int range is a usable slice bound; a non-integral (e.g. float) constant would truncate under
-				// intValue() and wrongly "prove" a bound, so treat it as unresolvable.
-				long asLong = number.longValue();
+				Integer candidate = toIntExact(number);
 
-				if (number.doubleValue() != asLong || asLong < Integer.MIN_VALUE || asLong > Integer.MAX_VALUE)
+				if (candidate == null)
 					return null;
 
-				int candidate = (int) asLong;
-
-				if (resolved != null && resolved != candidate)
+				if (resolved != null && !resolved.equals(candidate))
 					return null; // ambiguous across contexts; refuse to guess.
 
 				resolved = candidate;
 			}
 
 		return resolved;
+	}
+
+	/**
+	 * The value of {@code number} as an {@code int}, or {@code null} if it has none. Only an integral value in {@code int} range is a
+	 * usable slice bound; a non-integral (e.g. float) constant would truncate under {@code intValue()} and wrongly "prove" a bound.
+	 */
+	private static Integer toIntExact(Number number) {
+		long asLong = number.longValue();
+		return number.doubleValue() != asLong || asLong < Integer.MIN_VALUE || asLong > Integer.MAX_VALUE ? null : (int) asLong;
 	}
 
 	/**
@@ -1207,9 +1213,9 @@ class NumpyParameterFlowAnalysis {
 			return null; // only slices of a full shape vector are modeled; nested slicing drops the descriptor (unprovable, so permitted
 							// under the current precision-favoring policy).
 
-		Integer start = invoke.getNumberOfUses() > 2 ? this.resolveIntConstant(node, invoke.getUse(2), defUse) : null;
-		Integer stop = invoke.getNumberOfUses() > 3 ? this.resolveIntConstant(node, invoke.getUse(3), defUse) : null;
-		Integer step = invoke.getNumberOfUses() > 4 ? this.resolveIntConstant(node, invoke.getUse(4), defUse) : null;
+		Integer start = invoke.getNumberOfUses() > 2 ? resolveIntConstant(node, invoke.getUse(2), defUse, this.pointerAnalysis) : null;
+		Integer stop = invoke.getNumberOfUses() > 3 ? resolveIntConstant(node, invoke.getUse(3), defUse, this.pointerAnalysis) : null;
+		Integer step = invoke.getNumberOfUses() > 4 ? resolveIntConstant(node, invoke.getUse(4), defUse, this.pointerAnalysis) : null;
 
 		// A no-op slice ([:], the Python copy idiom) covers every dimension regardless of rank: preserve the base descriptor.
 		if ((start == null || start == 0) && stop == null && (step == null || step == 1))

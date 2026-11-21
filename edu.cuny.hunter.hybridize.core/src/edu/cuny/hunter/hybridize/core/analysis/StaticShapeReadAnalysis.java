@@ -23,10 +23,8 @@ import com.ibm.wala.cast.python.ssa.PythonPropertyRead;
 import com.ibm.wala.cast.python.ssa.PythonPropertyWrite;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.CallGraph;
-import com.ibm.wala.ipa.callgraph.propagation.ConstantKey;
 import com.ibm.wala.ipa.callgraph.propagation.InstanceKey;
 import com.ibm.wala.ipa.callgraph.propagation.PointerAnalysis;
-import com.ibm.wala.ipa.callgraph.propagation.PointerKey;
 import com.ibm.wala.ssa.DefUse;
 import com.ibm.wala.ssa.IR;
 import com.ibm.wala.ssa.SSABinaryOpInstruction;
@@ -34,7 +32,6 @@ import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
-import com.ibm.wala.ssa.SymbolTable;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.util.collections.Pair;
 
@@ -232,9 +229,6 @@ class StaticShapeReadAnalysis {
 	 * one, and it decides no branch, so it stays unflagged; flagging it would decline functions that are fine.
 	 */
 	static final Set<String> COMPARISON_OPERATOR_NAMES = Set.of("eq", "ne", "lt", "le", "gt", "ge");
-
-	/** The unary-negation operator name (see {@link NumpyParameterFlowAnalysis}'s rationale for name matching). */
-	private static final String NEGATION_OPERATOR_NAME = "neg";
 
 	/**
 	 * Member names on a shape vector whose read is rank-sensitive but extent-insensitive: {@code as_list} raises on an unknown-rank shape,
@@ -670,10 +664,9 @@ class StaticShapeReadAnalysis {
 				}
 
 				// Integer arithmetic over a statically-read dimension is a sink: a wildcard axis is None at trace time, and arithmetic
-				// on None raises.
-				if ((use instanceof SSABinaryOpInstruction binary && isArithmeticOperator(binary)
-						|| use instanceof SSAUnaryOpInstruction unary
-								&& NEGATION_OPERATOR_NAME.equalsIgnoreCase(String.valueOf(unary.getOpcode())))
+				// on None raises. Every unary operator is one: `-`, `+` and `~` raise on None, and `not` answers True where a known
+				// extent answered False.
+				if ((use instanceof SSABinaryOpInstruction binary && isArithmeticOperator(binary) || use instanceof SSAUnaryOpInstruction)
 						&& !valueColored && shapeDescriptors.containsKey(valueNumber)) {
 					reads.add(shapeDescriptors.get(valueNumber));
 
@@ -1202,42 +1195,9 @@ class StaticShapeReadAnalysis {
 		return resolved >= 0 && resolved < ordered.size() ? Set.of(ordered.get(resolved)) : null;
 	}
 
-	/**
-	 * Resolves {@code value} in {@code node} to an integer constant, or {@code null} if it cannot be resolved: a symbol-table literal, a
-	 * unary negation of a resolvable value, or an unambiguous interprocedural {@link ConstantKey}.
-	 */
+	/** Resolves {@code value} in {@code node} to an integer constant; see {@link NumpyParameterFlowAnalysis#resolveIntConstant}. */
 	private Integer resolveIntConstant(CGNode node, int value, DefUse defUse) {
-		SymbolTable symbolTable = node.getIR().getSymbolTable();
-
-		if (symbolTable.isIntegerConstant(value))
-			return symbolTable.getIntValue(value);
-
-		SSAInstruction def = defUse.getDef(value);
-
-		if (def instanceof SSAUnaryOpInstruction unary && NEGATION_OPERATOR_NAME.equalsIgnoreCase(String.valueOf(unary.getOpcode()))) {
-			Integer operand = this.resolveIntConstant(node, unary.getUse(0), defUse);
-			return operand == null ? null : -operand;
-		}
-
-		PointerKey pointerKey = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
-		Integer resolved = null;
-
-		for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(pointerKey))
-			if (instanceKey instanceof ConstantKey<?> constantKey && constantKey.getValue() instanceof Number number) {
-				long asLong = number.longValue();
-
-				if (number.doubleValue() != asLong || asLong < Integer.MIN_VALUE || asLong > Integer.MAX_VALUE)
-					return null;
-
-				int candidate = (int) asLong;
-
-				if (resolved != null && resolved != candidate)
-					return null;
-
-				resolved = candidate;
-			}
-
-		return resolved;
+		return NumpyParameterFlowAnalysis.resolveIntConstant(node, value, defUse, this.pointerAnalysis);
 	}
 
 	/** A stable memo key over the node and the seed maps. */
