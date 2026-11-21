@@ -999,6 +999,8 @@ class StaticShapeReadAnalysis {
 
 		boolean analyzedCallee = false;
 		boolean calleeValueEscapes = false;
+		// True iff a target's body can't say how the result derives from the arguments.
+		boolean resultSuppliedAtCall = false;
 		AxisRead calleeReturnDescriptor = null;
 		Set<Integer> calleeReturnProvenance = null;
 
@@ -1010,6 +1012,11 @@ class StaticShapeReadAnalysis {
 
 			if (targetIr == null)
 				continue;
+
+			if (NumpyParameterFlowAnalysis.returnsNoValueFromSummary(target)) {
+				resultSuppliedAtCall = true;
+				continue;
+			}
 
 			int[] targetParameters = targetIr.getSymbolTable().getParameterValueNumbers();
 			Map<Integer, Set<Integer>> targetValueSeed = new HashMap<>();
@@ -1051,18 +1058,22 @@ class StaticShapeReadAnalysis {
 
 		// A library or unanalyzed callee consuming a value-tainted argument yields a parameter-derived value (e.g. `tf.pad(x, ...)`);
 		// an analyzed callee's returned taints flow to the result. A returned shape descriptor is preferred over value provenance only
-		// when no value provenance returned, keeping value color dominant.
+		// when no value provenance returned, keeping value color dominant. A summary that returns no value is a library callee whose
+		// result the engine supplies at the call, so the arguments' provenance reaches the result beside whatever another target returns.
 		Set<Integer> mergedValueProvenance = null;
 
-		if (!valueSlots.isEmpty() && (!analyzedCallee || calleeValueEscapes && calleeReturnProvenance == null)) {
+		if (!valueSlots.isEmpty() && (!analyzedCallee || resultSuppliedAtCall || calleeValueEscapes && calleeReturnProvenance == null)) {
 			mergedValueProvenance = new TreeSet<>();
 
 			for (Set<Integer> provenance : valueSlots.values())
 				mergedValueProvenance.addAll(provenance);
+
+			if (calleeReturnProvenance != null)
+				mergedValueProvenance.addAll(calleeReturnProvenance);
 		} else if (calleeReturnProvenance != null)
 			mergedValueProvenance = calleeReturnProvenance;
 
-		boolean valueEscaped = !valueSlots.isEmpty() && (!analyzedCallee || calleeValueEscapes);
+		boolean valueEscaped = !valueSlots.isEmpty() && (!analyzedCallee || resultSuppliedAtCall || calleeValueEscapes);
 
 		return new InterproceduralOutcome(valueEscaped, mergedValueProvenance,
 				mergedValueProvenance == null ? calleeReturnDescriptor : null);

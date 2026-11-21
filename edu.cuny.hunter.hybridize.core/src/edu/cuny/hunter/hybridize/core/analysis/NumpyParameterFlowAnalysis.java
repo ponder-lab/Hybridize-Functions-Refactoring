@@ -20,6 +20,7 @@ import com.ibm.wala.cast.ir.ssa.AstLexicalRead;
 import com.ibm.wala.cast.ir.ssa.AstLexicalWrite;
 import com.ibm.wala.cast.ir.ssa.AstPropertyWrite;
 import com.ibm.wala.cast.python.ml.analysis.TensorTypeAnalysis;
+import com.ibm.wala.cast.python.ml.client.CallTargets;
 import com.ibm.wala.cast.python.ml.types.TensorType;
 import com.ibm.wala.cast.python.ml.types.TensorType.Dimension;
 import com.ibm.wala.cast.python.ml.types.TensorType.NumericDim;
@@ -314,6 +315,31 @@ class NumpyParameterFlowAnalysis {
 			}
 
 		return resolved;
+	}
+
+	/**
+	 * True iff {@code value} in {@code node} can only be an integer: a value whose points-to set holds integral constants and nothing else,
+	 * or a unary operation over such a value. Where {@link #resolveIntConstant} reads the one integer among a value's constants, this asks
+	 * whether anything else can be there, so a value that is a constant on one path and a tensor on another is not one, nor is a value with
+	 * an empty points-to set, such as the result of a call that has no target.
+	 */
+	private boolean isIntegerOnly(CGNode node, int value, DefUse defUse) {
+		// Negation, as in `[-k:]`, and the other unary operators take an integer to an integer or a boolean.
+		if (defUse.getDef(value) instanceof SSAUnaryOpInstruction unary)
+			return this.isIntegerOnly(node, unary.getUse(0), defUse);
+
+		PointerKey pointerKey = this.pointerAnalysis.getHeapModel().getPointerKeyForLocal(node, value);
+		boolean integer = false;
+
+		for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(pointerKey)) {
+			if (!(instanceKey instanceof ConstantKey<?> constantKey && constantKey.getValue() instanceof Number number
+					&& number.doubleValue() == number.longValue()))
+				return false;
+
+			integer = true;
+		}
+
+		return integer;
 	}
 
 	/**
@@ -725,6 +751,14 @@ class NumpyParameterFlowAnalysis {
 						continue;
 					}
 
+					// The receiver was handled above, so a value-colored use left here is a bound. One that can only be an integer is no
+					// tensor, as when every call binds a parameter to one constant (`input_shape[-num_inner_dims:]`, with
+					// `num_inner_dims` always 1): it selects among the receiver's elements and carries no value into them. Any other
+					// reaches the crossing below, where the builtin's summary returns no value and the result takes the bound's color,
+					// since slicing by a tensor raises or yields a tensor.
+					if (valueColored && invokesSliceBuiltin(invoke, defUse) && this.isIntegerOnly(node, valueNumber, defUse))
+						continue;
+
 					// tf.shape/size/rank consume a tensor and return shape metadata covering every dimension of the argument tensor.
 					if (this.invokesShapeMetadataOp(node, invoke, defUse)) {
 						ShapeDescriptor descriptor = invoke.getNumberOfUses() > 1 ? new ShapeDescriptor(node, invoke.getUse(1), null)
@@ -753,6 +787,8 @@ class NumpyParameterFlowAnalysis {
 
 					boolean calleeValueEscapes = false;
 					boolean analyzedCallee = false;
+					// True iff a target's body can't say how the result derives from the arguments.
+					boolean resultSuppliedAtCall = false;
 					// The descriptor the callees' returns carry to this call site: all analyzed targets must agree on a tracked one; a
 					// target returning an untracked shape (or none) drops it, and disagreeing targets poison it. Dropping forfeits only
 					// the return-flow descriptor: a shape-extractor call site still falls back to the all-dimensions seed anchored to
@@ -769,6 +805,11 @@ class NumpyParameterFlowAnalysis {
 
 							if (targetIr == null)
 								continue;
+
+							if (returnsNoValueFromSummary(target)) {
+								resultSuppliedAtCall = true;
+								continue;
+							}
 
 							int[] targetParameters = targetIr.getSymbolTable().getParameterValueNumbers();
 							Set<Integer> targetValueSeed = new HashSet<>();
@@ -819,9 +860,10 @@ class NumpyParameterFlowAnalysis {
 
 					// A callee is a shape extractor iff it was analyzed and no value taint escaped inside it: then its result is shape
 					// metadata (SHAPE). Otherwise the call-site result is conservatively value-tainted (a value argument reached a
-					// non-shape use, directly or via a library callee), and that value has escaped this node.
+					// non-shape use, directly or via a library callee), and that value has escaped this node. A summary that returns no
+					// value was not analyzed: the engine supplies its result at the call, so the call is taken as one with no target.
 					boolean hasValueArg = !valueSlots.isEmpty();
-					boolean shapeExtractor = analyzedCallee && !calleeValueEscapes;
+					boolean shapeExtractor = analyzedCallee && !calleeValueEscapes && !resultSuppliedAtCall;
 					boolean resultValue = hasValueArg && !shapeExtractor;
 					boolean resultShape = !resultValue && (hasValueArg || !shapeSlots.isEmpty());
 
@@ -1016,6 +1058,27 @@ class NumpyParameterFlowAnalysis {
 			index.subMap(scope + "/", true, scope + "0", false).values().forEach(nodes::addAll);
 
 		return nodes;
+	}
+
+	/**
+	 * True iff {@code target} is a summary whose body returns no value. The engine models some library functions this way and supplies the
+	 * call's result at the call site instead, as it does for the {@code slice} and {@code dict} builtins. Such a body has no def-use path
+	 * from a parameter to the result, so an argument can reach the result without escaping inside it, and a walk that crosses into callees
+	 * takes the call as it takes one with no target. A program function that returns no value is not one of these: its body is the
+	 * program's, and its result is {@code None}.
+	 *
+	 * @param target A call's target with an IR.
+	 * @return True iff {@code target} is not program code and none of its return instructions returns a value.
+	 */
+	static boolean returnsNoValueFromSummary(CGNode target) {
+		if (CallTargets.isProgramCode(target))
+			return false;
+
+		for (SSAInstruction instruction : target.getIR().getInstructions())
+			if (instruction instanceof SSAReturnInstruction ret && ret.getResult() >= 0)
+				return false;
+
+		return true;
 	}
 
 	/**
