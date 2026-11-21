@@ -49,6 +49,24 @@ def static_bound(x):
     return tf.reduce_sum(x) + np.sum(table[: x.shape[0]])
 
 
+def shape_bound(x, n):
+    return tf.reduce_sum(x) + np.prod(x.shape[:n])
+
+
+def shape_bound_swapped(n, x):
+    return tf.reduce_sum(x) + np.prod(x.shape[:n])
+
+
+def either(p, q, first):
+    if first:
+        return p
+    return q
+
+
+def two_shapes(x, y):
+    return tf.reduce_sum(x) + tf.reduce_sum(y) + np.prod(either(x.shape, y.shape, True))
+
+
 t = tf.ones((3,))
 assert keyword(t) == 3
 assert positional(t) == 3
@@ -60,3 +78,8 @@ assert mixed(tf.constant(3)) == 6
 assert mixed(tf.constant(4)) == 3
 assert indexed(tf.constant(3)) == 6
 assert static_bound(t) == 6
+
+m = tf.ones((2, 5))
+assert shape_bound(m, tf.constant(1)) == 12
+assert shape_bound_swapped(tf.constant(1), m) == 12
+assert two_shapes(m, tf.ones((3, 4))) == 32

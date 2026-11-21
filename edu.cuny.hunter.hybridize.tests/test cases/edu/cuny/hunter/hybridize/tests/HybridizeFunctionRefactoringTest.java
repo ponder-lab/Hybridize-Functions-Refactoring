@@ -13493,14 +13493,17 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * {@code None}, so the signature is withheld, where it was written. {@code boxed} stores its parameter in the dictionary that a call of
 	 * {@code dict} builds and reads it back. A call of {@code dict} has no target until the engine models it
 	 * (https://github.com/wala/ML/issues/1307), so its signature is withheld with or without the rule today, and stays withheld once the
-	 * call has a target.
+	 * call has a target. {@code looped} calls the {@code slice} builtin and a nested function that returns another parameter from one call,
+	 * so the call has a target that returns no value beside one that returns a value. The result takes what the nested function returns as
+	 * well as the argument, and the read of its last axis, which the call sites leave unresolved for that parameter, withholds the
+	 * signature.
 	 */
 	@Test
 	public void testUnresolvedStaticallyReadAxesThroughSummaryReturningNoValue() throws Exception {
 		this.setInferInputSignatures(true);
 		Set<Function> functions = this.getFunctions();
 
-		for (String name : new String[] { "clipped", "boxed" }) {
+		for (String name : new String[] { "clipped", "boxed", "looped" }) {
 			Function function = findFunction(functions, name);
 			assertTrue("`" + name + "` does integer arithmetic over the last axis of a value derived from its parameter.",
 					function.getHasUnresolvedStaticallyReadAxes());
@@ -15820,14 +15823,21 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * the engine models it (https://github.com/wala/ML/issues/1307), so these are refused with or without the rule today, and they keep
 	 * that refusal once the call has a target. {@code mixed} is {@code bound} with its parameter rebound to an integer on one path, and
 	 * {@code indexed} bounds its slice by the result of a call that has no target. Both stay refused: only a bound that can be nothing but
-	 * an integer carries no value into the slice, which {@code testNumpyOnStaticShapeSlice} pins. {@code static_bound} is the negative
-	 * case: its slice is bounded by a static extent of its parameter, which stays shape metadata.
+	 * an integer carries no value into the slice, which {@code testNumpyOnStaticShapeSlice} pins. {@code shape_bound} slices its
+	 * parameter's shape vector by another parameter, which raises under {@code tf.function} as {@code bound} does, and was converted while
+	 * the walk merged the receiver's color with what it took from the summary's body. {@code shape_bound_swapped} is the same function with
+	 * its parameters in the other order, so the bound and the receiver are each visited first once. {@code static_bound} is the negative
+	 * case: its slice is bounded by a static extent of its parameter, which stays shape metadata. {@code two_shapes} is the other: it
+	 * applies numpy to whichever of two shape vectors a helper returns. The call is crossed once for each vector, the second crossing
+	 * returns both, and numpy over the merged result stays permitted, as {@code testNumpyOnAmbiguousShapeReturn} pins for a merge inside
+	 * the helper.
 	 */
 	@Test
 	public void testNumpyCallsThroughSummaryReturningNoValue() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String name : new String[] { "keyword", "positional", "pairs", "unpacked", "bound", "stepped", "mixed", "indexed" }) {
+		for (String name : new String[] { "keyword", "positional", "pairs", "unpacked", "bound", "stepped", "mixed", "indexed",
+				"shape_bound", "shape_bound_swapped" }) {
 			Function function = findFunction(functions, name);
 			assertTrue("`" + name + "` applies numpy to a value derived from its parameter.", function.getHasNumpyCallsOnParameters());
 			assertNull("`" + name + "` must not pass a precondition.", function.getPassingPrecondition());
@@ -15839,6 +15849,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse("`static_bound` applies numpy to a slice bounded by a static extent, which is shape metadata.",
 				staticBound.getHasNumpyCallsOnParameters());
 		assertEquals("`static_bound` hybridizes (P1).", P1, staticBound.getPassingPrecondition());
+
+		Function twoShapes = findFunction(functions, "two_shapes");
+		assertFalse("`two_shapes` applies numpy to one of two shape vectors, each static.", twoShapes.getHasNumpyCallsOnParameters());
+		assertEquals("`two_shapes` hybridizes (P1).", P1, twoShapes.getPassingPrecondition());
 	}
 
 	/**
