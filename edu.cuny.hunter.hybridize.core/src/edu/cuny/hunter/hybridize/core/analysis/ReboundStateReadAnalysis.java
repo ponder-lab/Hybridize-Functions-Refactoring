@@ -104,17 +104,18 @@ import edu.cuny.hunter.hybridize.core.wala.ml.PythonModRefWithBuiltinFunctions;
  * bound method of an object its caller has just created. In both cases, no call that reaches the reader lies on a path of the creating
  * function's control-flow graph between the creation and the write, or from the creation through the call making it, so that a method that
  * itself reaches the reader isn't such a writer. Each object's field is then written only before the reader first runs on that object, so a
- * trace of the reader that a new object brings reads it live: {@code tf.function} traces a method once per instance, and keys a trace on an
- * object passed as an argument, by its identity unless its class defines equality. The reader must therefore meet the object as its
- * receiver, an argument, or a field of one. An object its closure may reach through a global, through a variable of a function outside the
- * closure, or through a container, directly or through fields, may be replaced under a trace that stays, so a write to it counts however it
- * is made. A tuple that the closure itself creates is no such container: each run creates it anew and it never changes, so it holds only
- * objects the run reached some other way. A write also counts when the rule doesn't follow it: one in a generator, whose caller runs
- * between two of its instructions, one through a value that is neither the object created nor the writer's receiver, one in a method
- * reached other than through the engine's bound-method trampoline, such as a call through the class, and one in a method that may be
- * another object's. Such a method is one read from a field that program source also writes, from a field that the engine's constructor sets
- * to anything but a method it binds to the new object, such as an attribute it copies from the class, or from a field holding a method that
- * was given anything but the function its class defines, as when the program has replaced that function on the class.
+ * trace of the reader that a new object brings reads it live: {@code tf.function} keys a trace on a method's receiver and on an object
+ * passed as an argument, each by its identity unless its class defines equality. The reader must therefore meet the object as its receiver,
+ * an argument, or a field of one. An object its closure may reach through a global, through a variable of a function outside the closure,
+ * or through a container, directly or through fields, may be replaced under a trace that stays, so a write to it counts however it is made.
+ * A tuple that the closure creates and that no field holds is no such container: a tuple never changes, so it is no place in which an
+ * object can be replaced, and one that a field, a global, an outside variable, or another container holds is reached from there. A write
+ * also counts when the rule doesn't follow it: one in a generator, whose caller runs between two of its instructions, one through a value
+ * that is neither the object created nor the writer's receiver, one in a method reached other than through the engine's bound-method
+ * trampoline, such as a call through the class, and one in a method that may be another object's. Such a method is one read from a field
+ * that program source also writes, from a field that the engine's constructor sets to anything but a method it binds to the new object,
+ * such as an attribute it copies from the class, or from a field holding a method that was given anything but the function its class
+ * defines, as when the program has replaced that function on the class.
  * <p>
  * Nor is a write part of the construction of an object whose class, or a base class in program source, declares a member that Python may
  * run with no call in the program: a special method other than {@code __init__} and {@code __call__}, a special name that the class's body
@@ -176,6 +177,9 @@ class ReboundStateReadAnalysis {
 
 	/** The fields that program source writes, over the whole program; computed on first use. */
 	private Set<PointerKey> sourceWrittenFields;
+
+	/** The tuples that a field of some object holds, over the whole program; computed on first use. */
+	private Set<InstanceKey> heldTuples;
 
 	/**
 	 * Creates the analysis.
@@ -1090,8 +1094,8 @@ class ReboundStateReadAnalysis {
 
 	/**
 	 * The objects the function of {@code reader} may reach through a place that can be rebound between its calls without a new trace: a
-	 * global, a variable of a function outside its closure, or a container it handles other than a tuple it creates itself, and from there
-	 * through fields.
+	 * global, a variable of a function outside its closure, or a container it handles other than a tuple it creates itself that no field
+	 * holds, and from there through fields.
 	 *
 	 * @param reader The function whose reads are decided.
 	 * @return The objects reached from such a place.
@@ -1148,16 +1152,36 @@ class ReboundStateReadAnalysis {
 	}
 
 	/**
-	 * True iff the given object is a tuple that the function of {@code reader}, or a function it reaches, allocates. Each run creates such
-	 * a tuple anew and a tuple never changes, so it holds only objects that the run reached some other way. It is then no place that can be
-	 * rebound between the function's calls.
+	 * True iff the given object is a tuple that the function of {@code reader}, or a function it reaches, allocates and that no field
+	 * holds. A tuple never changes, so it is no place in which an object can be replaced between the function's calls. One that a field
+	 * holds can be replaced there, and is followed as any other container. The allocating node alone doesn't tell the two apart: a function
+	 * that creates a tuple for the reader and another for a function filling a field has one node for both where its calls share a context.
 	 *
 	 * @param reader The function whose reads are decided.
 	 * @param instanceKey An object.
-	 * @return True iff the object is a tuple allocated in a node that the function reaches in the call graph.
+	 * @return True iff the object is a tuple allocated in a node that the function reaches in the call graph, and no field points to it.
 	 */
-	private static boolean isOwnTuple(Reader reader, InstanceKey instanceKey) {
+	private boolean isOwnTuple(Reader reader, InstanceKey instanceKey) {
 		return instanceKey instanceof AllocationSiteInNode site && PythonTypes.tuple.equals(site.concreteType().getReference())
-				&& reader.closure.contains(site.getNode());
+				&& reader.closure.contains(site.getNode()) && !this.getHeldTuples().contains(instanceKey);
+	}
+
+	/**
+	 * The tuples that a field of some object holds, over the whole program.
+	 *
+	 * @return The tuples that a field points to.
+	 */
+	private Set<InstanceKey> getHeldTuples() {
+		if (this.heldTuples == null) {
+			this.heldTuples = new HashSet<>();
+
+			for (Set<InstanceFieldPointerKey> fields : LayerBuildAnalysis.getFieldIndex(this.pointerAnalysis).values())
+				for (InstanceFieldPointerKey field : fields)
+					for (InstanceKey instanceKey : this.pointerAnalysis.getPointsToSet(field))
+						if (PythonTypes.tuple.equals(instanceKey.concreteType().getReference()))
+							this.heldTuples.add(instanceKey);
+		}
+
+		return this.heldTuples;
 	}
 }

@@ -163,6 +163,137 @@ def crate(top_k_layer, queries):
     return metric.update(queries)
 
 
+# A helper creates the tuple, for the function replacing an index and for the search alike. The search reads the index from a
+# tuple that is replaced between two searches.
+def pair_of(first, second):
+    return (first, second)
+
+
+class Helped:
+    def __init__(self):
+        self.candidates = None
+
+    def index(self, candidates):
+        self.candidates = candidates
+
+    def search(self, queries):
+        return tf.matmul(queries, self.candidates, transpose_b=True)
+
+
+class Helper:
+    def __init__(self):
+        self.pair = None
+
+    def replace(self, candidates):
+        index = Helped()
+        index.index(candidates)
+        self.pair = pair_of(index, candidates)
+
+    def search(self, queries):
+        both = pair_of(queries, queries)
+        return self.pair[0].search(both[0])
+
+
+# The same, with a helper that creates the tuple through another, so that one function creates both tuples whichever function asks.
+def pair_in(first, second):
+    return (first, second)
+
+
+def pair_through(first, second):
+    return pair_in(first, second)
+
+
+class Relayed:
+    def __init__(self):
+        self.candidates = None
+
+    def index(self, candidates):
+        self.candidates = candidates
+
+    def search(self, queries):
+        return tf.matmul(queries, self.candidates, transpose_b=True)
+
+
+class Relayer:
+    def __init__(self):
+        self.pair = None
+
+    def replace(self, candidates):
+        index = Relayed()
+        index.index(candidates)
+        self.pair = pair_through(index, candidates)
+
+    def search(self, queries):
+        both = pair_through(queries, queries)
+        return self.pair[0].search(both[0])
+
+
+# The same, with the object holding the tuple passed to plain functions.
+class Routed:
+    def __init__(self):
+        self.candidates = None
+
+    def index(self, candidates):
+        self.candidates = candidates
+
+    def search(self, queries):
+        return tf.matmul(queries, self.candidates, transpose_b=True)
+
+
+class Route:
+    def __init__(self):
+        self.pair = None
+
+
+def replace_routed(route, candidates):
+    index = Routed()
+    index.index(candidates)
+    route.pair = pair_through(index, candidates)
+
+
+def search_routed(route, queries):
+    both = pair_through(queries, queries)
+    return route.pair[0].search(both[0])
+
+
+# The same, with the tuple in a module's variable.
+PAIR = None
+
+
+def lend(candidates):
+    global PAIR
+    index = Helped()
+    index.index(candidates)
+    PAIR = pair_of(index, candidates)
+
+
+def search_lent(queries):
+    both = pair_of(queries, queries)
+    return PAIR[0].search(both[0])
+
+
+# A tuple that the caller creates and passes on. A trace is keyed on what a tuple argument holds, so each index has its own.
+class Passed:
+    def __init__(self):
+        self.candidates = None
+
+    def index(self, candidates):
+        self.candidates = candidates
+
+    def search(self, queries):
+        return tf.matmul(queries, self.candidates, transpose_b=True)
+
+
+def search_passed(pair, queries):
+    return pair[0].search(queries)
+
+
+def run_passed(candidates, queries):
+    index = Passed()
+    index.index(candidates)
+    return search_passed((index, candidates), queries)
+
+
 print(measure(Stream, tf.ones([3, 2])))
 print(measure(Brute, tf.ones([3, 2])))
 print(measure(None, tf.ones([3, 2])))
@@ -170,3 +301,25 @@ print(gauge(Lone, tf.ones([3, 2])))
 print(gauge(None, tf.ones([3, 2])))
 print(crate(Boxed, tf.ones([3, 2])))
 print(crate(None, tf.ones([3, 2])))
+
+helper = Helper()
+for i in range(2):
+    helper.replace(tf.fill([3, 2], i + 1.0))
+    print(helper.search(tf.ones([1, 2])))
+
+relayer = Relayer()
+for i in range(2):
+    relayer.replace(tf.fill([3, 2], i + 1.0))
+    print(relayer.search(tf.ones([1, 2])))
+
+route = Route()
+for i in range(2):
+    replace_routed(route, tf.fill([3, 2], i + 1.0))
+    print(search_routed(route, tf.ones([1, 2])))
+
+for i in range(2):
+    lend(tf.fill([3, 2], i + 1.0))
+    print(search_lent(tf.ones([1, 2])))
+
+for i in range(2):
+    print(run_passed(tf.fill([3, 2], i + 1.0), tf.ones([1, 2])))

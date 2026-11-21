@@ -134,7 +134,7 @@ def make_settered(addend):
     return settered
 
 
-# Objects that compare equal share a trace of a function they are passed to.
+# Objects that compare equal share a trace of a function they are passed to, and of a method called on them.
 class Equal:
     def __init__(self):
         self.addend = tf.constant(1.0)
@@ -144,6 +144,9 @@ class Equal:
 
     def __hash__(self):
         return 7
+
+    def add(self, x):
+        return x + self.addend
 
 
 def add_equal(equal, x):
@@ -242,6 +245,42 @@ def make_plain(addend):
     return plain
 
 
+# The same with a docstring and an annotation in the class's body, neither of which is a special member.
+class Described:
+    """An addend."""
+
+    addend: tf.Tensor
+
+    def __init__(self):
+        self.addend = tf.constant(1.0)
+
+    def add(self, x):
+        return x + self.addend
+
+
+def make_described(addend):
+    described = Described()
+    described.addend = addend
+    return described
+
+
+# The same with the instance's attributes declared in the class's body.
+class Slotted:
+    __slots__ = ("addend", "__weakref__")
+
+    def __init__(self):
+        self.addend = tf.constant(1.0)
+
+    def add(self, x):
+        return x + self.addend
+
+
+def make_slotted(addend):
+    slotted = Slotted()
+    slotted.addend = addend
+    return slotted
+
+
 # A class defining only `__call__`, with nothing between the creation and the write.
 class Applied:
     def __init__(self):
@@ -274,6 +313,8 @@ first_equal = make_equal(tf.constant(2.0))
 second_equal = make_equal(tf.constant(3.0))
 print(add_equal(first_equal, x))
 print(add_equal(second_equal, x))
+print(first_equal.add(x))
+print(second_equal.add(x))
 first_distinct = make_distinct(tf.constant(2.0))
 second_distinct = make_distinct(tf.constant(3.0))
 print(add_distinct(first_distinct, x))
@@ -285,6 +326,10 @@ print(invoked(x))
 print(make_summed(tf.constant(2.0)).add(x))
 plain = make_plain(tf.constant(2.0))
 print(plain.add(x))
+described = make_described(tf.constant(2.0))
+print(described.add(x))
+slotted = make_slotted(tf.constant(2.0))
+print(slotted.add(x))
 applied = make_applied(tf.constant(2.0))
 print(applied.add(x))
 print(applied(x))

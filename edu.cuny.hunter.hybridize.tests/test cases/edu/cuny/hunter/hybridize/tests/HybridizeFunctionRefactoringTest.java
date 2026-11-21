@@ -17046,15 +17046,18 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * write. {@code Adder.add} is run by the {@code +} that the creating function applies to the new object, {@code Derived.add} by the
 	 * same operator inherited from a base class, {@code Aliased.add} by one that the class's body assigns, {@code Entered.add} by the
 	 * {@code with} statement entering the object, and {@code Settered.add} by the property setter that the write itself runs. {@code
-	 * add_equal} is passed two objects that compare equal, which share one trace. The call graph shows none of this, so no write is part of
-	 * the construction of an object whose class, or a base class in program source, declares a special method other than {@code __init__}
-	 * and {@code __call__}, assigns a special name in its body, or declares a property's setter or deleter.
+	 * add_equal} is passed two objects that compare equal, which share one trace, and {@code Equal.add} is called on them, whose traces are
+	 * keyed on its receiver the same way. The call graph shows none of this, so no write is part of the construction of an object whose
+	 * class, or a base class in program source, declares a special method other than {@code __init__} and {@code __call__}, assigns a
+	 * special name in its body, or declares a property's setter or deleter.
 	 * <p>
 	 * {@code Called.add}, {@code Invoked.add}, {@code Invoked.__call__} and {@code Summed.add} print the earlier value likewise, and are
 	 * refused for what lies between the creation and the write: a call of the method, a call of the object, which the engine resolves to
 	 * its {@code __call__}, and a read of a property whose getter calls the method. {@code Plain.add}, whose class declares no such member,
+	 * {@code Described.add}, whose class's body holds a docstring and an annotation, neither of which the check takes as such a member,
 	 * {@code add_distinct}, whose arguments define no equality and so have a trace each, and {@code Applied.add} and {@code
-	 * Applied.__call__}, whose class declares only {@code __call__} and is filled before any call, print what they print eagerly.
+	 * Applied.__call__}, whose class declares only {@code __call__} and is filled before any call, print what they print eagerly. So does
+	 * {@code Slotted.add}, whose class's body assigns {@code __slots__}, a special name that runs no code of the program's.
 	 * <p>
 	 * The cases also pin the engine conventions the check reads: a class of program source lists the methods it declares by name and the
 	 * attributes its body assigns as static fields, and the class of a method's function carries an annotation for each decorator, named as
@@ -17070,6 +17073,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 				"field `addend` of `.*Aliased`, rebound by `.*make_aliased` at A\\.py:\\d+\\.", "Entered.add",
 				"field `addend` of `.*Entered`, rebound by `.*make_entered` at A\\.py:\\d+\\.", "Settered.add",
 				"field `addend` of `.*Settered`, rebound by `.*make_settered` at A\\.py:\\d+\\.", "add_equal",
+				"field `addend` of `.*Equal`, rebound by `.*make_equal` at A\\.py:\\d+\\.", "Equal.add",
 				"field `addend` of `.*Equal`, rebound by `.*make_equal` at A\\.py:\\d+\\.").entrySet())
 			assertRefusedForReboundState(findFunction(functions, reader.getKey()), reader.getValue());
 
@@ -17088,7 +17092,12 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertRefusedForReboundState(findFunction(functions, "Unapplied.add"),
 				"field `addend` of `.*Unapplied`, rebound by `.*make_unapplied` at A\\.py:\\d+\\.");
 
-		for (String identifier : List.of("Plain.add", "add_distinct", "Applied.add", "Applied.__call__")) {
+		// TODO: Convert `Slotted.add`, which prints what it prints eagerly. Its class's body assigns `__slots__`, which declares the
+		// instance's attributes and runs nothing, but the check takes any special name a body assigns as a member Python may run.
+		assertRefusedForReboundState(findFunction(functions, "Slotted.add"),
+				"field `addend` of `.*Slotted`, rebound by `.*make_slotted` at A\\.py:\\d+\\.");
+
+		for (String identifier : List.of("Plain.add", "Described.add", "add_distinct", "Applied.add", "Applied.__call__")) {
 			Function function = findFunction(functions, identifier);
 			assertNotRefusedForReboundState(function);
 			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
@@ -17135,21 +17144,56 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165. {@code Stream.call} zips the two fields that {@code
 	 * Stream.index} fills, on an index that {@code Metric.__init__} or {@code measure} creates and fills at once (deep_recommenders'
 	 * streaming index). An object the reader reaches through a container it handles counts as shared, and the pointer analysis reaches the
-	 * index itself through that tuple. A tuple that the reader's closure allocates is created anew by each run and never changes, though,
-	 * so it is no place an object can be replaced in, and the check leaves it out. Measured on TensorFlow 2.9.3, {@code Stream.call},
-	 * {@code Metric.update}, which calls the index it holds, and {@code Brute.call}, the search of another index class that {@code measure}
-	 * may be passed, each alone under {@code tf.function}, print what they print eagerly. So do {@code Lone.call} and {@code Gauge.update},
-	 * the same classes with a search that creates no tuple.
+	 * index itself through that tuple. A tuple never changes, though, so one that the reader's closure allocates and that no field holds is
+	 * no place an object can be replaced in between two calls, and the check leaves it out. Measured on TensorFlow 2.9.3, {@code
+	 * Stream.call}, {@code Metric.update}, which calls the index it holds, and {@code Brute.call}, the search of another index class that
+	 * {@code measure} may be passed, each alone under {@code tf.function}, print what they print eagerly. So do {@code Lone.call} and
+	 * {@code Gauge.update}, the same classes with a search that creates no tuple.
+	 * <p>
+	 * A tuple that a field holds is replaced with the field, and stays a container. {@code Helper.search}, {@code Relayer.search} and
+	 * {@code search_routed} each read their index from such a tuple, which another function replaces between two searches, and each also
+	 * creates a tuple of its own through the helper that created the held one. Each alone under {@code tf.function} prints the first
+	 * index's candidates after the replacement, and is refused. The allocating node doesn't tell the two tuples apart: the plain functions
+	 * {@code replace_routed} and {@code search_routed} reach one node of {@code pair_in} between them, so a check that asked only where a
+	 * tuple is allocated would convert {@code search_routed}. {@code Helped.search}, {@code Relayed.search} and {@code Routed.search}, the
+	 * searches of the indexes themselves, which are filled only as they are created, print what they print eagerly.
+	 * <p>
+	 * A tuple that the reader is passed isn't left out, either. {@code search_passed} reads its index from a tuple that its caller creates
+	 * anew for each call. A trace is keyed on what a tuple argument holds, so it prints what it prints eagerly, as {@code Passed.search}
+	 * does, and it is refused with a TODO. {@code search_lent} reads its tuple from a module's variable that {@code lend} rebinds, and is
+	 * converted with a TODO though a trace of it keeps the first index: the engine doesn't connect that write with the read.
 	 */
 	@Test
 	public void testReboundStateReadsBeforeFirstCallOwnTuple() throws Exception {
 		Set<Function> functions = this.getFunctions();
 
-		for (String identifier : List.of("Stream.call", "Metric.update", "Brute.call", "Lone.call", "Gauge.update")) {
+		for (String identifier : List.of("Stream.call", "Metric.update", "Brute.call", "Lone.call", "Gauge.update", "Helped.search",
+				"Relayed.search", "Routed.search", "Passed.search")) {
 			Function function = findFunction(functions, identifier);
 			assertNotRefusedForReboundState(function);
 			assertEquals("`" + identifier + "` passes P1.", P1, function.getPassingPrecondition());
 		}
+
+		// Refused for the tuple that a field holds, through which each reaches an index that is replaced with the tuple.
+		for (Entry<String, String> reader : Map
+				.of("Helper.search", "field `candidates` of `.*Helped`, rebound by `.*Helped/index` at A\\.py:\\d+\\.", "Relayer.search",
+						"field `candidates` of `.*Relayed`, rebound by `.*Relayed/index` at A\\.py:\\d+\\.", "search_routed",
+						"field `candidates` of `.*Routed`, rebound by `.*Routed/index` at A\\.py:\\d+\\.")
+				.entrySet())
+			assertRefusedForReboundState(findFunction(functions, reader.getKey()), reader.getValue());
+
+		// TODO: Convert `search_passed`, which prints what it prints eagerly. Its caller creates the tuple it is passed, and a trace is
+		// keyed on what a tuple argument holds, but the check leaves out only a tuple that the reader's closure allocates.
+		assertRefusedForReboundState(findFunction(functions, "search_passed"),
+				"field `candidates` of `.*Passed`, rebound by `.*Passed/index` at A\\.py:\\d+\\.");
+
+		// TODO: Refuse `search_lent`, which prints the first index's candidates after `lend` replaces the tuple in the module's variable.
+		// `lend` writes the variable under a `global` declaration and `search_lent` reads it as a variable of the enclosing script. The
+		// engine doesn't connect the two, so the call through the tuple has no target and no read of the index's field is seen. It is
+		// converted without the construction rule, too.
+		Function lent = findFunction(functions, "search_lent");
+		assertNotRefusedForReboundState(lent);
+		assertEquals("`search_lent` passes P1.", P1, lent.getPassingPrecondition());
 
 		// TODO: Convert `Boxed.call` and `Crate.update`, which print what they print eagerly. Their search puts its fields in a list, which
 		// stays a container an object may be replaced in: a list can change after it is created, and the lists allocated at one site are
