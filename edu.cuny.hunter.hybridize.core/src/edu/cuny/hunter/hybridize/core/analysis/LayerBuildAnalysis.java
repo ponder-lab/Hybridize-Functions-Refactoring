@@ -188,7 +188,9 @@ import com.ibm.wala.util.intset.OrdinalSet;
  * own scope inside the trace. That is optimistic for a helper called inside a layer's {@code call}, whose scope decorating the helper
  * drops. A function defined in another one is defined anew by each call of that function, so a layer it reads from a variable that each
  * such call binds once is one layer for each function object, as a receiver's is for each instance, however many objects the calls bind
- * ({@link #readsEnclosingBinding(CGNode, int)}).
+ * ({@link #readsEnclosingBinding(CGNode, int)}). That holds for the function defined, not for the one defining it: a trace that runs the
+ * defining function binds the variable again on each call, so a layer that is passed to the traced function and read through the variable
+ * is refused as one called directly is ({@link #getVaryingParameters(Set, Set, boolean)}).
  * <p>
  * Every type fact comes from the engine. {@link TensorFlowApis} names the call of {@code tensorflow.keras.layers.Layer.add_weight} both in
  * a program layer's {@code build} and in the engine's summary of a built-in layer's first call (wala/ML#1145). The latter lies inside a
@@ -825,7 +827,8 @@ class LayerBuildAnalysis {
 					}
 
 					// A layer passed to the function, or read from an object passed to it, may be another on each call, which the engine
-					// shows only across the nodes of the function receiving it, one per call site, not within one.
+					// shows only across the nodes of the function receiving it, one per call site, not within one. So may one that a
+					// function defined in the function reads from a variable bound to such a value.
 					if (readsVarying(node, call.getUse(0), varying))
 						return Optional.of(new Verdict(LayerBuildShape.FIRST_CALL_ON_RETRACE, "its call at " + describePosition(node, call)
 								+ " calls a layer passed to it, which may differ on a retrace"));
@@ -1119,11 +1122,18 @@ class LayerBuildAnalysis {
 	 * one node such a parameter may be a single object even when the calls pass different ones. A callee's parameter that its callers pass
 	 * a fixed value, as {@code apply(self.dense, x)} does, doesn't vary. A starred argument spreads a sequence whose elements the analysis
 	 * doesn't follow, so in a function with a varying parameter it may pass one to any parameter.
+	 * <p>
+	 * A variable that a traced node binds to such a value varies in turn for a function defined in that node's function, which reads what
+	 * the call defining it bound. Each read of the variable in a traced node is held with the node's varying parameters, by the value
+	 * number it defines. The reads are matched to the writes by the variable's name and defining scope, over every traced node of either
+	 * function, so the answer doesn't depend on how many nodes the engine gives the function reading it. A variable written only outside
+	 * the trace doesn't vary: a function defined by a call that the trace doesn't run reads one binding from every trace, which
+	 * {@link #readsEnclosingBinding(CGNode, int)} decides.
 	 *
 	 * @param nodes The function's nodes.
 	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
 	 * @param method True iff the function is an instance method.
-	 * @return Each traced node's varying parameters.
+	 * @return Each traced node's varying parameters and varying reads of an enclosing function's variables.
 	 */
 	private Map<CGNode, Set<Integer>> getVaryingParameters(Set<CGNode> nodes, Set<CGNode> traced, boolean method) {
 		Map<CGNode, Set<Integer>> ret = new HashMap<>();
@@ -1149,6 +1159,9 @@ class LayerBuildAnalysis {
 			worklist.add(node);
 		}
 
+		// The reads of each variable in the traced nodes, created when one of them binds a variable to a varying value.
+		Map<Pair<String, String>, Set<Pair<CGNode, Integer>>> reads = null;
+
 		while (!worklist.isEmpty()) {
 			CGNode node = worklist.remove();
 
@@ -1156,6 +1169,18 @@ class LayerBuildAnalysis {
 				continue;
 
 			for (SSAInstruction instruction : node.getIR().getInstructions()) {
+				// A function defined in this one reads what this call bound, so a variable bound to a varying value varies for it.
+				if (instruction instanceof AstLexicalWrite write)
+					for (Access access : write.getAccesses())
+						if (readsVarying(node, access.valueNumber(), ret)) {
+							if (reads == null)
+								reads = getLexicalReads(traced);
+
+							for (Pair<CGNode, Integer> read : reads.getOrDefault(access.getName(), Collections.emptySet()))
+								if (ret.computeIfAbsent(read.fst, k -> new HashSet<>()).add(read.snd))
+									worklist.add(read.fst);
+						}
+
 				if (!(instruction instanceof PythonInvokeInstruction invoke))
 					continue;
 
@@ -1181,6 +1206,26 @@ class LayerBuildAnalysis {
 				}
 			}
 		}
+
+		return ret;
+	}
+
+	/**
+	 * The lexical reads in {@code traced}, by which a function reads a variable of a function enclosing it: for each variable, as (name,
+	 * defining scope), each node reading it with the value number the read defines.
+	 *
+	 * @param traced The nodes a trace runs ({@link #getTracedNodes(Set)}).
+	 * @return The node and the defined value of each lexical read of each variable.
+	 */
+	private static Map<Pair<String, String>, Set<Pair<CGNode, Integer>>> getLexicalReads(Set<CGNode> traced) {
+		Map<Pair<String, String>, Set<Pair<CGNode, Integer>>> ret = new HashMap<>();
+
+		for (CGNode node : traced)
+			if (node.getIR() != null)
+				for (SSAInstruction instruction : node.getIR().getInstructions())
+					if (instruction instanceof AstLexicalRead read)
+						for (Access access : read.getAccesses())
+							ret.computeIfAbsent(access.getName(), k -> new HashSet<>()).add(Pair.make(node, access.valueNumber()));
 
 		return ret;
 	}
@@ -1297,13 +1342,14 @@ class LayerBuildAnalysis {
 	}
 
 	/**
-	 * True iff {@code value} of {@code node} is one of its varying parameters ({@link #getVaryingParameters(Set, Set, boolean)}), a field
-	 * or property read from one, at any depth, a phi merging one, or the result of a call passed one, which may return it. It is asked only
-	 * of a callee value of a call that may reach {@code add_weight}, which a tensor parameter can't be.
+	 * True iff {@code value} of {@code node} is one of its varying parameters or varying reads of an enclosing function's variable
+	 * ({@link #getVaryingParameters(Set, Set, boolean)}), a field or property read from one, at any depth, a phi merging one, or the result
+	 * of a call passed one, which may return it. It is asked only of a callee value of a call that may reach {@code add_weight}, which a
+	 * tensor parameter can't be.
 	 *
 	 * @param node A traced node.
 	 * @param value A value number of {@code node}.
-	 * @param varying Each traced node's varying parameters.
+	 * @param varying Each traced node's varying parameters and reads.
 	 * @return True iff the value is read from a varying parameter.
 	 */
 	private static boolean readsVarying(CGNode node, int value, Map<CGNode, Set<Integer>> varying) {
@@ -1315,7 +1361,7 @@ class LayerBuildAnalysis {
 	 *
 	 * @param node A traced node.
 	 * @param value A value number of {@code node}.
-	 * @param varying The node's varying parameters.
+	 * @param varying The node's varying parameters and reads.
 	 * @param seen The values already visited, along a cycle of phis.
 	 * @return True iff the value is read from a varying parameter.
 	 */
