@@ -4241,9 +4241,11 @@ public class Function {
 
 	/**
 	 * Computes whether this {@link Function}'s body, or code it calls, reads a tensor-typed or scalar-valued field that another function
-	 * rebinds outside the {@code __init__} or Keras {@code build} that sets the object up ({@link ReboundStateReadAnalysis}), storing the
-	 * result for {@link #getHasReboundStateReads()}. When the function has no call-graph node, the result is left undetermined, mirroring
-	 * the sibling safety checks. See https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076.
+	 * rebinds outside the {@code __init__} or Keras {@code build} that sets the object up, and outside the object's construction by the
+	 * function that creates it ({@link ReboundStateReadAnalysis}), storing the result for {@link #getHasReboundStateReads()}. When the
+	 * function has no call-graph node, the result is left undetermined, mirroring the sibling safety checks. See
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1076 and
+	 * https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165.
 	 *
 	 * @param callGraph The call graph, walked to the function's callees and over the whole program for the writers.
 	 * @param pointerAnalysis The pointer analysis, whose heap model names the fields read and written.

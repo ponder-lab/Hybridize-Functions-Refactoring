@@ -349,7 +349,16 @@ public enum PreconditionFailure {
 	 * class-body constant, is read live, since a scalar read counts only when its field may hold more than one value. The elements of a
 	 * list, tuple, dictionary, or set aren't covered, though, which {@code tf.function} passes in afresh when the container is an argument.
 	 * Objects are told apart by allocation site, so a getter of an object created afresh on each call is refused although no instance it
-	 * reads is rebound between two of its reads.
+	 * reads is rebound between two of its reads, unless each write to the object is part of its construction.
+	 * <p>
+	 * A write is part of an object's construction when the function making it has just created the object, or when it is made by a method
+	 * called only on an object its caller has just created, and nothing that may run the reading function is called between the creation
+	 * and the write (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1165). Such a write doesn't fail this
+	 * precondition, since each object's field then holds one value from the reading function's first run on it. A write to an object whose
+	 * class declares a special method other than {@code __init__} and {@code __call__}, or a property's setter or deleter, still fails it:
+	 * Python runs such a member with no call in the program, so what runs between the creation and the write isn't known. The rule rests on
+	 * the call graph holding every caller: a caller outside it that writes the field again after a read, such as a client of a library,
+	 * leaves a converted function returning the value it was traced with, without an error.
 	 * <p>
 	 * The guide documents this: a trace is keyed on the arguments, so changing a Python global or free variable, a field of {@code self}
 	 * among them, does not retrace, and the value read when the function was traced persists.

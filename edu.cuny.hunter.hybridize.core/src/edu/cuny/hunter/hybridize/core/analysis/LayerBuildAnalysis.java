@@ -2742,7 +2742,7 @@ class LayerBuildAnalysis {
 	 * @param pointerAnalysis A pointer analysis.
 	 * @return The field keys of each object.
 	 */
-	private static Map<InstanceKey, Set<InstanceFieldPointerKey>> getFieldIndex(PointerAnalysis<InstanceKey> pointerAnalysis) {
+	static Map<InstanceKey, Set<InstanceFieldPointerKey>> getFieldIndex(PointerAnalysis<InstanceKey> pointerAnalysis) {
 		return fieldIndexCache.computeIfAbsent(pointerAnalysis, pa -> {
 			Map<InstanceKey, Set<InstanceFieldPointerKey>> ret = new HashMap<>();
 
