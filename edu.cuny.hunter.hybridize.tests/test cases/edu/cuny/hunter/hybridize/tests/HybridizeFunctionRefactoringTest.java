@@ -16986,9 +16986,10 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		// makes isn't seen.
 		assertNotRefusedForReboundState(findFunction(functions, "Dated.search"));
 
-		// TODO: Refuse `search_aliased`, whose second search returns the first's result under `tf.function`. Its class is that of
-		// `search_classed`, except that the class's body names the other object's method itself. The engine's constructor doesn't copy
-		// an attribute so assigned onto the new index, so the call through it has no target and the write it makes isn't seen.
+		// TODO: Refuse `search_aliased` once an instance reads an attribute that its class's body assigns from an attribute of another
+		// object (https://github.com/wala/ML/issues/1319). Its second search returns the first's result under `tf.function`. Its class is
+		// that of `search_classed`, except that the class's body names the other object's method itself. The engine gives the new index no
+		// value for an attribute so assigned, so the call through it has no target and the write it makes isn't seen.
 		assertNotRefusedForReboundState(findFunction(functions, "search_aliased"));
 	}
 
@@ -17187,10 +17188,11 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertRefusedForReboundState(findFunction(functions, "search_passed"),
 				"field `candidates` of `.*Passed`, rebound by `.*Passed/index` at A\\.py:\\d+\\.");
 
-		// TODO: Refuse `search_lent`, which prints the first index's candidates after `lend` replaces the tuple in the module's variable.
-		// `lend` writes the variable under a `global` declaration and `search_lent` reads it as a variable of the enclosing script. The
-		// engine doesn't connect the two, so the call through the tuple has no target and no read of the index's field is seen. It is
-		// converted without the construction rule, too.
+		// TODO: Refuse `search_lent` once the engine connects a module's variable written under a `global` declaration with its reads
+		// (https://github.com/wala/ML/issues/1317). It prints the first index's candidates after `lend` replaces the tuple in the module's
+		// variable. `lend` writes the variable under a `global` declaration and `search_lent` reads it as a variable of the enclosing
+		// script. The engine doesn't connect the two, so the call through the tuple has no target and no read of the index's field is seen.
+		// It is converted without the construction rule, too.
 		Function lent = findFunction(functions, "search_lent");
 		assertNotRefusedForReboundState(lent);
 		assertEquals("`search_lent` passes P1.", P1, lent.getPassingPrecondition());
