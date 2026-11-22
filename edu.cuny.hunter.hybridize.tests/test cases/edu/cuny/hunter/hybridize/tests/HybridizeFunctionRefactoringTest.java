@@ -19071,14 +19071,28 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		for (String identifier : List.of("sample_rebound.step_rebound", "sample_loop.step_loop", "sample_while.step_while",
 				"sample_indexed.step_indexed", "sample_for_parameter.step_for_parameter", "sample_for_then_assigned.step_for_then_assigned",
-				"sample_unpacked.step_unpacked", "sample_with.step_with", "step_global", "step_global_field", "apply_inner", "sample",
-				"sample_direct", "sample_field", "sample_either", "sample_rebound", "sample_indexed", "sample_unpacked", "sample_with")) {
+				"sample_unpacked.step_unpacked", "sample_with.step_with", "step_global", "step_global_field", "sample_rebound",
+				"sample_unpacked", "sample_with")) {
 			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
 			assertTrue("`" + identifier + "` is refused for the layer it may call.",
 					findFunction(functions, identifier).getStatus()
 							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
 							.contains("may call a different layer on a retrace"));
 		}
+
+		// The function defined in each reads the layer from a variable bound to what the function is passed.
+		for (String identifier : List.of("apply_inner", "sample_indexed")) {
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
+			assertTrue("`" + identifier + "` is refused for a layer its callers pass.",
+					findFunction(functions, identifier).getStatus()
+							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+							.contains("calls a layer passed to it, which may differ on a retrace"));
+		}
+
+		// Each is refused both for the function it passes on to `run`, which calls one of several, and for the model that function
+		// reads, which the callers pass. Which of the two is reported follows from the nodes the engine gives the functions.
+		for (String identifier : List.of("sample", "sample_direct", "sample_field", "sample_either"))
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
 
 		// The field's rebinding refuses the function before its layer does.
 		Function fieldRebound = findFunction(functions, "sample_field_rebound.step_field_rebound");
@@ -19124,6 +19138,84 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		assertMayBuildLayers(functions, "Net.predict_one", true, true, null);
+		assertMayBuildLayers(functions, "Net.call", true, true, null);
+	}
+
+	/**
+	 * Tests https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1122 with functions, each passed a layer, in which a
+	 * function defined there calls the layer, reading it from a variable of the enclosing function. A trace of the enclosing function runs
+	 * both, so a retrace for another layer first calls that layer. Measured on TensorFlow 2.9.3, each of these runs plain and raises a
+	 * {@code ValueError} decorated, and is refused: {@code apply_inner}, whose {@code inner} reads the parameter; {@code apply_bare}, whose
+	 * nested function is passed nothing; {@code apply_alias}, whose nested function reads a variable assigned the parameter;
+	 * {@code apply_held}, passed an object holding the layer in a field; {@code apply_deep}, whose layer a function two levels in reads;
+	 * {@code apply_reexported}, whose middle function assigns the layer to a variable of its own, which the innermost one reads;
+	 * {@code apply_through}, {@code apply_bare_through} and {@code apply_same}, whose nested functions pass the layer on to
+	 * {@code call_layer}, itself refused, the last two passing it nothing else that differs between the calls; {@code apply_sited}, passed
+	 * two layers that the script creates; and {@code Runner.run_passed}, a method passed two layers. The engine may give the function
+	 * reading the variable one node for every call of the enclosing function or a node for each, and neither changes these.
+	 * <p>
+	 * These run decorated and are not refused: each nested function that calls the layer itself, every object of which reads the one layer
+	 * that the call defining it bound; {@code apply_once}, passed one layer by both of its calls; {@code Runner.run_field} and
+	 * {@code Runner.run_self}, whose nested functions call the layer in a field of the receiver, one layer for each instance; and
+	 * {@code use_made}, which calls a function that a call outside its trace defined, so every trace of it reads the one layer bound there.
+	 * <p>
+	 * {@code Runner.run_passed_once} and {@code Runner.run_direct_once}, methods passed one layer by both of their calls, run decorated and
+	 * are refused, a method's parameter being taken as another object on each call. {@code apply_deep.middle},
+	 * {@code apply_reexported.middle_reexported}, {@code apply_through.inner_through} and {@code apply_same.inner_same}, each defined anew
+	 * by the call that binds the layer, run decorated and are refused too: the layer is called by a function that each of them calls, not
+	 * by the one decorated.
+	 */
+	@Test
+	public void testMayBuildLayersEnclosingParameter() throws Exception {
+		Set<Function> functions = this.getFunctions();
+
+		for (String identifier : List.of("apply_inner", "apply_bare", "apply_alias", "apply_held", "apply_sited", "apply_through",
+				"apply_bare_through", "apply_same", "call_layer")) {
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
+			assertTrue("`" + identifier + "` is refused for a layer its callers pass.",
+					findFunction(functions, identifier).getStatus()
+							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+							.contains("calls a layer passed to it, which may differ on a retrace"));
+		}
+
+		// Each is refused both for the nested function it calls, one of several, and for the layer that the innermost function reads.
+		// Which of the two is reported follows from the nodes the engine gives the functions.
+		for (String identifier : List.of("apply_deep", "apply_reexported"))
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
+
+		for (String identifier : List.of("Runner.run_passed", "Runner.run_passed_once", "Runner.run_direct_once")) {
+			// TODO: Don't refuse `Runner.run_passed_once` and `Runner.run_direct_once`, which run decorated, once a method's parameter
+			// that every call passes one object is taken as fixed.
+			assertMayBuildLayers(functions, identifier, true, false, FIRST_CALL_ON_RETRACE);
+			assertTrue("`" + identifier + "` is refused for a layer its callers pass.",
+					findFunction(functions, identifier).getStatus()
+							.getEntryMatchingCode(Function.PLUGIN_ID, PreconditionFailure.MAY_BUILD_LAYERS.getCode()).getMessage()
+							.contains("calls a layer passed to it, which may differ on a retrace"));
+		}
+
+		// TODO: Don't refuse these, which run decorated. The call that binds the layer defines each anew, but the layer is called by a
+		// function that each of them calls, and only the decorated function's own read of an enclosing variable is taken as fixed.
+		for (String identifier : List.of("apply_deep.middle", "apply_reexported.middle_reexported", "apply_through.inner_through",
+				"apply_same.inner_same"))
+			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
+
+		for (String identifier : List.of("apply_inner.inner", "apply_alias.inner_alias", "apply_held.inner_held",
+				"apply_deep.middle.innermost", "apply_reexported.middle_reexported.innermost_reexported", "apply_sited.inner_sited",
+				"apply_once", "apply_once.inner_once", "make_caller.caller", "use_made", "Runner.run_field.inner_field",
+				"Runner.run_self.inner_self", "Runner.run_passed.inner_passed", "Runner.run_passed_once.inner_passed_once")) {
+			assertMayBuildLayers(functions, identifier, true, null, null);
+			assertFalse("`" + identifier + "` is not refused.", findFunction(functions, identifier).getStatus().hasError());
+			assertTrue("`" + identifier + "` is converted.",
+					findFunction(functions, identifier).getTransformations().contains(CONVERT_TO_HYBRID));
+		}
+
+		for (String identifier : List.of("Runner.run_field", "Runner.run_self")) {
+			assertMayBuildLayers(functions, identifier, true, false, null);
+			assertFalse("`" + identifier + "` is not refused.", findFunction(functions, identifier).getStatus().hasError());
+			assertTrue("`" + identifier + "` is converted.",
+					findFunction(functions, identifier).getTransformations().contains(CONVERT_TO_HYBRID));
+		}
+
 		assertMayBuildLayers(functions, "Net.call", true, true, null);
 	}
 
