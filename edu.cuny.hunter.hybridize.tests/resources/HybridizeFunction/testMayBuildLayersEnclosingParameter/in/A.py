@@ -112,6 +112,13 @@ def apply_same(layer, x):
     return inner_same(x)
 
 
+def apply_lambda(layer, x):
+    # The function reading the parameter is a lambda expression.
+    inner_lambda = lambda y: layer(y)
+
+    return inner_lambda(x)
+
+
 def apply_reexported(layer, x):
     # `middle_reexported` binds a variable of its own to the layer it reads.
     def middle_reexported(y):
@@ -206,6 +213,9 @@ apply_bare_through(make_second(), wide)
 
 apply_same(make_first(), x)
 apply_same(make_second(), x)
+
+apply_lambda(make_first(), x)
+apply_lambda(make_second(), wide)
 
 apply_reexported(make_first(), x)
 apply_reexported(make_second(), wide)

@@ -19146,13 +19146,14 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	 * function defined there calls the layer, reading it from a variable of the enclosing function. A trace of the enclosing function runs
 	 * both, so a retrace for another layer first calls that layer. Measured on TensorFlow 2.9.3, each of these runs plain and raises a
 	 * {@code ValueError} decorated, and is refused: {@code apply_inner}, whose {@code inner} reads the parameter; {@code apply_bare}, whose
-	 * nested function is passed nothing; {@code apply_alias}, whose nested function reads a variable assigned the parameter;
-	 * {@code apply_held}, passed an object holding the layer in a field; {@code apply_deep}, whose layer a function two levels in reads;
-	 * {@code apply_reexported}, whose middle function assigns the layer to a variable of its own, which the innermost one reads;
-	 * {@code apply_through}, {@code apply_bare_through} and {@code apply_same}, whose nested functions pass the layer on to
-	 * {@code call_layer}, itself refused, the last two passing it nothing else that differs between the calls; {@code apply_sited}, passed
-	 * two layers that the script creates; and {@code Runner.run_passed}, a method passed two layers. The engine may give the function
-	 * reading the variable one node for every call of the enclosing function or a node for each, and neither changes these.
+	 * nested function is passed nothing; {@code apply_lambda}, whose layer a lambda expression reads; {@code apply_alias}, whose nested
+	 * function reads a variable assigned the parameter; {@code apply_held}, passed an object holding the layer in a field;
+	 * {@code apply_deep}, whose layer a function two levels in reads; {@code apply_reexported}, whose middle function assigns the layer to
+	 * a variable of its own, which the innermost one reads; {@code apply_through}, {@code apply_bare_through} and {@code apply_same}, whose
+	 * nested functions pass the layer on to {@code call_layer}, itself refused, the last two passing it nothing else that differs between
+	 * the calls; {@code apply_sited}, passed two layers that the script creates; and {@code Runner.run_passed}, a method passed two layers.
+	 * The engine may give the function reading the variable one node for every call of the enclosing function or a node for each, and
+	 * neither changes these.
 	 * <p>
 	 * These run decorated and are not refused: each nested function that calls the layer itself, every object of which reads the one layer
 	 * that the call defining it bound; {@code apply_once}, passed one layer by both of its calls; {@code Runner.run_field} and
@@ -19170,7 +19171,7 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 
 		for (String identifier : List.of("apply_inner", "apply_bare", "apply_alias", "apply_held", "apply_sited", "apply_through",
-				"apply_bare_through", "apply_same", "call_layer")) {
+				"apply_bare_through", "apply_same", "apply_lambda", "call_layer")) {
 			assertMayBuildLayers(functions, identifier, true, null, FIRST_CALL_ON_RETRACE);
 			assertTrue("`" + identifier + "` is refused for a layer its callers pass.",
 					findFunction(functions, identifier).getStatus()
