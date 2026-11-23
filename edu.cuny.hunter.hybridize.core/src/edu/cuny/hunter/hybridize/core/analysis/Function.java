@@ -6757,7 +6757,7 @@ public class Function {
 	 */
 	private Optional<String> guardedCallRejection(Parameter param, InputSignature.SpecEntry entry) {
 		// Every rejected call is collected, so the message does not depend on the order the nodes are visited in (#1321).
-		Set<String> rejections = new TreeSet<>();
+		Set<SignatureRejection> rejections = EnumSet.noneOf(SignatureRejection.class);
 
 		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.callGuards.entrySet()) {
 			// A node whose evidence was kept is one the specification was derived from, so it is not judged as a rejected call.
@@ -6774,11 +6774,12 @@ public class Function {
 				if (guards.stream().filter(guard -> !guard.handler()).anyMatch(rejection::admittedBy))
 					continue;
 
-				rejections.add(rejection.toString());
+				rejections.add(rejection);
 			}
 		}
 
-		return rejections.isEmpty() ? Optional.empty() : Optional.of(String.join(" or ", rejections));
+		return rejections.isEmpty() ? Optional.empty()
+				: Optional.of(rejections.stream().map(SignatureRejection::toString).collect(Collectors.joining(" or ")));
 	}
 
 	/**
