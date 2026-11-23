@@ -6756,6 +6756,9 @@ public class Function {
 	 * @return The exception that would escape, rendered for the status message, or empty when no declared failure is affected.
 	 */
 	private Optional<String> guardedCallRejection(Parameter param, InputSignature.SpecEntry entry) {
+		// Every rejected call is collected, so the message does not depend on the order the nodes are visited in (#1321).
+		Set<SignatureRejection> rejections = EnumSet.noneOf(SignatureRejection.class);
+
 		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.callGuards.entrySet()) {
 			// A node whose evidence was kept is one the specification was derived from, so it is not judged as a rejected call.
 			if (!this.expectedFailureNodes.contains(node.getKey()))
@@ -6771,11 +6774,12 @@ public class Function {
 				if (guards.stream().filter(guard -> !guard.handler()).anyMatch(rejection::admittedBy))
 					continue;
 
-				return Optional.of(rejection.toString());
+				rejections.add(rejection);
 			}
 		}
 
-		return Optional.empty();
+		return rejections.isEmpty() ? Optional.empty()
+				: Optional.of(rejections.stream().map(SignatureRejection::toString).collect(Collectors.joining(" or ")));
 	}
 
 	/**
@@ -6867,6 +6871,9 @@ public class Function {
 	 *         guarded call is affected.
 	 */
 	private Optional<String> tracingChangesGuardedException() {
+		// Every guarded call's exceptions are collected, so the message does not depend on the order the nodes are visited in (#1321).
+		Set<String> distinguished = new TreeSet<>();
+
 		for (Map.Entry<CGNode, List<List<ExpectedFailureContextAnalysis.Guard>>> node : this.callGuards.entrySet()) {
 			Set<String> raised = this.traceTimeExceptions(node.getKey());
 
@@ -6878,16 +6885,13 @@ public class Function {
 				List<ExpectedFailureContextAnalysis.Guard> handlers = guards.stream().filter(ExpectedFailureContextAnalysis.Guard::handler)
 						.toList();
 
-				Set<String> distinguished = raised.stream()
-						.filter(exception -> declaredDistinguishes(declared, exception) || handlersDistinguish(handlers, exception))
-						.collect(Collectors.toCollection(TreeSet::new));
-
-				if (!distinguished.isEmpty())
-					return Optional.of(distinguished.stream().map(e -> "`" + e + "`").collect(Collectors.joining(" or ")));
+				raised.stream().filter(exception -> declaredDistinguishes(declared, exception) || handlersDistinguish(handlers, exception))
+						.forEach(distinguished::add);
 			}
 		}
 
-		return Optional.empty();
+		return distinguished.isEmpty() ? Optional.empty()
+				: Optional.of(distinguished.stream().map(e -> "`" + e + "`").collect(Collectors.joining(" or ")));
 	}
 
 	/**

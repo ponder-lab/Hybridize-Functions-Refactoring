@@ -10446,6 +10446,24 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Two guarded calls of one function, each declared to fail with a TensorFlow error, raise different exceptions once the function is
+	 * traced: a rank-1 argument fails {@code tf.matmul}'s static shape check with {@code ValueError}, and an {@code int32} one fails
+	 * {@code tf.sqrt}'s static dtype check with {@code TypeError}, as checked against TensorFlow 2.9.3. The refusal names both, whatever
+	 * order the guarded calls are visited in.
+	 *
+	 * @see <a href="https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1321">Issue 1321</a>
+	 */
+	@Test
+	public void testTracingChangesGuardedExceptionAcrossCalls() throws Exception {
+		Function function = findFunction(this.getFunctions(), "two_guards");
+		RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(Function.PLUGIN_ID,
+				PreconditionFailure.TRACING_CHANGES_GUARDED_EXCEPTION.getCode());
+		assertNotNull("`two_guards` is refused.", entry);
+		assertTrue("The refusal names both guarded calls' exceptions: " + entry.getMessage(),
+				entry.getMessage().contains("tracing it may raise `TypeError` or `ValueError` in place of the TensorFlow error"));
+	}
+
+	/**
 	 * The Keras shape of {@link #testTracingChangesGuardedException()}: {@code LanguageModel.call} is reached from the test through a
 	 * layer's {@code __call__}, and the call declared to fail passes a dict whose element fails {@code tf.matmul}'s static shape check. On
 	 * TensorFlow 2.9.3 the test passes eagerly and fails under a bare decorator, with {@code ValueError} at trace time in place of the
