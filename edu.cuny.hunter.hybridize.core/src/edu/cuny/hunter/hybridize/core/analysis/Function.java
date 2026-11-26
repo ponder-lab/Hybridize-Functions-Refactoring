@@ -1176,6 +1176,9 @@ public class Function {
 	 */
 	private List<SuppliedDefaultDeletion.Deletion> suppliedDefaultDeletions = List.of();
 
+	/** The parameters the inferred signature omits by deleting their supplied defaults (#1323). Empty until a signature is inferred. */
+	private List<Parameter> deletedDefaultParameters = List.of();
+
 	/** Whether {@link #transform()} wrote the inferred signature into the decorator, which the deletions accompany. */
 	private boolean inferredSignatureEmitted;
 
@@ -6743,17 +6746,10 @@ public class Function {
 
 		// The deletions the omitted parameters need, applied only together with the signature that needs them.
 		List<SuppliedDefaultDeletion.Deletion> deletions = new ArrayList<>();
-		for (Parameter param : deletedDefaults) {
-			List<SuppliedDefaultDeletion.Deletion> paramDeletions = param.getSuppliedDefaultDeletion().deletions();
-			deletions.addAll(paramDeletions);
-
-			// Named where the signature needing them is inferred, so an analysis writing no change still shows the call sites it rewrites.
-			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
-					+ "` has a default value, and every caller passing it passes the default, "
-					+ "so it is left out of the input signature and the argument is deleted at "
-					+ paramDeletions.stream().map(SuppliedDefaultDeletion.Deletion::location).collect(Collectors.joining(", ")) + ".");
-		}
+		for (Parameter param : deletedDefaults)
+			deletions.addAll(param.getSuppliedDefaultDeletion().deletions());
 		this.suppliedDefaultDeletions = List.copyOf(deletions);
+		this.deletedDefaultParameters = List.copyOf(deletedDefaults);
 
 		return new InferenceResult.Inferred(new InputSignature(new ArrayList<>(specByParameter.values())));
 	}
@@ -7572,6 +7568,25 @@ public class Function {
 	 */
 	public List<SuppliedDefaultDeletion.Deletion> getEmittedSuppliedDefaultDeletions() {
 		return this.inferredSignatureEmitted ? this.suppliedDefaultDeletions : List.of();
+	}
+
+	/**
+	 * Adds an INFO per parameter whose supplied defaults the decorator of this function's conversion deletes, naming each call whose
+	 * argument goes (#1323), so an analysis that writes no change still shows the call sites its signature rewrites. Nothing is added
+	 * unless that decorator carries the inferred signature needing the deletions ({@link #isHybridizedWithInputSignature()}), so a
+	 * signature inferred and then withheld, or unwritable under the file's imports, names no deletion. To be called once the function's
+	 * preconditions are checked.
+	 */
+	public void reportSuppliedDefaultDeletions() {
+		if (this.deletedDefaultParameters.isEmpty() || !this.isHybridizedWithInputSignature())
+			return;
+
+		for (Parameter param : this.deletedDefaultParameters)
+			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
+					+ "` has a default value, and every caller passing it passes the default, "
+					+ "so it is left out of the input signature and the argument is deleted at " + param.getSuppliedDefaultDeletion()
+							.deletions().stream().map(SuppliedDefaultDeletion.Deletion::location).collect(Collectors.joining(", "))
+					+ ".");
 	}
 
 	public List<TextEdit> transform() throws BadLocationException, MalformedTreeException, NoTextSelectionException,

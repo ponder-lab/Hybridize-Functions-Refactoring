@@ -11200,6 +11200,32 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #1323 with #864's withholding: every call passing `scale` passes its default, so the inferred signature leaves `scale` out,
+	 * but the signature is withheld for an axis the body reads statically. The function hybridizes bare, nothing is deleted, and no INFO
+	 * says an argument is.
+	 */
+	@Test
+	public void testSuppliedDefaultWithheldSignature() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = findFunction(this.getFunctions(), "f");
+		Parameter scale = f.getParameters().get(1);
+		assertEquals("scale", scale.getName());
+		assertEquals(TRUE, scale.isSuppliedAtCallSite());
+		assertTrue("The call passes the default.", scale.getSuppliedDefaultDeletion().applies());
+
+		assertEquals("`f` still hybridizes, bare.", P1, f.getPassingPrecondition());
+		assertTrue(f.getTransformations().contains(Transformation.CONVERT_TO_HYBRID));
+		assertEquals("The inferred signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				f.getInferredInputSignatureAbsenceReason());
+		assertFalse("The decorator carries no signature.", f.isHybridizedWithInputSignature());
+		assertTrue("No INFO reports a deletion that isn't made.",
+				Arrays.stream(f.getStatus().getEntries()).noneMatch(e -> e.getMessage().contains("the argument is deleted at")));
+
+		f.transform();
+		assertTrue("Without the signature, nothing is deleted.", f.getEmittedSuppliedDefaultDeletions().isEmpty());
+	}
+
+	/**
 	 * Regression test for #787's suffix rule. `training` is defaulted, non-tensor, and supplied by nobody, so it looks omittable, but
 	 * `mask` follows it and contributes a spec. An input signature covers parameters positionally, so omitting `training` would apply
 	 * mask's spec to it. The parameter blocks as `DEFAULTED_PARAMETER_PRECEDES_SPEC`, which is distinct from being supplied: no call-site

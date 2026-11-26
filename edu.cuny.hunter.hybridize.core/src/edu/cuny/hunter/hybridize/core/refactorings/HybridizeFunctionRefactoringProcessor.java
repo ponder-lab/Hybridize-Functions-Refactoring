@@ -745,6 +745,9 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				assert func.hasOnlyOneFailurePerKind() : "Count failures only once.";
 			});
 
+			// Once each function's preconditions decide whether its decorator carries the signature its deletions accompany (#1323).
+			projectFunctions.forEach(Function::reportSuppliedDefaultDeletions);
+
 			// Merged after the loop rather than inside it: a RefactoringStatus isn't thread-safe, and this keeps the entries in the
 			// functions' order however they were checked (issue 315).
 			projectFunctions.forEach(func -> status.merge(func.getStatus()));
