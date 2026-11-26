@@ -69,7 +69,10 @@ import com.ibm.wala.util.collections.Iterator2Iterable;
  * none spreads {@code *} or {@code **} arguments.</li>
  * <li>A call supplying the parameter passes it as a literal of the default's kind and value, by keyword or as its last positional argument.
  * The value is compared, not the text: {@code 'a'} and {@code "a"} agree, as do {@code 1_000} and {@code 1000}, while {@code 1} and
- * {@code 1.0}, or {@code True} and {@code 1}, do not, and neither do {@code 0.0} and {@code -0.0}.</li>
+ * {@code 1.0}, or {@code True} and {@code 1}, do not, and neither do {@code 0.0} and {@code -0.0}. A keyword-only parameter is supplied
+ * only by keyword.</li>
+ * <li>The argument follows another one: the removal runs from the comma before it, so a call's first or only written argument, such as
+ * {@code f(p=-1)}, is not removed, and the relaxation declines.</li>
  * </ol>
  * <p>
  * The call set is the call graph's, so the change rests on the same closed world as the omission of #787: a call the analysis does not see,
@@ -246,7 +249,12 @@ public final class SuppliedDefaultDeletion {
 
 				if (keyword)
 					supplied = keywordValue(call, parameter.getName());
-				else {
+				else if (parameter.isKeywordOnly()) {
+					// A keyword-only parameter is never filled positionally, and its index counts among the keyword-only parameters, not
+					// the positional slots, so a call not naming it omits it.
+					omitting.add(call);
+					continue;
+				} else {
 					// A bound call's receiver fills `self` before the first written argument; an unbound one passes it written.
 					int slot = site.bound() ? parameter.getIndex() - 1 : parameter.getIndex();
 					// Only a method is reached through a trampoline, and only a plain function directly (above).

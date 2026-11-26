@@ -10951,6 +10951,51 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #1323: a keyword-only parameter is supplied only by keyword. A call not naming it omits it, even when the written argument
+	 * in the slot its index would name equals its default, so only the keyword argument is deleted.
+	 */
+	@Test
+	public void testSuppliedDefaultDeletedKeywordOnly() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = findFunction(this.getFunctions(), "f");
+		Parameter p = f.getParameters().stream().filter(x -> x.getName().equals("p")).findFirst().orElseThrow();
+		assertTrue("`p` is keyword-only.", p.isKeywordOnly());
+		assertTrue("Every call supplying `p` passes its default.", p.getSuppliedDefaultDeletion().applies());
+
+		List<SuppliedDefaultDeletion.Deletion> deletions = p.getSuppliedDefaultDeletion().deletions();
+		assertEquals("Only the call naming `p` is edited.", 1, deletions.size());
+		assertEquals("The removed text is `, p=-1`.", ", p=-1",
+				f.getContainingDocument().get(deletions.get(0).offset(), deletions.get(0).length()));
+	}
+
+	/**
+	 * Test for #1323: two relaxed functions, one called inside the other's call, each passing its default. Their deletions are disjoint and
+	 * apply together.
+	 */
+	@Test
+	public void testSuppliedDefaultDeletedNestedCalls() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+		Function f = assertSuppliedDefaultDeletion(functions, "f", "axis", true);
+		Function g = assertSuppliedDefaultDeletion(functions, "g", "scale", true);
+		IDocument document = f.getContainingDocument();
+
+		List<TextEdit> edits = new ArrayList<>();
+		for (Function function : List.of(f, g)) {
+			function.transform();
+			function.getEmittedSuppliedDefaultDeletions().forEach(d -> edits.add(d.toEdit()));
+		}
+
+		assertEquals("One deletion for each function.", 2, edits.size());
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(document);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName("A")), document.get());
+	}
+
+	/**
 	 * Test for #1323: values are compared, not their text, so another quote form, a digit separator, a trailing zero, a hexadecimal
 	 * integer, and `None` all equal the defaults they are written for.
 	 */
