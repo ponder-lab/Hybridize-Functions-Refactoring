@@ -11136,6 +11136,61 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * Test for #1323: the default is passed as the call's first written argument, which has no comma before it to remove, so it is not
+	 * deleted.
+	 */
+	@Test
+	public void testSuppliedDefaultFirstArgumentDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = assertSuppliedDefaultDeletion(this.getFunctions(), "f", "axis", false);
+		assertEquals("a call's argument could not be located in its source",
+				f.getParameters().get(1).getSuppliedDefaultDeletion().decline());
+	}
+
+	/**
+	 * Test for #1323: a complex default is not among the literals compared.
+	 */
+	@Test
+	public void testSuppliedDefaultComplexDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = assertSuppliedDefaultDeletion(this.getFunctions(), "f", "c", false);
+		assertEquals("its default is not a literal", f.getParameters().get(1).getSuppliedDefaultDeletion().decline());
+	}
+
+	/**
+	 * Test for #1323: a raw-string default passed as the same raw string is deleted, prefix included.
+	 */
+	@Test
+	public void testSuppliedDefaultDeletedRawString() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = assertSuppliedDefaultDeletion(this.getFunctions(), "f", "pattern", true);
+		this.assertTransformedWithDeletions(f, f.getContainingDocument(), f.getContainingActualFile(), "A", true);
+	}
+
+	/**
+	 * Test for #1323 with #787's suffix rule: every call passing `training` passes its default, but `mask` follows it and needs a spec, so
+	 * `training` still blocks as `DEFAULTED_PARAMETER_PRECEDES_SPEC`, and no argument is deleted.
+	 */
+	@Test
+	public void testSuppliedDefaultPrecedesSpec() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = findFunction(this.getFunctions(), "f");
+		Parameter training = f.getParameters().get(1);
+		assertEquals("training", training.getName());
+		assertEquals(TRUE, training.isSuppliedAtCallSite());
+		assertTrue("The call passes the default.", training.getSuppliedDefaultDeletion().applies());
+
+		InferenceResult result = f.inferInputSignature();
+		assertFalse(result.signature().isPresent());
+		assertEquals(Set.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC),
+				f.getBlockingParameterReasons().get(training));
+		assertTrue("Without the signature, nothing is deleted.", f.getEmittedSuppliedDefaultDeletions().isEmpty());
+		RefactoringStatusEntry entry = f.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+		assertNotNull(entry);
+		assertTrue(entry.getMessage(), entry.getMessage().contains("every caller passing it passes the default"));
+	}
+
+	/**
 	 * Regression test for #787's suffix rule. `training` is defaulted, non-tensor, and supplied by nobody, so it looks omittable, but
 	 * `mask` follows it and contributes a spec. An input signature covers parameters positionally, so omitting `training` would apply
 	 * mask's spec to it. The parameter blocks as `DEFAULTED_PARAMETER_PRECEDES_SPEC`, which is distinct from being supplied: no call-site
