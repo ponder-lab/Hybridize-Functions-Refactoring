@@ -87,6 +87,7 @@ import edu.cuny.hunter.hybridize.core.analysis.LostPyDevAnswerError;
 import edu.cuny.hunter.hybridize.core.analysis.NoDeclaringModuleException;
 import edu.cuny.hunter.hybridize.core.analysis.NoTextSelectionException;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
+import edu.cuny.hunter.hybridize.core.analysis.SuppliedDefaultDeletion;
 import edu.cuny.hunter.hybridize.core.analysis.UndeterminablePythonSideEffectsException;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
 import edu.cuny.hunter.hybridize.core.descriptors.HybridizeFunctionRefactoringDescriptor;
@@ -520,11 +521,18 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 			// functions, by the absolute path of their file, each read once and shared across the functions.
 			Map<String, ExceptionHandlerAnalysis> modules = new HashMap<>();
 
+			// The same modules with their files and documents, where a call supplying a parameter its default may be edited (#1323).
+			Map<String, SuppliedDefaultDeletion.SourceModule> sourceModules = new HashMap<>();
+
 			for (Function func : projectFunctions) {
 				SimpleNode module = func.getContainingModule();
 
-				if (module != null)
+				if (module != null) {
 					modules.computeIfAbsent(func.getContainingFile().getAbsolutePath(), k -> new ExceptionHandlerAnalysis(module));
+					sourceModules.computeIfAbsent(func.getContainingFile().getAbsolutePath(),
+							k -> new SuppliedDefaultDeletion.SourceModule(func.getContainingActualFile(), func.getContainingDocument(),
+									module));
+				}
 			}
 
 			this.getStream(projectFunctions).forEach(func -> {
@@ -553,7 +561,7 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// Keras itself supplies `training` and `mask` to such a class's `call` (issue 1099). Also cheap: a walk over the class's
 				// bases, with no points-to query.
 				try {
-					func.inferSuppliedParameters(callGraph, this.splitForFunction(subMonitor));
+					func.inferSuppliedParameters(callGraph, sourceModules, this.splitForFunction(subMonitor));
 					func.computeExtendsKerasCallableClass(callGraph);
 				} catch (CoreException e) {
 					LOG.error("Can't infer supplied parameters for: " + func + ".", e);
@@ -942,6 +950,11 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 
 			// add the edit to the edits for the document.
 			fileEdits.addAll(funcEdits);
+
+			// The supplied default arguments the function's signature needs deleted, wherever their calls are (#1323).
+			for (SuppliedDefaultDeletion.Deletion deletion : function.getEmittedSuppliedDefaultDeletions())
+				fileToEdits.computeIfAbsent(deletion.file(), k -> new PriorityQueue<>((x, y) -> x.getExclusiveEnd() - y.getExclusiveEnd()))
+						.add(deletion.toEdit());
 		}
 
 		CompositeChange ret = new CompositeChange("Hybridize");

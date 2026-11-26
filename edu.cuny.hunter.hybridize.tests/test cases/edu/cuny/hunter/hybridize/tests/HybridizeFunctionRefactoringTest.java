@@ -170,6 +170,7 @@ import edu.cuny.hunter.hybridize.core.analysis.Parameter;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionFailure;
 import edu.cuny.hunter.hybridize.core.analysis.PreconditionSuccess;
 import edu.cuny.hunter.hybridize.core.analysis.Refactoring;
+import edu.cuny.hunter.hybridize.core.analysis.SuppliedDefaultDeletion;
 import edu.cuny.hunter.hybridize.core.analysis.TensorClassificationBasis;
 import edu.cuny.hunter.hybridize.core.analysis.Transformation;
 import edu.cuny.hunter.hybridize.core.analysis.Util;
@@ -10843,6 +10844,250 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
 		assertTrue("Status message must cite parameter `training`.", entry.getMessage().contains("`training`"));
 		assertFalse("Wizard-facing status text must not cite an issue tracker.", entry.getMessage().matches(".*#\\d+.*"));
+	}
+
+	/**
+	 * Asserts what the relaxation of #1323 decided for {@code parameterName} of the function {@code identifier}, which some call supplies,
+	 * and that the signature follows it.
+	 *
+	 * @param functions The fixture's functions.
+	 * @param identifier The function's identifier.
+	 * @param parameterName The defaulted parameter.
+	 * @param applies Whether every supplying call is expected to pass the default, so the arguments are deleted.
+	 * @return The function.
+	 */
+	private static Function assertSuppliedDefaultDeletion(Set<Function> functions, String identifier, String parameterName,
+			boolean applies) {
+		Function function = findFunction(functions, identifier);
+		Parameter parameter = function.getParameters().stream().filter(p -> p.getName().equals(parameterName)).findFirst().orElseThrow();
+
+		assertTrue("`" + parameterName + "` declares a default.", parameter.hasDefault());
+		assertEquals("Some call supplies `" + parameterName + "`.", TRUE, parameter.isSuppliedAtCallSite());
+		assertNotNull("The relaxation was asked about `" + parameterName + "`.", parameter.getSuppliedDefaultDeletion());
+		assertEquals(
+				"Whether every call supplying `" + parameterName + "` passes its default ("
+						+ parameter.getSuppliedDefaultDeletion().decline() + ").",
+				applies, parameter.getSuppliedDefaultDeletion().applies());
+
+		InferenceResult result = function.inferInputSignature();
+
+		if (applies)
+			assertTrue("Deleting the default arguments lets the signature be inferred.", result.signature().isPresent());
+		else {
+			assertFalse("A declined relaxation leaves the parameter supplied.", result.signature().isPresent());
+			assertEquals("It blocks as it did before the relaxation.", Set.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED),
+					function.getBlockingParameterReasons().get(parameter));
+			RefactoringStatusEntry entry = function.getStatus().getEntryMatchingCode(PLUGIN_ID, INPUT_SIGNATURE_INFERENCE.getCode());
+			assertNotNull("Expected an INPUT_SIGNATURE_INFERENCE INFO status.", entry);
+		}
+
+		return function;
+	}
+
+	/**
+	 * Applies, highest offset first, the function's edits to its document, together with the deletions in that document that its signature
+	 * needs (#1323), and compares the result with {@code out/<module>.py}.
+	 *
+	 * @param function The function to transform.
+	 * @param document The document of the module {@code module}.
+	 * @param file The file of that module, to select the deletions in it.
+	 * @param module The module's name, without extension.
+	 * @param transform Whether the function's own edits are in this document.
+	 */
+	private void assertTransformedWithDeletions(Function function, IDocument document, IFile file, String module, boolean transform)
+			throws Exception {
+		List<TextEdit> edits = new ArrayList<>(transform ? function.transform() : List.of());
+
+		if (!transform)
+			function.transform();
+
+		for (SuppliedDefaultDeletion.Deletion deletion : function.getEmittedSuppliedDefaultDeletions())
+			if (deletion.file().equals(file))
+				edits.add(deletion.toEdit());
+
+		edits.sort(Comparator.comparingInt(TextEdit::getOffset).reversed());
+
+		for (TextEdit edit : edits)
+			edit.apply(document);
+
+		assertEqualLines(this.getFileContents(this.getOutputTestFileName(module)), document.get());
+	}
+
+	/**
+	 * Test for #1323: the one call supplying `axis` passes it its default by keyword, so the argument is deleted and `axis` is left out of
+	 * the signature.
+	 */
+	@Test
+	public void testSuppliedDefaultDeletedKeyword() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+		Function f = assertSuppliedDefaultDeletion(functions, "f", "axis", true);
+		assertEquals("[tf.TensorSpec(shape=(2,), dtype=tf.float32)]", f.inferInputSignature().signature().get().toTensorSpecList("tf."));
+		this.assertTransformedWithDeletions(f, f.getContainingDocument(), f.getContainingActualFile(), "A", true);
+	}
+
+	/**
+	 * Test for #1323: the default is passed as the call's last positional argument.
+	 */
+	@Test
+	public void testSuppliedDefaultDeletedPositional() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+		Function f = assertSuppliedDefaultDeletion(functions, "f", "axis", true);
+		this.assertTransformedWithDeletions(f, f.getContainingDocument(), f.getContainingActualFile(), "A", true);
+	}
+
+	/**
+	 * Test for #1323 over the trampoline path: a bound call through `self` by keyword, and one through an instance positionally. The slot a
+	 * positional argument fills is counted after the receiver the trampoline binds.
+	 */
+	@Test
+	public void testSuppliedDefaultDeletedMethod() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+		Function softmax = assertSuppliedDefaultDeletion(functions, "Attention.softmax", "axis", true);
+		assertEquals("Both calls are edited.", 2, softmax.getParameters().get(2).getSuppliedDefaultDeletion().deletions().size());
+		this.assertTransformedWithDeletions(softmax, softmax.getContainingDocument(), softmax.getContainingActualFile(), "A", true);
+	}
+
+	/**
+	 * Test for #1323: values are compared, not their text, so another quote form, a digit separator, a trailing zero, a hexadecimal
+	 * integer, and `None` all equal the defaults they are written for.
+	 */
+	@Test
+	public void testSuppliedDefaultDeletedValueForms() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+
+		for (String name : List.of("name", "size", "rate", "mask", "extra"))
+			assertSuppliedDefaultDeletion(functions, "f", name, true);
+
+		Function f = findFunction(functions, "f");
+		this.assertTransformedWithDeletions(f, f.getContainingDocument(), f.getContainingActualFile(), "A", true);
+	}
+
+	/**
+	 * Test for #1323: the call passing the default is in a module none of whose functions are refactored, so it is not among the modules
+	 * the refactoring may edit, and the relaxation declines.
+	 */
+	@Test
+	public void testSuppliedDefaultUnreadModuleDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = assertSuppliedDefaultDeletion(this.getFunctions("B"), "f", "axis", false);
+		assertEquals("a call is in a module the refactoring does not read",
+				f.getParameters().get(1).getSuppliedDefaultDeletion().decline());
+	}
+
+	/**
+	 * Test for #1323: a value Python's `==` equates with the default but of another kind, or another sign of zero, is not deleted.
+	 */
+	@Test
+	public void testSuppliedDefaultKindMismatchDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+		assertSuppliedDefaultDeletion(functions, "f", "n", false);
+		assertSuppliedDefaultDeletion(functions, "g", "b", false);
+		assertSuppliedDefaultDeletion(functions, "h", "z", false);
+	}
+
+	/**
+	 * Test for #1323: a name bound to the default's value is not compared, since only literals are.
+	 */
+	@Test
+	public void testSuppliedDefaultNonLiteralDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		assertSuppliedDefaultDeletion(this.getFunctions(), "f", "axis", false);
+	}
+
+	/**
+	 * Test for #1323: a positional default followed by another positional argument is not deleted, since the later one would shift into its
+	 * place.
+	 */
+	@Test
+	public void testSuppliedDefaultLaterPositionalDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		Set<Function> functions = this.getFunctions();
+		Function f = findFunction(functions, "f");
+		Parameter a = f.getParameters().get(1);
+		assertEquals("a", a.getName());
+		assertNotNull(a.getSuppliedDefaultDeletion());
+		assertFalse("`a` is followed by `b`.", a.getSuppliedDefaultDeletion().applies());
+		assertFalse(f.inferInputSignature().signature().isPresent());
+	}
+
+	/**
+	 * Test for #1323: a call spreading its arguments declines the relaxation, even though another call passes the default by keyword.
+	 */
+	@Test
+	public void testSuppliedDefaultSpreadDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = findFunction(this.getFunctions(), "f");
+		Parameter axis = f.getParameters().get(1);
+		assertNotEquals("Some call may supply `axis`.", FALSE, axis.isSuppliedAtCallSite());
+		assertTrue("No deletion is made.", axis.getSuppliedDefaultDeletion() == null || !axis.getSuppliedDefaultDeletion().applies());
+		assertFalse(f.inferInputSignature().signature().isPresent());
+	}
+
+	/**
+	 * Test for #1323: a call that may dispatch to an override with another default is not edited.
+	 */
+	@Test
+	public void testSuppliedDefaultOverrideDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		assertSuppliedDefaultDeletion(this.getFunctions(), "Base.f", "axis", false);
+	}
+
+	/**
+	 * Test for #1323's closed world: a call through `getattr` with a string. The analysis sees it, and since the call names no function in
+	 * the source, it is not found and the relaxation declines. A dynamic call the analysis does not see would keep its argument instead,
+	 * and raise once the signature is on.
+	 */
+	@Test
+	public void testSuppliedDefaultGetattrCall() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = assertSuppliedDefaultDeletion(this.getFunctions(), "Layer.f", "axis", false);
+		Parameter axis = f.getParameters().get(2);
+		assertEquals("axis", axis.getName());
+		assertEquals("a call was not found as the only one of its shape on line 15", axis.getSuppliedDefaultDeletion().decline());
+	}
+
+	/**
+	 * Test for #1323: a decorated function's callers reach the decorator's wrapper, so its calls are not edited.
+	 */
+	@Test
+	public void testSuppliedDefaultDecoratedDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = findFunction(this.getFunctions(), "f");
+		Parameter axis = f.getParameters().get(1);
+		assertTrue("No deletion is made.", axis.getSuppliedDefaultDeletion() == null || !axis.getSuppliedDefaultDeletion().applies());
+		assertFalse(f.inferInputSignature().signature().isPresent());
+	}
+
+	/**
+	 * Test for #1323: calls through `super()`, unbound through the class, and bound. A method reached without a trampoline binds its
+	 * receiver in a way the written arguments do not show, so which one fills the parameter is not known and the relaxation declines.
+	 */
+	@Test
+	public void testSuppliedDefaultSuperCall() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = assertSuppliedDefaultDeletion(this.getFunctions(), "Base.f", "axis", false);
+		Parameter axis = f.getParameters().get(2);
+		assertEquals("axis", axis.getName());
+		assertEquals("a call reaches the method without binding its receiver as the engine's trampolines do",
+				axis.getSuppliedDefaultDeletion().decline());
+	}
+
+	/**
+	 * Test for #1323: a static method declines as any decorated function does.
+	 */
+	@Test
+	public void testSuppliedDefaultStaticMethodDeclines() throws Exception {
+		this.setInferInputSignatures(true);
+		Function f = findFunction(this.getFunctions(), "Ops.f");
+		Parameter axis = f.getParameters().get(1);
+		assertEquals("axis", axis.getName());
+		assertTrue("No deletion is made.", axis.getSuppliedDefaultDeletion() == null || !axis.getSuppliedDefaultDeletion().applies());
+		assertFalse(f.inferInputSignature().signature().isPresent());
 	}
 
 	/**

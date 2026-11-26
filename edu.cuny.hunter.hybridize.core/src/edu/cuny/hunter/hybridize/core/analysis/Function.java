@@ -1171,6 +1171,15 @@ public class Function {
 	private Map<Parameter, InputSignature.SpecEntry> inferredSpecByParameter = Map.of();
 
 	/**
+	 * The deletions of supplied default arguments the inferred signature needs, one per supplying call of each parameter it omits only
+	 * because those calls pass exactly the default (#1323). Empty until a signature is inferred.
+	 */
+	private List<SuppliedDefaultDeletion.Deletion> suppliedDefaultDeletions = List.of();
+
+	/** Whether {@link #transform()} wrote the inferred signature into the decorator, which the deletions accompany. */
+	private boolean inferredSignatureEmitted;
+
+	/**
 	 * True iff a parameter axis that this {@link Function}'s body (transitively) reads statically and consumes where a Python integer is
 	 * required is left unresolved (wildcard) by the inferred input signature, so emitting that signature would break the function at trace
 	 * time. {@code false} when no signature would be emitted (inference off or absent) or every such axis is concrete; {@code null} when it
@@ -5929,12 +5938,17 @@ public class Function {
 	 * </ul>
 	 * Ignorance is recorded as {@code null} rather than {@code FALSE}: no call-graph node, an unresolvable predecessor, or a non-Python
 	 * invoke all leave the parameter un-omittable, matching how every other axis of the reduction treats absent evidence.
+	 * <p>
+	 * A parameter some call site supplies is also asked whether every such call passes its default as a literal, in which case those
+	 * arguments can be deleted and the parameter omitted after all ({@link SuppliedDefaultDeletion}, #1323).
 	 *
 	 * @param callGraph The call graph to query for this function's callers.
+	 * @param modules The modules whose calls may be edited, by the absolute path of their file.
 	 * @param monitor Progress monitor for the sub-work.
 	 * @throws CoreException If the call-graph node lookup fails.
 	 */
-	public void inferSuppliedParameters(CallGraph callGraph, IProgressMonitor monitor) throws CoreException {
+	public void inferSuppliedParameters(CallGraph callGraph, Map<String, SuppliedDefaultDeletion.SourceModule> modules,
+			IProgressMonitor monitor) throws CoreException {
 		List<Parameter> parameters = this.getParameters();
 		SubMonitor subMonitor = SubMonitor.convert(monitor, "Inferring supplied parameters...", parameters.size());
 
@@ -5958,6 +5972,13 @@ public class Function {
 		for (Parameter parameter : defaulted) {
 			parameter.setSuppliedAtCallSite(this.isSuppliedAtAnyCallSite(parameter, nodes, callGraph));
 			LOG.info("Parameter " + parameter + " supplied at a call site: " + parameter.isSuppliedAtCallSite() + ".");
+
+			if (TRUE.equals(parameter.isSuppliedAtCallSite())) {
+				SuppliedDefaultDeletion.Result deletion = SuppliedDefaultDeletion.compute(this, parameter, nodes, callGraph, modules);
+				parameter.setSuppliedDefaultDeletion(deletion);
+				LOG.info("Parameter " + parameter + " is passed only its default: "
+						+ (deletion.applies() ? "yes, at " + deletion.deletions().size() + " call(s)" : "no, " + deletion.decline()) + ".");
+			}
 			subMonitor.worked(1);
 		}
 
@@ -6349,6 +6370,9 @@ public class Function {
 		// runs: a parameter is only genuinely omittable if nothing after it needs a spec.
 		Set<Parameter> omittable = new LinkedHashSet<>();
 
+		// The omittable parameters that some call supplies with exactly its default, whose arguments are deleted if they stay omitted.
+		Set<Parameter> deletedDefaults = new LinkedHashSet<>();
+
 		/*
 		 * Every reason that holds for a parameter is recorded, as every failed precondition of a function is, but a check runs only while
 		 * its premise stands. Each `continue` after a block below says why the later checks are or are not reached. The two checks after
@@ -6407,6 +6431,17 @@ public class Function {
 						continue;
 					}
 
+					// Supplied, but every supplying call passes exactly the default as a literal: deleting those arguments leaves the
+					// calls meaning what they did and the parameter supplied by none, so it is omittable after all. Provisional like any
+					// omittable parameter, and the deletions are kept only if the suffix rule keeps it (#1323).
+					SuppliedDefaultDeletion.Result deletion = param.getSuppliedDefaultDeletion();
+
+					if (TRUE.equals(supplied) && deletion != null && deletion.applies()) {
+						omittable.add(param);
+						deletedDefaults.add(param);
+						continue;
+					}
+
 					// Supplied somewhere, or the call sites could not be examined. Omitting it would cut the hybridized function's arity
 					// below what a caller passes, so it must be covered, and no spec exists for it. `null` lands here deliberately:
 					// ignorance is not evidence of absence.
@@ -6414,7 +6449,10 @@ public class Function {
 							"Parameter `" + param.getName() + "` of `" + this + "` has a default value but is passed explicitly by at "
 									+ "least one caller, so it cannot be left out of an input signature, and being non-tensor it has no "
 									+ "spec; input-signature inference is dropped. Removing the argument from those call sites, so the "
-									+ "default always applies, would let the parameter be omitted.");
+									+ "default always applies, would let the parameter be omitted."
+									+ (deletion == null || deletion.applies() ? ""
+											: " The tool removes such arguments itself only when every one equals the default; here "
+													+ deletion.decline() + "."));
 					addBlockingReason(blocking, param, AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED);
 					// Not reached, as for the Keras-supplied case above.
 					continue;
@@ -6664,8 +6702,13 @@ public class Function {
 			Parameter param = nonSelfParameters.get(i);
 
 			if (omittable.remove(param)) {
+				deletedDefaults.remove(param);
 				this.addInfo(INPUT_SIGNATURE_INFERENCE,
-						"Parameter `" + param.getName() + "` of `" + this + "` has a default value and no caller passes it, but a later "
+						"Parameter `" + param.getName() + "` of `" + this + "` has a default value and "
+								+ (param.getSuppliedDefaultDeletion() != null && param.getSuppliedDefaultDeletion().applies()
+										? "every caller passing it passes the default"
+										: "no caller passes it")
+								+ ", but a later "
 								+ "parameter needs a spec, and an input signature covers parameters by position; leaving it out would "
 								+ "apply the later parameter's spec to it. Input-signature inference is dropped.");
 				addBlockingReason(blocking, param, AbsenceReason.DEFAULTED_PARAMETER_PRECEDES_SPEC);
@@ -6697,6 +6740,12 @@ public class Function {
 		// Retain the per-parameter mapping for consumers needing parameter-level attribution of the reduced spec (the unresolved
 		// statically-read-axis precondition resolves its parameter ordinals through it; issue 811).
 		this.inferredSpecByParameter = Collections.unmodifiableMap(specByParameter);
+
+		// The deletions the omitted parameters need, applied only together with the signature that needs them.
+		List<SuppliedDefaultDeletion.Deletion> deletions = new ArrayList<>();
+		for (Parameter param : deletedDefaults)
+			deletions.addAll(param.getSuppliedDefaultDeletion().deletions());
+		this.suppliedDefaultDeletions = List.copyOf(deletions);
 
 		return new InferenceResult.Inferred(new InputSignature(new ArrayList<>(specByParameter.values())));
 	}
@@ -7506,6 +7555,17 @@ public class Function {
 		return inputSignatureKeyword(signature, this.emissionImportContext(() -> signature)).isPresent();
 	}
 
+	/**
+	 * The deletions of supplied default arguments that accompany the inferred signature {@link #transform()} wrote, which may lie in other
+	 * files (#1323). Empty unless a signature omitting such a parameter was written, so a deletion never applies without the signature that
+	 * needs it, and the signature is inferred only once every deletion is located.
+	 *
+	 * @return The deletions, to apply with this function's edits.
+	 */
+	public List<SuppliedDefaultDeletion.Deletion> getEmittedSuppliedDefaultDeletions() {
+		return this.inferredSignatureEmitted ? this.suppliedDefaultDeletions : List.of();
+	}
+
 	public List<TextEdit> transform() throws BadLocationException, MalformedTreeException, NoTextSelectionException,
 			AmbiguousDeclaringModuleException, NoDeclaringModuleException {
 		List<TextEdit> ret = new ArrayList<>();
@@ -7936,8 +7996,10 @@ public class Function {
 			// Insertion point is just before the matching close parenthesis; captured as effectively final for the lambda below.
 			final int insertOffset = closeOffset;
 
-			this.computeInputSignatureKeyword(ctx)
-					.ifPresent(kw -> mte.addChild(new InsertEdit(insertOffset, hasArguments ? ", " + kw : kw)));
+			this.computeInputSignatureKeyword(ctx).ifPresent(kw -> {
+				mte.addChild(new InsertEdit(insertOffset, hasArguments ? ", " + kw : kw));
+				this.inferredSignatureEmitted = true;
+			});
 		} else
 			// Bare `@tf.function` (no parentheses): append a parenthesized argument list right after the decorator name. This is the
 			// argless-existing-decorator sub-case `addInputSignature` is documented to serve.
@@ -8083,7 +8145,9 @@ public class Function {
 	 * @return The parenthesized {@code (input_signature=...)} text, or empty if the gate fails.
 	 */
 	private Optional<String> addInputSignature(ImportContext ctx) {
-		return this.computeInputSignatureKeyword(ctx).map(kw -> "(" + kw + ")");
+		Optional<String> ret = this.computeInputSignatureKeyword(ctx).map(kw -> "(" + kw + ")");
+		this.inferredSignatureEmitted |= ret.isPresent();
+		return ret;
 	}
 
 	private static int getLineToInsertImport(IDocument doc) {

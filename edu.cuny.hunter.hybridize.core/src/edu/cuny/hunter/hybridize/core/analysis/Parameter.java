@@ -237,6 +237,12 @@ public final class Parameter {
 	private Boolean suppliedAtCallSite;
 
 	/**
+	 * For a parameter some call site supplies, whether every such call passes its default literal, and if so the deletions that leave it
+	 * supplied by none (#1323). Populated by {@link Function#inferSuppliedParameters}; {@code null} when the question was not asked.
+	 */
+	private SuppliedDefaultDeletion.Result suppliedDefaultDeletion;
+
+	/**
 	 * Owning {@link Function} back-reference.
 	 */
 	private final Function function;
@@ -336,6 +342,16 @@ public final class Parameter {
 	public boolean hasDefault() {
 		exprType[] defaults = this.keywordOnly ? this.arguments.kw_defaults : this.arguments.defaults;
 		return defaults != null && this.index < defaults.length && defaults[this.index] != null;
+	}
+
+	/**
+	 * Returns this parameter's declared default value as written, indexed as {@link #hasDefault()} indexes the defaults.
+	 *
+	 * @return The default's expression, or {@code null} if none is declared.
+	 */
+	exprType getDefaultValue() {
+		exprType[] defaults = this.keywordOnly ? this.arguments.kw_defaults : this.arguments.defaults;
+		return defaults != null && this.index < defaults.length ? defaults[this.index] : null;
 	}
 
 	/**
@@ -1562,6 +1578,20 @@ public final class Parameter {
 
 	void setSuppliedAtCallSite(Boolean suppliedAtCallSite) {
 		this.suppliedAtCallSite = suppliedAtCallSite;
+	}
+
+	/**
+	 * Returns whether the arguments supplying this parameter can all be deleted as equal to its default, as computed by
+	 * {@link Function#inferSuppliedParameters} (#1323).
+	 *
+	 * @return The outcome, or {@code null} if the question was not asked, as for a parameter no call site supplies.
+	 */
+	public SuppliedDefaultDeletion.Result getSuppliedDefaultDeletion() {
+		return this.suppliedDefaultDeletion;
+	}
+
+	void setSuppliedDefaultDeletion(SuppliedDefaultDeletion.Result suppliedDefaultDeletion) {
+		this.suppliedDefaultDeletion = suppliedDefaultDeletion;
 	}
 
 	@Override
