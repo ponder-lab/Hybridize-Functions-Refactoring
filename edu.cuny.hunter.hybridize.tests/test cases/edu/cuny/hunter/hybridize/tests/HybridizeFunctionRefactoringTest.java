@@ -10871,9 +10871,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 
 		InferenceResult result = function.inferInputSignature();
 
-		if (applies)
+		if (applies) {
 			assertTrue("Deleting the default arguments lets the signature be inferred.", result.signature().isPresent());
-		else {
+			String locations = parameter.getSuppliedDefaultDeletion().deletions().stream().map(SuppliedDefaultDeletion.Deletion::location)
+					.collect(Collectors.joining(", "));
+			assertTrue("An INFO names the call sites whose `" + parameterName + "` argument is deleted (" + locations + ").",
+					Arrays.stream(function.getStatus().getEntries())
+							.anyMatch(e -> e.isInfo() && e.getCode() == INPUT_SIGNATURE_INFERENCE.getCode()
+									&& e.getMessage().contains("`" + parameterName + "`")
+									&& e.getMessage().endsWith("the argument is deleted at " + locations + ".")));
+		} else {
 			assertFalse("A declined relaxation leaves the parameter supplied.", result.signature().isPresent());
 			assertEquals("It blocks as it did before the relaxation.", Set.of(InferenceResult.AbsenceReason.DEFAULTED_PARAMETER_SUPPLIED),
 					function.getBlockingParameterReasons().get(parameter));
@@ -10947,6 +10954,8 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		Set<Function> functions = this.getFunctions();
 		Function softmax = assertSuppliedDefaultDeletion(functions, "Attention.softmax", "axis", true);
 		assertEquals("Both calls are edited.", 2, softmax.getParameters().get(2).getSuppliedDefaultDeletion().deletions().size());
+		assertEquals("Each deletion reports its call's line.", List.of(14, 19), softmax.getParameters().get(2).getSuppliedDefaultDeletion()
+				.deletions().stream().map(SuppliedDefaultDeletion.Deletion::line).sorted().toList());
 		this.assertTransformedWithDeletions(softmax, softmax.getContainingDocument(), softmax.getContainingActualFile(), "A", true);
 	}
 

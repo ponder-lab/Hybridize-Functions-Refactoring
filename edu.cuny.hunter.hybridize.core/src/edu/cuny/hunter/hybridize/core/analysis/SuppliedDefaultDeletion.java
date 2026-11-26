@@ -100,8 +100,18 @@ public final class SuppliedDefaultDeletion {
 	 * @param file The file holding the call.
 	 * @param offset Where the removed text begins: the comma before the argument.
 	 * @param length The removed text's length, through the argument's last character.
+	 * @param line The 1-based line of the argument, for reporting where the call is.
 	 */
-	public record Deletion(IFile file, int offset, int length) {
+	public record Deletion(IFile file, int offset, int length, int line) {
+
+		/**
+		 * Where the argument is, as its file's workspace path and its line.
+		 *
+		 * @return The location, such as {@code /project/pkg/m.py:12}.
+		 */
+		public String location() {
+			return this.file.getFullPath() + ":" + this.line;
+		}
 
 		/**
 		 * The edit performing the removal, wrapped in a container as every edit the processor collects is.
@@ -490,7 +500,7 @@ public final class SuppliedDefaultDeletion {
 			if (i < 0 || document.getChar(i) != ',')
 				return Optional.empty();
 
-			return Optional.of(new Deletion(module.file(), i, end.get() - i));
+			return Optional.of(new Deletion(module.file(), i, end.get() - i, document.getLineOfOffset(start) + 1));
 		} catch (BadLocationException | RuntimeException e) {
 			LOG.warn("Can't locate the argument " + argument + " in " + module.file() + ".", e);
 			return Optional.empty();

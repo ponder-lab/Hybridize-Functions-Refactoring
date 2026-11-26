@@ -6743,8 +6743,16 @@ public class Function {
 
 		// The deletions the omitted parameters need, applied only together with the signature that needs them.
 		List<SuppliedDefaultDeletion.Deletion> deletions = new ArrayList<>();
-		for (Parameter param : deletedDefaults)
-			deletions.addAll(param.getSuppliedDefaultDeletion().deletions());
+		for (Parameter param : deletedDefaults) {
+			List<SuppliedDefaultDeletion.Deletion> paramDeletions = param.getSuppliedDefaultDeletion().deletions();
+			deletions.addAll(paramDeletions);
+
+			// Named where the signature needing them is inferred, so an analysis writing no change still shows the call sites it rewrites.
+			this.addInfo(INPUT_SIGNATURE_INFERENCE, "Parameter `" + param.getName() + "` of `" + this
+					+ "` has a default value, and every caller passing it passes the default, "
+					+ "so it is left out of the input signature and the argument is deleted at "
+					+ paramDeletions.stream().map(SuppliedDefaultDeletion.Deletion::location).collect(Collectors.joining(", ")) + ".");
+		}
 		this.suppliedDefaultDeletions = List.copyOf(deletions);
 
 		return new InferenceResult.Inferred(new InputSignature(new ArrayList<>(specByParameter.values())));
