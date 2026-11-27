@@ -7317,16 +7317,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertFalse(function.getHasTensorParameter());
 		assertFalse(function.getHasPythonSideEffects());
 
-		RefactoringStatus status = function.getStatus();
-		assertFalse("We can convert something to eager if it does not have side-effects because that will not alter semantics.",
-				status.hasError());
-		assertEquals(0, Arrays.stream(status.getEntries()).filter(RefactoringStatusEntry::isError).count());
-
+		// Without side-effects, converting to eager would not alter semantics, but the function takes no arguments and computes a tensor,
+		// so it is traced once and kept hybrid (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1329).
+		assertTrue(function.takesNoArguments());
+		assertTrue(function.getHasTensorComputation());
 		assertEquals(Refactoring.OPTIMIZE_HYBRID_FUNCTION, function.getRefactoring());
-		assertNotNull(function.getPassingPrecondition());
-		assertEquals(PreconditionSuccess.P2, function.getPassingPrecondition());
-		assertFalse(function.getTransformations().isEmpty());
-		assertEquals(Collections.singleton(Transformation.CONVERT_TO_EAGER), function.getTransformations());
+		assertNull(function.getPassingPrecondition());
+		assertTrue(function.getTransformations().isEmpty());
+		assertNotNull("The already-optimal verdict reports.",
+				function.getEntryMatchingFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS));
+		assertNull(function.getEntryMatchingFailure(PreconditionFailure.HAS_PYTHON_SIDE_EFFECTS));
 	}
 
 	@Test
@@ -12609,6 +12609,41 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		assertTrue("`compute` is hybrid.", compute.isHybrid());
 		assertTrue("`compute` performs a tensor computation.", compute.getHasTensorComputation());
 		assertFalse("A computing hybrid function is not de-hybridized as barren.", compute.getTransformations().contains(CONVERT_TO_EAGER));
+	}
+
+	/**
+	 * A hybrid function that takes no arguments, or only its receiver, and computes on captured tensors keeps its decorator: it is traced
+	 * once, so having no tensor parameter says nothing about whether graph execution pays
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1329). One that performs no tensor computation still
+	 * de-hybridizes under P2, and so does a function with a parameter, however its tensors arrive.
+	 */
+	@Test
+	public void testNoArgumentHybridKeptHybrid() throws Exception {
+		for (String name : new String[] { "train", "Counter.update" }) {
+			Function kept = getFunction(name);
+			assertTrue("`" + name + "` is hybrid.", kept.isHybrid());
+			assertTrue("`" + name + "` takes no arguments.", kept.takesNoArguments());
+			assertFalse("`" + name + "` has no tensor parameter.", kept.getHasTensorParameter());
+			assertTrue("`" + name + "` computes on a captured tensor.", kept.getHasTensorComputation());
+			assertFalse("`" + name + "` is not de-hybridized.", kept.getTransformations().contains(CONVERT_TO_EAGER));
+			assertNull("`" + name + "` passes no precondition.", kept.getPassingPrecondition());
+			assertTrue("`" + name + "` reports why it is kept hybrid.", Arrays.stream(kept.getStatus().getEntries())
+					.anyMatch(e -> e.getSeverity() == INFO && e.getMessage().contains("takes no arguments, so it is traced once")));
+			assertNotNull("`" + name + "` reports the already-optimal verdict, so it isn't counted optimizable.",
+					kept.getEntryMatchingFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS));
+		}
+
+		Function constant = getFunction("constant");
+		assertTrue("`constant` takes no arguments.", constant.takesNoArguments());
+		assertFalse("`constant` performs no tensor computation.", constant.getHasTensorComputation());
+		assertFalse("`constant` has no unresolved call.", constant.isTensorComputationUnresolved());
+		assertEquals("A barren function that takes no arguments still de-hybridizes (P2).", P2, constant.getPassingPrecondition());
+		assertTrue("`constant` selects CONVERT_TO_EAGER.", constant.getTransformations().contains(CONVERT_TO_EAGER));
+
+		Function scale = getFunction("scale");
+		assertFalse("`scale` takes an argument.", scale.takesNoArguments());
+		assertEquals("A function with an argument and no tensor parameter still de-hybridizes (P2).", P2, scale.getPassingPrecondition());
+		assertTrue("`scale` selects CONVERT_TO_EAGER.", scale.getTransformations().contains(CONVERT_TO_EAGER));
 	}
 
 	/**
@@ -19260,14 +19295,16 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 		}
 
 		// TODO: Refuse this once the engine gives an optimizer that `compile` receives by name a callee
-		// (https://github.com/wala/ML/issues/1154). Until then the stored string has no `get_gradients`, so the call names no API, and the
-		// method de-hybridizes, though it fails eagerly as the instance spelling does.
+		// (https://github.com/wala/ML/issues/1154). Until then the stored string has no `get_gradients`, so the call names no API. The
+		// method stays hybrid regardless, since it takes only its receiver and computes tensors (issue 1329), but not for this reason.
 		Function named = findFunction(functions, "NamedOptimizerRegressor.gradients_step");
 		assertFalse("Today, `NamedOptimizerRegressor.gradients_step` calls no graph-only API the engine names.",
 				named.getHasGraphOnlyCalls());
-		assertEquals("Today, `NamedOptimizerRegressor.gradients_step` de-hybridizes (P2).", P2, named.getPassingPrecondition());
-		assertEquals("Today, `NamedOptimizerRegressor.gradients_step` is de-hybridized.", Collections.singleton(CONVERT_TO_EAGER),
-				named.getTransformations());
+		assertTrue("`NamedOptimizerRegressor.gradients_step` takes only its receiver.", named.takesNoArguments());
+		assertNull("`NamedOptimizerRegressor.gradients_step` passes no precondition.", named.getPassingPrecondition());
+		assertTrue("`NamedOptimizerRegressor.gradients_step` is kept hybrid (issue 1329).", named.getTransformations().isEmpty());
+		assertNull("Today, `NamedOptimizerRegressor.gradients_step` isn't refused for a graph-only call.",
+				named.getEntryMatchingFailure(PreconditionFailure.HAS_GRAPH_ONLY_CALLS));
 
 		Function helper = findFunction(functions, "gradients_of_square");
 		assertNull("The eager helper `gradients_of_square` is not checked.", helper.getHasGraphOnlyCalls());
