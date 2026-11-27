@@ -1123,6 +1123,12 @@ public class Function {
 	private final boolean variableKeywordParameter;
 
 	/**
+	 * True iff this {@link Function} declares a rest-positional ({@code *args}) parameter. Read off the declaration in the constructor,
+	 * like {@link #variableKeywordParameter}, since whether the function takes arguments needs only whether the slot exists (#1329).
+	 */
+	private final boolean variablePositionalParameter;
+
+	/**
 	 * Memoizes {@link #inferInputSignature()}. {@code null} means "not yet computed"; once computed, holds the {@link InferenceResult} so
 	 * the per-parameter INFOs the computation emits as a side effect are added at most once, regardless of how many call sites request the
 	 * signature in a single pass (analysis, import injection, and the transform paths all ask for it).
@@ -1626,6 +1632,7 @@ public class Function {
 		// The rest-keyword slot is read off the declaration rather than wrapped, since what the signature reduction needs from it is only
 		// whether it exists (#902). Wrapping it as a `Parameter` is #465.
 		this.variableKeywordParameter = args != null && args.kwarg != null;
+		this.variablePositionalParameter = args != null && args.vararg != null;
 	}
 
 	public void addFailure(PreconditionFailure failure, String message) {
@@ -2317,6 +2324,11 @@ public class Function {
 	 * A function a caller passes a set ({@link #checkSetArguments}) is left hybrid as well, with no failure, since each such call raises
 	 * and removing the decorator would make it run instead; its {@link Information#SET_ARGUMENT} warning says why
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1184).
+	 * <p>
+	 * Under {@link PreconditionSuccess#P2}, a function that {@linkplain #takesNoArguments() takes no arguments} is kept hybrid unless it is
+	 * established to perform no tensor computation, with {@link PreconditionFailure#HAS_NO_PRIMITIVE_PARAMETERS} as its already-optimal
+	 * verdict: it is traced once, so having no tensor parameter does not mean graph execution gains it nothing
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1329).
 	 *
 	 * @param precondition The precondition the conversion passes when it is selected.
 	 */
@@ -2333,7 +2345,19 @@ public class Function {
 			// A caller passes a set, so each such call raises; removing the decorator would make it run instead, which no refactoring may
 			// do. The function is left hybrid, and the SET_ARGUMENT warning says why (issue 1184).
 			LOG.info(this + " is passed a set, so it is not de-hybridized by " + precondition + ".");
-		else {
+		else if (precondition == P2 && this.takesNoArguments()
+				&& !(FALSE.equals(this.getHasTensorComputation()) && !this.isTensorComputationUnresolved())) {
+			// A function that takes no arguments is traced once and its graph reused on every call, so having no tensor parameter says
+			// nothing about whether graph execution pays: its tensors are captured, not passed. Only an established absence of tensor
+			// computation lets P2 de-hybridize it; otherwise the developer's decorator is kept, and the already-optimal verdict reports
+			// (issue 1329).
+			this.addInfo(TRUE.equals(this.getHasTensorComputation())
+					? "This hybrid function takes no arguments, so it is traced once, and it performs a tensor computation; it is kept hybrid."
+					: "This hybrid function takes no arguments, so it is traced once, and the analysis can't establish that it performs no "
+							+ "tensor computation; it is kept hybrid.");
+			this.addFailure(PreconditionFailure.HAS_NO_PRIMITIVE_PARAMETERS,
+					"Functions with no Python literal arguments may benefit from hybridization.");
+		} else {
 			this.addTransformation(CONVERT_TO_EAGER);
 			this.setPassingPrecondition(precondition);
 		}
@@ -3537,6 +3561,18 @@ public class Function {
 	 */
 	public boolean hasVariableKeywordParameter() {
 		return this.variableKeywordParameter;
+	}
+
+	/**
+	 * True iff this {@link Function} takes no arguments from its callers: it declares no parameter other than a method's receiver, and no
+	 * rest-positional or rest-keyword one. Such a function is traced once (per receiver) and its graph reused on every call, so its tensors
+	 * are captured rather than passed (#1329).
+	 *
+	 * @return True iff this function declares no parameter a caller binds.
+	 */
+	public boolean takesNoArguments() {
+		return this.getParameters().size() == (this.isMethod() ? 1 : 0) && !this.variablePositionalParameter
+				&& !this.hasVariableKeywordParameter();
 	}
 
 	public Boolean getHasTensorParameterIteration() {

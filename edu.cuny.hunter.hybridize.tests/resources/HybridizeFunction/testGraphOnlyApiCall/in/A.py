@@ -49,9 +49,10 @@ def compat_gradients_step():
     return tf.compat.v1.gradients(v * v, [v])
 
 
+# Takes an argument, so a function that takes none (issue 1329) doesn't keep it hybrid: the control for P2.
 @tf.function
-def double():
-    return v * 2.0
+def double(scale):
+    return v * scale
 
 
 x_data = tf.ones([2, 3])
@@ -99,7 +100,7 @@ get_updates_step()
 gradients_step()
 backend_gradients_step()
 calls_gradients_helper()
-double()
+double(2.0)
 compat_gradients_step()
 named_optimizer_step()
 instance_optimizer_step()

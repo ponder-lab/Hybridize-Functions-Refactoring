@@ -614,10 +614,12 @@ public class HybridizeFunctionRefactoringProcessor extends RefactoringProcessor 
 				// tensor-parameter candidate with no primitive parameter—eager (barren blocks hybridization) or hybrid (barren
 				// de-hybridizes); a function with a primitive parameter fails or de-hybridizes on the literal regardless, so computing it
 				// there is wasted. This gate is deliberately narrower than the recursion check, whose result is consulted for every
-				// tensor-parameter candidate. Overridable to run on every function via alwaysCheckTensorComputation.
+				// tensor-parameter candidate. Overridable to run on every function via alwaysCheckTensorComputation. It decides a hybrid
+				// function that takes no arguments too, since that function computes on captured tensors, not parameters (issue 1329).
 				boolean tensorParameter = func.getHasTensorParameter() != null && func.getHasTensorParameter();
 				boolean noPrimitiveParameter = func.getHasPrimitiveParameter() != null && !func.getHasPrimitiveParameter();
-				boolean barrenCouldDecide = tensorParameter && noPrimitiveParameter;
+				boolean barrenCouldDecide = tensorParameter && noPrimitiveParameter
+						|| TRUE.equals(func.isHybrid()) && func.takesNoArguments();
 
 				if (this.getAlwaysCheckTensorComputation() || barrenCouldDecide)
 					func.computeTensorComputation(callGraph, builder.getPointerAnalysis(), tensorTypedKeys);
