@@ -59,9 +59,10 @@ import com.ibm.wala.util.collections.Pair;
  * one.
  * <p>
  * Keras lazy-{@code build} reachability: a layer's own {@code build} is a call-graph <em>sibling</em> of {@code call} (both hang off the
- * {@code __call__} trampoline), so it is seeded by name-based sibling lookup with its {@code input_shape} parameter anchored to the
- * function's first non-receiver parameter. A <em>sublayer's</em> {@code build} is forward-reachable (the trampoline interposes) and is
- * seeded with unknown provenance, mirroring {@code Function.subtractBuildProtocolContributions}'s reachability model.
+ * {@code __call__} trampoline), so it is seeded by name-based sibling lookup with its {@code input_shape} parameter anchored to
+ * {@code call}'s first non-receiver parameter; the layer's other methods are not built from their parameters. A <em>sublayer's</em>
+ * {@code build} is forward-reachable (the trampoline interposes) and is seeded with unknown provenance, mirroring
+ * {@code Function.subtractBuildProtocolContributions}'s reachability model.
  */
 class StaticShapeReadAnalysis {
 
@@ -100,6 +101,9 @@ class StaticShapeReadAnalysis {
 
 	/** The trailing declaring-class segment naming a Keras lazy-{@code build} method. */
 	private static final String BUILD_METHOD_NAME_SUFFIX = "/build";
+
+	/** The trailing declaring-class segment naming a Keras {@code call} method, from whose input a layer builds itself. */
+	private static final String CALL_METHOD_NAME_SUFFIX = "/call";
 
 	/**
 	 * Type-name prefixes of the summarized Keras endpoints a built-in layer application dispatches to (the summary class and its method
@@ -317,9 +321,9 @@ class StaticShapeReadAnalysis {
 			rankReads.addAll(result.rankReads());
 		}
 
-		// The function's own Keras `build` is a sibling under the `__call__` trampoline, not a successor: seed it by name-based lookup,
-		// anchoring its `input_shape` parameter to this function's first non-receiver parameter (the Keras protocol passes the first
-		// argument's shape).
+		// A `call` method's own Keras `build` is a sibling under the `__call__` trampoline, not a successor: seed it by name-based
+		// lookup, anchoring its `input_shape` parameter to this function's first non-receiver parameter (the Keras protocol passes the
+		// first argument's shape).
 		if (method && parameters.length > 2)
 			this.scanOwnBuild(node, reads, rankReads);
 
@@ -332,13 +336,17 @@ class StaticShapeReadAnalysis {
 		return new StaticShapeReads(reads, rankReads);
 	}
 
-	/** Scans this function's own class's {@code build} sibling, if any, anchored to the first non-receiver parameter (ordinal 0). */
+	/**
+	 * Scans this function's own class's {@code build} sibling, if any, anchored to the first non-receiver parameter (ordinal 0). Only a
+	 * {@code call} method takes these reads: {@code __call__} builds the layer from the shape of the input it passes to {@code call}, not
+	 * from any other method's parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1325).
+	 */
 	private void scanOwnBuild(CGNode node, Set<AxisRead> reads, Set<AxisRead> rankReads) {
 		MethodReference reference = node.getMethod().getReference();
 		String declaringClassName = reference.getDeclaringClass().getName().toString();
 		int lastSegment = declaringClassName.lastIndexOf('/');
 
-		if (lastSegment < 0 || declaringClassName.endsWith(BUILD_METHOD_NAME_SUFFIX))
+		if (lastSegment < 0 || !declaringClassName.endsWith(CALL_METHOD_NAME_SUFFIX))
 			return;
 
 		String buildClassName = declaringClassName.substring(0, lastSegment) + BUILD_METHOD_NAME_SUFFIX;

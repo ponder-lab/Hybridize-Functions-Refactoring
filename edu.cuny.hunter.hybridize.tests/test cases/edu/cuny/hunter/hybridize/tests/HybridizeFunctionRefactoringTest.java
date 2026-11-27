@@ -13983,6 +13983,29 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A layer's own {@code build} is built from the input of {@code call} alone
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1325), distilling NLPGNN's {@code GPTAttention}. Both
+	 * {@code Attention.call} and {@code Attention.softmax} take a tensor whose last axis differs across calls, and {@code build} reads
+	 * {@code input_shape[-1]}. That read is {@code call}'s, so its signature is withheld. {@code softmax} reads no shape itself and keeps
+	 * its signature.
+	 */
+	@Test
+	public void testStaticallyReadAxesOwnBuildOnlyForCall() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Set<Function> functions = this.getFunctions();
+
+		Function call = findFunction(functions, "Attention.call");
+		assertTrue("`Attention.call`'s own `build` reads the last axis of its input.", call.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`Attention.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				call.getInferredInputSignatureAbsenceReason());
+
+		Function softmax = findFunction(functions, "Attention.softmax");
+		assertFalse("Keras doesn't build the layer from `softmax`'s parameter.", softmax.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("`Attention.softmax` has a signature.", softmax.getInferredInputSignature().isPresent());
+	}
+
+	/**
 	 * Pins the built-in-layer rank requirement of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/883, reducing
 	 * deep_recommenders' FM linear term: a parameter flowing into a built-in Keras layer must arrive with a known rank, since the layer's
 	 * {@code build} reads a static axis off the input shape ({@code Dense} the last dimension, {@code Conv2D} the channel axis) and an
