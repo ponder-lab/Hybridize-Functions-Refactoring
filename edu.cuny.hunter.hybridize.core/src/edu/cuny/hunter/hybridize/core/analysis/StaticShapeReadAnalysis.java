@@ -62,7 +62,8 @@ import com.ibm.wala.util.collections.Pair;
  * {@code build}, which is a call-graph <em>sibling</em> of {@code call} and is not scanned for it
  * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811). A function that applies a layer is traced with the input it
  * passes, so the applied layer's {@code build}, forward-reachable through the {@code __call__} trampoline, is that function's, seeded with
- * unknown provenance and mirroring {@code Function.subtractBuildProtocolContributions}'s reachability model.
+ * unknown provenance and mirroring {@code Function.subtractBuildProtocolContributions}'s reachability model. A {@code build} that
+ * {@code call} invokes itself is forward-reachable too, runs inside {@code call}'s trace, and is scanned for it the same way.
  */
 class StaticShapeReadAnalysis {
 
@@ -318,12 +319,12 @@ class StaticShapeReadAnalysis {
 			rankReads.addAll(result.rankReads());
 		}
 
-		// A `call` method's own Keras `build` is not scanned: `__call__` runs it before `call`, outside `call`'s signature, on the
-		// caller's input (issue 811). A sublayer's `build` is forward-reachable through the trampoline, but the Keras library frames
-		// between `call` and `build` are
-		// summarized, so taint cannot flow through them slot-by-slot: seed every reachable `build`'s `input_shape` with unknown
-		// provenance instead. Where the sublayer's input derives from no parameter, this over-approximates and may over-block; accepted
-		// safety-first, mirroring the numpy precondition's stance.
+		// The `build` that `__call__` runs is not scanned for the layer's own `call`: it runs before `call`, outside `call`'s signature,
+		// on the caller's input (issue 811). A sublayer's `build` is forward-reachable through the trampoline, but the Keras library
+		// frames between `call` and `build` are summarized, so taint cannot flow through them slot-by-slot: seed every reachable
+		// `build`'s `input_shape` with unknown provenance instead, including a `build` that `call` invokes itself. Where the input
+		// derives from no parameter, this over-approximates and may over-block; accepted safety-first, mirroring the numpy
+		// precondition's stance.
 		this.scanReachableBuilds(node, reads, rankReads);
 
 		return new StaticShapeReads(reads, rankReads);

@@ -14041,6 +14041,25 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
+	 * A {@code build} that a layer's {@code call} invokes itself is charged to {@code call}. Applied through {@code call} directly,
+	 * {@code Lazy} never passes through {@code __call__}, so {@code call} builds the layer inside its own trace, and {@code build} passes
+	 * {@code input_shape[-1]} to {@code add_weight}. The last axis differs across calls, so a wildcard there would raise; the signature is
+	 * withheld. Only the {@code build} that {@code __call__} runs is outside {@code call}'s signature
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811).
+	 */
+	@Test
+	public void testStaticallyReadAxesOwnBuildCalledFromCall() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = getFunction("Lazy.call");
+		assertTrue("`Lazy.call` builds the layer itself, so `build`'s read of the last axis is its own.",
+				call.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`Lazy.call` still hybridizes (P1).", P1, call.getPassingPrecondition());
+		assertEquals("`Lazy.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				call.getInferredInputSignatureAbsenceReason());
+	}
+
+	/**
 	 * Pins the built-in-layer rank requirement of https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/883, reducing
 	 * deep_recommenders' FM linear term: a parameter flowing into a built-in Keras layer must arrive with a known rank, since the layer's
 	 * {@code build} reads a static axis off the input shape ({@code Dense} the last dimension, {@code Conv2D} the channel axis) and an
