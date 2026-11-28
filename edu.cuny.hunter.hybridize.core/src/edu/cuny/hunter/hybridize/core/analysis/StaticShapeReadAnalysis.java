@@ -32,7 +32,6 @@ import com.ibm.wala.ssa.SSAConditionalBranchInstruction;
 import com.ibm.wala.ssa.SSAInstruction;
 import com.ibm.wala.ssa.SSAReturnInstruction;
 import com.ibm.wala.ssa.SSAUnaryOpInstruction;
-import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.util.collections.Pair;
 
 /**
@@ -58,11 +57,12 @@ import com.ibm.wala.util.collections.Pair;
  * Iterating the shape vector itself is a rank-only surface like {@code len} (issue 882): it raises on an unknown rank and tolerates a known
  * one.
  * <p>
- * Keras lazy-{@code build} reachability: a layer's own {@code build} is a call-graph <em>sibling</em> of {@code call} (both hang off the
- * {@code __call__} trampoline), so it is seeded by name-based sibling lookup with its {@code input_shape} parameter anchored to
- * {@code call}'s first non-receiver parameter; the layer's other methods are not built from their parameters. A <em>sublayer's</em>
- * {@code build} is forward-reachable (the trampoline interposes) and is seeded with unknown provenance, mirroring
- * {@code Function.subtractBuildProtocolContributions}'s reachability model.
+ * Keras lazy-{@code build} reachability: a layer's {@code build} runs in {@code __call__}, before {@code call} and outside its signature,
+ * on the shape of the input the layer's caller passes. A wildcard in {@code call}'s own signature therefore never reaches the layer's own
+ * {@code build}, which is a call-graph <em>sibling</em> of {@code call} and is not scanned for it
+ * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811). A function that applies a layer is traced with the input it
+ * passes, so the applied layer's {@code build}, forward-reachable through the {@code __call__} trampoline, is that function's, seeded with
+ * unknown provenance and mirroring {@code Function.subtractBuildProtocolContributions}'s reachability model.
  */
 class StaticShapeReadAnalysis {
 
@@ -101,9 +101,6 @@ class StaticShapeReadAnalysis {
 
 	/** The trailing declaring-class segment naming a Keras lazy-{@code build} method. */
 	private static final String BUILD_METHOD_NAME_SUFFIX = "/build";
-
-	/** The trailing declaring-class segment naming a Keras {@code call} method, from whose input a layer builds itself. */
-	private static final String CALL_METHOD_NAME_SUFFIX = "/call";
 
 	/**
 	 * Type-name prefixes of the summarized Keras endpoints a built-in layer application dispatches to (the summary class and its method
@@ -321,39 +318,15 @@ class StaticShapeReadAnalysis {
 			rankReads.addAll(result.rankReads());
 		}
 
-		// A `call` method's own Keras `build` is a sibling under the `__call__` trampoline, not a successor: seed it by name-based
-		// lookup, anchoring its `input_shape` parameter to this function's first non-receiver parameter (the Keras protocol passes the
-		// first argument's shape).
-		if (method && parameters.length > 2)
-			this.scanOwnBuild(node, reads, rankReads);
-
-		// A sublayer's `build` is forward-reachable through the trampoline, but the Keras library frames between `call` and `build` are
+		// A `call` method's own Keras `build` is not scanned: `__call__` runs it before `call`, outside `call`'s signature, on the
+		// caller's input (issue 811). A sublayer's `build` is forward-reachable through the trampoline, but the Keras library frames
+		// between `call` and `build` are
 		// summarized, so taint cannot flow through them slot-by-slot: seed every reachable `build`'s `input_shape` with unknown
 		// provenance instead. Where the sublayer's input derives from no parameter, this over-approximates and may over-block; accepted
 		// safety-first, mirroring the numpy precondition's stance.
 		this.scanReachableBuilds(node, reads, rankReads);
 
 		return new StaticShapeReads(reads, rankReads);
-	}
-
-	/**
-	 * Scans this function's own class's {@code build} sibling, if any, anchored to the first non-receiver parameter (ordinal 0). Only a
-	 * {@code call} method takes these reads: {@code __call__} builds the layer from the shape of the input it passes to {@code call}, not
-	 * from any other method's parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1325).
-	 */
-	private void scanOwnBuild(CGNode node, Set<AxisRead> reads, Set<AxisRead> rankReads) {
-		MethodReference reference = node.getMethod().getReference();
-		String declaringClassName = reference.getDeclaringClass().getName().toString();
-		int lastSegment = declaringClassName.lastIndexOf('/');
-
-		if (lastSegment < 0 || !declaringClassName.endsWith(CALL_METHOD_NAME_SUFFIX))
-			return;
-
-		String buildClassName = declaringClassName.substring(0, lastSegment) + BUILD_METHOD_NAME_SUFFIX;
-
-		for (CGNode buildNode : this.callGraph)
-			if (buildNode.getMethod().getReference().getDeclaringClass().getName().toString().equals(buildClassName))
-				this.scanBuild(buildNode, Set.of(0), reads, rankReads);
 	}
 
 	/** Scans every {@code build} method forward-reachable from {@code node} (a sublayer's, via the trampoline), unknown provenance. */
@@ -369,7 +342,7 @@ class StaticShapeReadAnalysis {
 
 			if (current != node
 					&& current.getMethod().getReference().getDeclaringClass().getName().toString().endsWith(BUILD_METHOD_NAME_SUFFIX))
-				this.scanBuild(current, null, reads, rankReads);
+				this.scanBuild(current, reads, rankReads);
 
 			for (Iterator<CGNode> successors = this.callGraph.getSuccNodes(current); successors.hasNext();) {
 				CGNode next = successors.next();
@@ -381,11 +354,10 @@ class StaticShapeReadAnalysis {
 	}
 
 	/**
-	 * Scans a {@code build} method with its {@code input_shape} parameter seeded as shape metadata whose provenance is
-	 * {@code parameterOrdinals} ({@code null} = unknown), covering all axes until narrowed by subscripts inside {@code build}, accumulating
-	 * both read populations into {@code reads} and {@code rankReads}.
+	 * Scans a {@code build} method with its {@code input_shape} parameter seeded as shape metadata of unknown provenance, covering all axes
+	 * until narrowed by subscripts inside {@code build}, accumulating both read populations into {@code reads} and {@code rankReads}.
 	 */
-	private void scanBuild(CGNode buildNode, Set<Integer> parameterOrdinals, Set<AxisRead> reads, Set<AxisRead> rankReads) {
+	private void scanBuild(CGNode buildNode, Set<AxisRead> reads, Set<AxisRead> rankReads) {
 		IR ir = buildNode.getIR();
 
 		if (ir == null)
@@ -397,8 +369,7 @@ class StaticShapeReadAnalysis {
 		if (parameters.length <= 2)
 			return;
 
-		ScanResult result = this.scan(buildNode, Map.of(), Map.of(parameters[2], new AxisRead(parameterOrdinals, null)), Map.of(),
-				Map.of());
+		ScanResult result = this.scan(buildNode, Map.of(), Map.of(parameters[2], new AxisRead(null, null)), Map.of(), Map.of());
 		reads.addAll(result.reads());
 		rankReads.addAll(result.rankReads());
 	}
