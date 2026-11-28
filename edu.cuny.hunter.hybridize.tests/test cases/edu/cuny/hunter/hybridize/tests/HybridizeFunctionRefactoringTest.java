@@ -13985,21 +13985,22 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	/**
 	 * Pins the Keras lazy-{@code build} reach of the unresolved statically-read-axis precondition
 	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811): a static read need not sit in the decorated function's
-	 * own body. {@code Proj.call} never touches a shape, but its class's {@code build} passes {@code input_shape[-1]} to {@code add_weight}
-	 * (a sibling under the {@code __call__} trampoline, distilling {@code PositionWiseFeedForward}); {@code Outer.call} reaches the same
-	 * read through the sublayer it invokes (distilling {@code Transformer}). {@code Gate.call}'s {@code build} reads {@code input_shape}
-	 * only into an {@code InputSpec}, the negative case that forces the dataflow formulation (distilling {@code WDEmbedding}), and remains
-	 * P1.
+	 * own body. {@code Outer.call} reaches {@code Proj}'s {@code build}, which passes {@code input_shape[-1]} to {@code add_weight},
+	 * through the sublayer it invokes (distilling {@code Transformer}): Keras builds the sublayer from the tensor {@code Outer.call} passes
+	 * it, under {@code Outer.call}'s signature. {@code Proj.call} itself takes no read from that {@code build}, since {@code __call__} runs
+	 * it before {@code call}, outside {@code call}'s signature, on the caller's input (distilling {@code PositionWiseFeedForward}).
+	 * {@code Gate.call}'s {@code build} reads {@code input_shape} only into an {@code InputSpec}, the negative case that forces the
+	 * dataflow formulation (distilling {@code WDEmbedding}), and remains P1.
 	 */
 	@Test
 	public void testUnresolvedStaticallyReadAxesInKerasBuild() throws Exception {
 		this.setInferInputSignatures(true);
 
 		Function projCall = getFunction("Proj.call");
-		assertTrue("`Proj.call`'s own `build` passes `input_shape[-1]` to `add_weight`.", projCall.getHasUnresolvedStaticallyReadAxes());
-		assertEquals("`Proj.call` hybridizes bare (P1); only the signature was unwritable (#864).", P1, projCall.getPassingPrecondition());
-		assertEquals("`Proj.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
-				projCall.getInferredInputSignatureAbsenceReason());
+		assertFalse("`Proj.call`'s own `build` runs outside its signature, so its `input_shape[-1]` read is not `call`'s.",
+				projCall.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`Proj.call` hybridizes (P1).", P1, projCall.getPassingPrecondition());
+		assertTrue("`Proj.call` has a signature.", projCall.getInferredInputSignature().isPresent());
 
 		Function outerCall = getFunction("Outer.call");
 		assertTrue("`Outer.call` reaches the `add_weight` read through its sublayer's `build`.",
@@ -14018,26 +14019,44 @@ public class HybridizeFunctionRefactoringTest extends RefactoringTest {
 	}
 
 	/**
-	 * A layer's own {@code build} is built from the input of {@code call} alone
-	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1325), distilling NLPGNN's {@code GPTAttention}. Both
+	 * A layer's own {@code build} reads are charged to none of its methods, distilling NLPGNN's {@code GPTAttention}. Both
 	 * {@code Attention.call} and {@code Attention.softmax} take a tensor whose last axis differs across calls, and {@code build} reads
-	 * {@code input_shape[-1]}. That read is {@code call}'s, so its signature is withheld. {@code softmax} reads no shape itself and keeps
-	 * its signature.
+	 * {@code input_shape[-1]}. Keras runs {@code build} in {@code __call__}, before {@code call} and outside its signature, on the input
+	 * the layer is applied to (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811), and never builds the layer from
+	 * {@code softmax}'s parameter (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/1325). Both keep their signatures.
 	 */
 	@Test
-	public void testStaticallyReadAxesOwnBuildOnlyForCall() throws Exception {
+	public void testStaticallyReadAxesOwnBuildNotCharged() throws Exception {
 		this.setInferInputSignatures(true);
 
 		Set<Function> functions = this.getFunctions();
 
 		Function call = findFunction(functions, "Attention.call");
-		assertTrue("`Attention.call`'s own `build` reads the last axis of its input.", call.getHasUnresolvedStaticallyReadAxes());
-		assertEquals("`Attention.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
-				call.getInferredInputSignatureAbsenceReason());
+		assertFalse("`Attention.call`'s own `build` runs outside its signature.", call.getHasUnresolvedStaticallyReadAxes());
+		assertTrue("`Attention.call` has a signature.", call.getInferredInputSignature().isPresent());
 
 		Function softmax = findFunction(functions, "Attention.softmax");
 		assertFalse("Keras doesn't build the layer from `softmax`'s parameter.", softmax.getHasUnresolvedStaticallyReadAxes());
 		assertTrue("`Attention.softmax` has a signature.", softmax.getInferredInputSignature().isPresent());
+	}
+
+	/**
+	 * A {@code build} that a layer's {@code call} invokes itself is charged to {@code call}. Applied through {@code call} directly,
+	 * {@code Lazy} never passes through {@code __call__}, so {@code call} builds the layer inside its own trace, and {@code build} passes
+	 * {@code input_shape[-1]} to {@code add_weight}. The last axis differs across calls, so a wildcard there would raise; the signature is
+	 * withheld. Only the {@code build} that {@code __call__} runs is outside {@code call}'s signature
+	 * (https://github.com/ponder-lab/Hybridize-Functions-Refactoring/issues/811).
+	 */
+	@Test
+	public void testStaticallyReadAxesOwnBuildCalledFromCall() throws Exception {
+		this.setInferInputSignatures(true);
+
+		Function call = getFunction("Lazy.call");
+		assertTrue("`Lazy.call` builds the layer itself, so `build`'s read of the last axis is its own.",
+				call.getHasUnresolvedStaticallyReadAxes());
+		assertEquals("`Lazy.call` still hybridizes (P1).", P1, call.getPassingPrecondition());
+		assertEquals("`Lazy.call`'s signature is withheld.", Optional.of(InferenceResult.AbsenceReason.WITHHELD_STATICALLY_READ_AXES),
+				call.getInferredInputSignatureAbsenceReason());
 	}
 
 	/**
